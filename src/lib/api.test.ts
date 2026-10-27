@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { getMe } from './api'
+import { getLibraryBooks, getMe } from './api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -48,6 +48,52 @@ test.each([null, {}, { user_id: 123 }, { user_id: '' }])(
 
     await expect(getMe('test-access-token')).rejects.toThrow(
       '사용자 확인 응답 형식이 올바르지 않습니다.',
+    )
+  },
+)
+
+test.each([
+  [{ detail: '도서를 찾을 수 없습니다.' }, '도서를 찾을 수 없습니다.'],
+  [{ detail: [{ msg: 'limit 범위 오류' }, { msg: 'offset 범위 오류' }] }, 'limit 범위 오류 offset 범위 오류'],
+])('오류 detail 문자열과 검증 배열을 메시지로 읽는다: %j', async (body, message) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(body, { status: 422 })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(getLibraryBooks('test-access-token', 20, 0)).rejects.toMatchObject({
+    status: 422,
+    message,
+  })
+})
+
+test('서재 목록은 limit·offset을 보내고 표지 null을 허용한다', async () => {
+  const item = {
+    id: 'user-book-1',
+    book_id: 'book-1',
+    isbn13: '9788936433598',
+    title: '소년이 온다',
+    authors: ['한강'],
+    thumbnail_url: null,
+    status: 'want_to_read',
+    created_at: '2026-10-27T00:00:00Z',
+  }
+  const fetchMock = vi.fn().mockResolvedValue(Response.json([item]))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(getLibraryBooks('test-access-token', 20, 40)).resolves.toEqual([item])
+  expect(fetchMock.mock.calls[0][0]).toBe(
+    'https://api.example.test/library/books?limit=20&offset=40',
+  )
+})
+
+test.each([{ total: 1 }, [{ id: 'x', title: '제목' }], [{ status: 'unknown' }]])(
+  '서재 응답 형식이 다르면 거부한다: %j',
+  async (body) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(body)))
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+    await expect(getLibraryBooks('test-access-token', 20, 0)).rejects.toThrow(
+      '서재 응답 형식이 올바르지 않습니다.',
     )
   },
 )

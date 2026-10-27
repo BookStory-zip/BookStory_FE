@@ -1,14 +1,24 @@
 import { ApiError, getMe } from './api'
 import { supabase } from './supabase'
 
-export async function getCurrentUser(): Promise<{ user_id: string } | null> {
+export class SessionMissingError extends Error {
+  constructor() {
+    super('로그인이 필요합니다.')
+    this.name = 'SessionMissingError'
+  }
+}
+
+// 현재 access token으로 요청하고, 401이면 SDK로 한 번만 갱신해 다시 요청한다.
+export async function withAccessToken<T>(
+  request: (accessToken: string) => Promise<T>,
+): Promise<T> {
   const { data, error } = await supabase.auth.getSession()
 
   if (error) throw error
-  if (!data.session) return null
+  if (!data.session) throw new SessionMissingError()
 
   try {
-    return await getMe(data.session.access_token)
+    return await request(data.session.access_token)
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 401) {
       throw error
@@ -19,9 +29,18 @@ export async function getCurrentUser(): Promise<{ user_id: string } | null> {
     await supabase.auth.refreshSession()
 
   if (refreshError) throw refreshError
-  if (!refreshed.session) return null
+  if (!refreshed.session) throw new SessionMissingError()
 
-  return getMe(refreshed.session.access_token)
+  return request(refreshed.session.access_token)
+}
+
+export async function getCurrentUser(): Promise<{ user_id: string } | null> {
+  try {
+    return await withAccessToken(getMe)
+  } catch (error) {
+    if (error instanceof SessionMissingError) return null
+    throw error
+  }
 }
 
 export async function signIn(

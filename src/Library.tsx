@@ -1,0 +1,157 @@
+import { useEffect, useRef, useState } from 'react'
+import { ApiError, getLibraryBooks } from './lib/api'
+import type { LibraryBookItem, ReadingStatus } from './lib/api'
+import { withAccessToken } from './lib/auth'
+
+export const PAGE_SIZE = 20
+
+const statusLabels: Record<ReadingStatus, string> = {
+  want_to_read: '읽고 싶음',
+  reading: '읽는 중',
+  completed: '완독',
+  paused: '중단',
+  abandoned: '포기',
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.status === 401) return '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'
+    if (error.status === 503) return '서버가 잠시 응답할 수 없습니다. 잠시 후 다시 시도해주세요.'
+    return `서재를 불러오지 못했습니다. (${error.status})`
+  }
+  if (error instanceof TypeError) {
+    return '서버에 연결하지 못했습니다. 네트워크를 확인하고 다시 시도해주세요.'
+  }
+  return '서재를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'
+}
+
+// 계정이 바뀌면 부모가 key로 새로 마운트하므로 이전 계정 목록이 남지 않는다.
+export default function Library() {
+  const [books, setBooks] = useState<LibraryBookItem[]>([])
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [slow, setSlow] = useState(false)
+  const active = useRef(true)
+  const busy = useRef(false)
+
+  // 첫 조회는 초기 상태가 이미 loading이므로 화면 상태 전환은 버튼 핸들러에서만 한다.
+  async function load(offset: number) {
+    busy.current = true
+
+    // Render 무료 인스턴스는 첫 응답이 늦을 수 있다.
+    const slowTimer = setTimeout(() => setSlow(true), 4000)
+    try {
+      const page = await withAccessToken((token) =>
+        getLibraryBooks(token, PAGE_SIZE, offset),
+      )
+      if (!active.current) return
+      setBooks((current) => (offset === 0 ? page : [...current, ...page]))
+      setHasMore(page.length === PAGE_SIZE)
+      setPhase('ready')
+    } catch (loadError) {
+      if (!active.current) return
+      setError(errorMessage(loadError))
+      if (offset === 0) setPhase('error')
+    } finally {
+      clearTimeout(slowTimer)
+      busy.current = false
+      if (active.current) {
+        setSlow(false)
+        setLoadingMore(false)
+      }
+    }
+  }
+
+  function retry() {
+    if (busy.current) return
+    setError(null)
+    setPhase('loading')
+    void load(0)
+  }
+
+  function loadMore() {
+    if (busy.current) return
+    setError(null)
+    setLoadingMore(true)
+    void load(books.length)
+  }
+
+  useEffect(() => {
+    active.current = true
+    if (!busy.current) void load(0)
+    return () => {
+      active.current = false
+    }
+  }, [])
+
+  return (
+    <section className="library" aria-labelledby="library-title" aria-busy={phase === 'loading'}>
+      <h1 id="library-title">내 서재</h1>
+
+      {phase === 'loading' && (
+        <p className="library-note">
+          {slow ? '서버를 깨우는 중입니다. 처음 접속하면 30초 정도 걸릴 수 있습니다.' : '서재를 불러오고 있습니다.'}
+        </p>
+      )}
+
+      {phase === 'error' && (
+        <div className="library-note" role="alert">
+          <p>{error}</p>
+          <button type="button" className="secondary" onClick={retry}>
+            다시 시도
+          </button>
+        </div>
+      )}
+
+      {phase === 'ready' && books.length === 0 && (
+        <p className="library-note">아직 서재에 담은 책이 없습니다.</p>
+      )}
+
+      {books.length > 0 && (
+        <ul className="shelf">
+          {books.map((book) => (
+            <li key={book.id} className="book">
+              {book.thumbnail_url ? (
+                <img
+                  className="cover"
+                  src={book.thumbnail_url}
+                  alt=""
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="cover cover-empty" aria-hidden="true">
+                  {book.title.slice(0, 1)}
+                </div>
+              )}
+              <p className="book-title">{book.title}</p>
+              {book.authors.length > 0 && (
+                <p className="book-authors">{book.authors.join(', ')}</p>
+              )}
+              <p className={`book-status status-${book.status}`}>
+                {statusLabels[book.status]}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {phase === 'ready' && error && (
+        <p className="library-note" role="alert">{error}</p>
+      )}
+
+      {phase === 'ready' && hasMore && (
+        <button
+          type="button"
+          className="secondary more"
+          onClick={loadMore}
+          disabled={loadingMore}
+        >
+          {loadingMore ? (slow ? '서버 응답을 기다리는 중…' : '불러오는 중…') : '더 보기'}
+        </button>
+      )}
+    </section>
+  )
+}

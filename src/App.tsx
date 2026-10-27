@@ -1,23 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { isAuthError } from '@supabase/supabase-js'
+import { Navigate, Route, Routes } from 'react-router'
 import { ApiError } from './lib/api'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
+import Library from './Library'
 import PasswordReset from './PasswordReset'
 
 function App() {
-  const path = window.location.pathname
-  if (path === '/reset-password' || path === '/reset-password/update') {
-    return <PasswordReset recovery={path === '/reset-password/update'} />
-  }
-  return <AuthScreen />
+  return (
+    <Routes>
+      <Route path="/" element={<AuthScreen />} />
+      <Route path="/reset-password" element={<PasswordReset key="request" />} />
+      <Route
+        path="/reset-password/update"
+        element={<PasswordReset key="update" recovery />}
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
 }
 
 function AuthScreen() {
   const [message, setMessage] = useState('로그인 상태를 확인하고 있습니다.')
   const [isCheckingSession, setIsCheckingSession] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
 
   const formRef = useRef<HTMLFormElement>(null)
@@ -52,7 +60,7 @@ function AuthScreen() {
         setAuthMode('login')
       }
 
-      setIsAuthenticated(state.user !== null)
+      setUserId(state.user?.user_id ?? null)
       setIsCheckingSession(state.isChecking)
 
       if (state.isChecking) {
@@ -64,7 +72,7 @@ function AuthScreen() {
           setMessage('사용자 확인에 실패했습니다. 잠시 후 다시 시도해주세요.')
         }
       } else if (state.user) {
-        setMessage('사용자 확인이 완료되었습니다.')
+        setMessage('')
       } else if (pendingAction.current === 'logout') {
         setMessage('로그아웃 중입니다.')
       } else {
@@ -203,90 +211,101 @@ function AuthScreen() {
     }
   }
 
+  if (userId !== null) {
+    return (
+      <main className="app">
+        <header className="app-header">
+          <p className="wordmark">BookStory</p>
+          <button
+            type="button"
+            className="secondary compact"
+            onClick={handleLogout}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? '처리 중…' : '로그아웃'}
+          </button>
+        </header>
+        <p role="status">{message}</p>
+        {/* 계정이 바뀌면 서재를 새로 마운트해 이전 계정의 목록·늦은 응답을 버린다 */}
+        <Library key={userId} />
+      </main>
+    )
+  }
+
   return (
     <main>
       <h1>BookStory</h1>
       <p className="tagline">읽은 날을 한 권씩 꽂아 두는 서재</p>
       <p role="status">{message}</p>
 
-      {isAuthenticated ? (
+      <form
+        ref={formRef}
+        aria-label={authMode === 'signup' ? '회원가입' : '로그인'}
+        onSubmit={handleAuthSubmit}
+      >
+        <h2>{authMode === 'signup' ? '회원가입' : '로그인'}</h2>
+
+        <div>
+          <label htmlFor="email">이메일</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="username"
+            disabled={isCheckingSession || isSubmitting}
+            required
+          />
+        </div>
+
+        <div>
+          <label htmlFor="password">비밀번호</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autoComplete={
+              authMode === 'signup' ? 'new-password' : 'current-password'
+            }
+            disabled={isCheckingSession || isSubmitting}
+            required
+          />
+        </div>
+
+        {authMode === 'signup' && (
+          <div>
+            <label htmlFor="password-confirm">비밀번호 확인</label>
+            <input
+              id="password-confirm"
+              name="passwordConfirm"
+              type="password"
+              autoComplete="new-password"
+              disabled={isCheckingSession || isSubmitting}
+              required
+            />
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={isCheckingSession || isSubmitting}
+        >
+          {isSubmitting
+            ? '처리 중…'
+            : authMode === 'signup'
+              ? '회원가입'
+              : '로그인'}
+        </button>
+
         <button
           type="button"
-          onClick={handleLogout}
-          disabled={isSubmitting}
+          className="secondary"
+          onClick={handleAuthModeChange}
+          disabled={isCheckingSession || isSubmitting}
         >
-          {isSubmitting ? '처리 중…' : '로그아웃'}
+          {authMode === 'signup' ? '로그인으로 돌아가기' : '회원가입하기'}
         </button>
-      ) : (
-        <form
-          ref={formRef}
-          aria-label={authMode === 'signup' ? '회원가입' : '로그인'}
-          onSubmit={handleAuthSubmit}
-        >
-          <h2>{authMode === 'signup' ? '회원가입' : '로그인'}</h2>
-
-          <div>
-            <label htmlFor="email">이메일</label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="username"
-              disabled={isCheckingSession || isSubmitting}
-              required
-            />
-          </div>
-
-          <div>
-            <label htmlFor="password">비밀번호</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete={
-                authMode === 'signup' ? 'new-password' : 'current-password'
-              }
-              disabled={isCheckingSession || isSubmitting}
-              required
-            />
-          </div>
-
-          {authMode === 'signup' && (
-            <div>
-              <label htmlFor="password-confirm">비밀번호 확인</label>
-              <input
-                id="password-confirm"
-                name="passwordConfirm"
-                type="password"
-                autoComplete="new-password"
-                disabled={isCheckingSession || isSubmitting}
-                required
-              />
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isCheckingSession || isSubmitting}
-          >
-            {isSubmitting
-              ? '처리 중…'
-              : authMode === 'signup'
-                ? '회원가입'
-                : '로그인'}
-          </button>
-
-          <button
-            type="button"
-            className="secondary"
-            onClick={handleAuthModeChange}
-            disabled={isCheckingSession || isSubmitting}
-          >
-            {authMode === 'signup' ? '로그인으로 돌아가기' : '회원가입하기'}
-          </button>
-          <p><a href="/reset-password">비밀번호를 잊으셨나요?</a></p>
-        </form>
-      )}
+        <p><a href="/reset-password">비밀번호를 잊으셨나요?</a></p>
+      </form>
     </main>
   )
 }

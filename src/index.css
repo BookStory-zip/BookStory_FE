@@ -219,7 +219,145 @@ main > p:has(a) {
   outline-offset: 2px;
 }
 
+[role='status']:empty {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* 로그인 후 화면: 숲 사진 없이 같은 숲 바닥색과 변수를 쓴다 */
+#root:has(main.app)::before {
+  display: none;
+}
+
+main.app {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-4) var(--space-12);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+button.compact {
+  width: auto;
+  min-height: 2.75rem;
+}
+
+.library h1 {
+  margin: var(--space-8) 0 var(--space-6);
+  font-size: 1.75rem;
+  text-shadow: none;
+}
+
+.library-note {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+  color: var(--color-muted);
+}
+
+.library-note button {
+  width: auto;
+}
+
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(9rem, 40%), 1fr));
+  gap: var(--space-8) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.book {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  margin-bottom: var(--space-2);
+  border-radius: 0.25rem;
+  object-fit: cover;
+  background-color: var(--color-paper-2);
+  box-shadow: 0 6px 18px oklch(8% 0.02 160 / 0.55);
+}
+
+.cover-empty {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-rule);
+  color: var(--color-muted);
+  font-family: var(--font-display);
+  font-size: 2rem;
+}
+
+.book-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.book-authors {
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.book-status {
+  justify-self: start;
+  margin-top: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 999px;
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+}
+
+.status-reading {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.status-completed {
+  border-color: var(--color-bark);
+  color: var(--color-ink);
+}
+
+button.more {
+  width: auto;
+  margin-top: var(--space-8);
+}
+
 @media (min-width: 60rem) {
+  #root:has(main.app) {
+    display: block;
+  }
+
+
   #root {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 36rem);
