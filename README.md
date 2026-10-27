@@ -8,7 +8,9 @@
 - [CLAUDE.md](./CLAUDE.md): 코드 이해·직접 입력 중심의 협업 방식과 작업 규칙
 - 이 README: 프로젝트 소개, 환경변수, API 계약과 배포 안내
 
-현재 FE는 문서와 PR 템플릿만 있는 초기 상태입니다. 앱 코드·package.json·lockfile·실행 명령·FE CI/CD·Vercel 배포는 아직 없습니다. 이 문서 정리는 앱 구현을 시작했다는 의미가 아닙니다.
+React·TypeScript·Vite 기본 앱과 환경변수 양식, Supabase SDK 초기화·로컬 세션 조회, 로그인 입력란을 구성했습니다. `/me` 요청 함수와 정상·실패 응답의 mock 테스트 7개를 준비했습니다.
+
+현재 로그인 버튼은 비활성화돼 있으며 실제 로그인 → `/me` 검증은 아직 연결하지 않았습니다. React Router·TanStack Query, FE CI/CD와 Vercel 배포도 아직 구성하지 않았습니다. 현재 상태는 **초기 실행 환경과 인증 연결 준비를 마친 1차 체크포인트**입니다.
 
 ### 백엔드 확인 기준
 
@@ -30,10 +32,11 @@ MVP는 이메일 회원가입·인증 안내·로그인·로그아웃·세션 �
 | 구분 | 방향 |
 | --- | --- |
 | 확정 | React 웹앱, Vercel 배포, 비용 최소화, 모바일 중심 |
-| 권장 앱 구성 | TypeScript + Vite SPA, React Router |
-| 권장 데이터 처리 | TanStack Query, 기본 `fetch`, Supabase JavaScript SDK |
-| 권장 스타일 | CSS Modules와 공통 CSS 변수 |
-| 권장 검증 도구 | Vitest·React Testing Library, 핵심 흐름의 Playwright |
+| 현재 앱 구성 | TypeScript + Vite SPA |
+| 현재 데이터 처리 | 기본 `fetch`, Supabase JavaScript SDK 초기화 |
+| 현재 스타일 | 기본 전역 CSS. CSS Modules와 공통 CSS 변수는 화면 구성 단계에서 적용 검토 |
+| 현재 검사 | ESLint, Vitest, TypeScript 검사와 Vite 빌드 |
+| 후속 도입 검토 | React Router, TanStack Query, React Testing Library, 핵심 흐름의 Playwright |
 
 권장안은 설치 완료나 최종 확정을 뜻하지 않습니다. 라이브러리·버전·구조는 해당 단계에서 기존 구성과 필요성을 확인한 뒤 선택합니다. 공개 콘텐츠의 검색 노출·공유 미리보기가 필요해지면 SSR을 재검토합니다.
 
@@ -41,17 +44,39 @@ MVP는 이메일 회원가입·인증 안내·로그인·로그아웃·세션 �
 
 기준 폴더는 FE `C:\PJ\BookStory_FE`, BE `C:\PJ\BookStory_BE`, Infra `C:\PJ\BookStory_Infra`입니다. 다른 컴퓨터에서는 실제 체크아웃 경로를 사용합니다.
 
-다음은 Vite 선택 시 사용할 공개 설정 예시입니다. 아직 환경변수 파일이나 실행 명령을 구성하지 않았습니다.
+현재 검증 환경은 Node.js `24.19.0`, npm `11.17.0`입니다. 다른 컴퓨터에서 처음 준비할 때 저장소 루트에서 실행합니다. Windows PowerShell 실행 정책 때문에 `npm` 대신 `npm.cmd`를 사용하며, 다른 셸에서는 `npm`을 사용할 수 있습니다.
+
+```powershell
+npm.cmd ci
+if (-not (Test-Path -LiteralPath .env.local)) {
+    Copy-Item .env.example .env.local
+}
+```
+
+`.env.local`의 Supabase 두 값을 BE 인증과 같은 프로젝트의 값으로 채웁니다. `.env.example`의 Supabase 값은 비워둡니다. 다른 컴퓨터에는 `.env.local`이 전달되지 않으므로 해당 컴퓨터에서 별도로 설정해야 합니다.
 
 ```dotenv
 VITE_API_BASE_URL=https://bookstory-api-w31a.onrender.com
-VITE_SUPABASE_URL=<BE 인증과 동일한 Supabase 프로젝트 URL>
-VITE_SUPABASE_PUBLISHABLE_KEY=<해당 프로젝트의 Publishable key>
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
 ```
 
 `VITE_` 값은 브라우저에 공개됩니다. `DATABASE_URL`, PostgreSQL 비밀번호, `KAKAO_REST_API_KEY`, Supabase secret·`service_role` 키를 넣지 않습니다. 예제에는 실제 키 대신 빈 값 또는 명시적인 예시를 둡니다.
 
 Supabase SDK는 인증에만 사용합니다. `books`·`users`·`user_books`·`reading_logs`는 FastAPI로 접근하며 직접 조회하지 않습니다. 사용자 인계 기준으로 꺼져 있는 Supabase Data API를 FE 연결을 위해 켜지 않습니다.
+
+개발 서버와 검사 명령은 다음과 같습니다. 환경변수를 변경하면 개발 서버를 다시 시작합니다.
+
+```powershell
+npm.cmd run dev
+npm.cmd run lint
+npm.cmd run test
+npm.cmd run build
+```
+
+`dev`는 개발 서버, `lint`는 코드 검사, `test`는 테스트 1회 실행, `build`는 TypeScript 검사 후 프로덕션 빌드입니다. 기본 코드의 세션 조회는 로컬 SDK 상태 확인이며 BE의 인증 완료를 의미하지 않습니다. 테스트는 `fetch`와 API 주소를 대체하므로 운영 계정·DB를 호출하지 않습니다.
+
+`.env.local`·`node_modules`·`dist`·로컬 임시 `bookstory-scaffold` 폴더는 Git에서 제외합니다. 임시 폴더는 앱 실행에 필요하지 않으며 미사용 템플릿을 로컬에 보존하는 용도로만 남깁니다.
 
 ## 인증 계약
 
