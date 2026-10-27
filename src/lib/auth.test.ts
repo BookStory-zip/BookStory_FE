@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
-import { signIn, signUp, subscribeAuthState } from './auth'
+import {
+  getPasswordResetUser,
+  requestPasswordReset,
+  signIn,
+  signUp,
+  subscribeAuthState,
+  updatePassword,
+} from './auth'
 
 const { auth } = vi.hoisted(() => ({
   auth: {
@@ -10,6 +17,10 @@ const { auth } = vi.hoisted(() => ({
     signUp: vi.fn(),
     signOut: vi.fn(),
     onAuthStateChange: vi.fn(),
+    initialize: vi.fn(),
+    getUser: vi.fn(),
+    resetPasswordForEmail: vi.fn(),
+    updateUser: vi.fn(),
   },
 }))
 
@@ -71,6 +82,8 @@ beforeEach(() => {
     error: null,
   }))
   auth.signInWithPassword.mockResolvedValue({ error: null })
+  auth.initialize.mockResolvedValue({ error: null })
+  auth.getUser.mockResolvedValue({ data: { user: sessionA.user }, error: null })
   auth.onAuthStateChange.mockImplementation((callback: typeof notify) => {
     notify = callback
     return { data: { subscription: { unsubscribe: unsubscribeMock } } }
@@ -246,4 +259,64 @@ test('회원가입 SDK 오류를 성공으로 바꾸지 않고 전달한다', as
     signUp('reader@example.test', ' password '),
   ).rejects.toBe(error)
   expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('재설정 메일에 새 비밀번호 입력 화면의 복귀 주소를 전달한다', async () => {
+  auth.resetPasswordForEmail.mockResolvedValue({ error: null })
+  await requestPasswordReset('reader@example.test')
+  expect(auth.resetPasswordForEmail).toHaveBeenCalledWith('reader@example.test', {
+    redirectTo: 'http://localhost:5173/reset-password/update',
+  })
+})
+
+test('메일 발송 실패를 자동 재시도하거나 성공으로 바꾸지 않는다', async () => {
+  const error = new Error('SMTP failed')
+  auth.resetPasswordForEmail.mockResolvedValue({ error })
+  await expect(requestPasswordReset('reader@example.test')).rejects.toBe(error)
+  expect(auth.resetPasswordForEmail).toHaveBeenCalledTimes(1)
+})
+
+test('잘못된 링크 초기화 오류가 있으면 기존 계정으로 복구를 진행하지 않는다', async () => {
+  const error = new Error('expired callback')
+  auth.initialize.mockResolvedValue({ error })
+  await expect(getPasswordResetUser()).rejects.toBe(error)
+  expect(auth.getUser).not.toHaveBeenCalled()
+  expect(auth.updateUser).not.toHaveBeenCalled()
+})
+
+test('재설정 화면에서 SDK 서버가 확인한 사용자만 반환한다', async () => {
+  await expect(getPasswordResetUser()).resolves.toEqual(sessionA.user)
+  expect(auth.getUser).toHaveBeenCalledTimes(1)
+})
+
+test('다른 계정으로 바뀌면 비밀번호 변경 요청을 보내지 않는다', async () => {
+  auth.getUser.mockResolvedValue({ data: { user: sessionB.user }, error: null })
+  await expect(updatePassword(' new password ', sessionA.user.id, new AbortController().signal)).rejects.toThrow()
+  expect(auth.getUser).toHaveBeenCalledTimes(1)
+  expect(auth.updateUser).not.toHaveBeenCalled()
+})
+
+test('새 비밀번호의 앞뒤 공백을 바꾸지 않고 SDK로 저장한다', async () => {
+  auth.updateUser.mockResolvedValue({ error: null })
+  await updatePassword(' new password ', sessionA.user.id, new AbortController().signal)
+  expect(auth.updateUser).toHaveBeenCalledWith({ password: ' new password ' })
+})
+
+test('비밀번호 저장 실패를 자동 재시도하지 않고 전달한다', async () => {
+  const error = new Error('save failed')
+  auth.updateUser.mockResolvedValue({ error })
+  await expect(updatePassword('new password', sessionA.user.id, new AbortController().signal)).rejects.toBe(error)
+  expect(auth.updateUser).toHaveBeenCalledTimes(1)
+})
+
+test('사용자 확인 중 계정이 바뀌면 저장 요청을 시작하지 않는다', async () => {
+  const controller = new AbortController()
+  let complete!: (result: { data: { user: typeof sessionA.user }; error: null }) => void
+  auth.getUser.mockReturnValue(new Promise((resolve) => { complete = resolve }))
+  const request = updatePassword('new password', sessionA.user.id, controller.signal)
+  await vi.waitFor(() => expect(auth.getUser).toHaveBeenCalledTimes(1))
+  controller.abort()
+  complete({ data: { user: sessionA.user }, error: null })
+  await expect(request).rejects.toThrow()
+  expect(auth.updateUser).not.toHaveBeenCalled()
 })

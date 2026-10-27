@@ -149,3 +149,41 @@ export async function signUp(
 
   return { hasSession: data.session !== null }
 }
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password/update`,
+  })
+  if (error) throw error
+}
+
+export class RecoverySessionError extends Error {
+  constructor() {
+    super('재설정할 계정을 확인할 수 없습니다. 새 링크를 요청해주세요.')
+    this.name = 'RecoverySessionError'
+  }
+}
+
+export async function getPasswordResetUser() {
+  // 잘못된 복귀 링크가 기존 로그인 세션을 재사용하지 않도록 먼저 검사한다.
+  const { error: initializationError } = await supabase.auth.initialize()
+  if (initializationError) throw initializationError
+
+  const { data, error } = await supabase.auth.getUser()
+  if (error) throw error
+  if (!data.user) throw new RecoverySessionError()
+  return data.user
+}
+
+export async function updatePassword(
+  password: string,
+  authUserId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const user = await getPasswordResetUser()
+  signal.throwIfAborted()
+  if (user.id !== authUserId) throw new RecoverySessionError()
+
+  const { error } = await supabase.auth.updateUser({ password })
+  if (error) throw error
+}
