@@ -32,7 +32,7 @@ function readDetail(body: unknown): string | undefined {
 export async function apiRequest(
   path: string,
   accessToken: string | null,
-  options: { method?: 'POST'; body?: unknown } = {},
+  options: { method?: 'POST' | 'PATCH' | 'DELETE'; body?: unknown } = {},
 ): Promise<unknown> {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
 
@@ -210,4 +210,103 @@ export async function addLibraryBook(
   }
 
   return { id: data.id, status: data.status as ReadingStatus }
+}
+
+export type LibraryBookDetail = LibraryBookItem & {
+  publisher: string | null
+  published_date: string | null
+  description: string | null
+  source_url: string
+  started_at: string | null
+  last_read_at: string | null
+  completed_at: string | null
+  stopped_at: string | null
+  stop_reason: string | null
+  rating: number | null
+  memo: string | null
+  has_completed: boolean
+  updated_at: string
+}
+
+function isNullableString(value: unknown) {
+  return value === null || typeof value === 'string'
+}
+
+function isLibraryBookDetail(value: unknown): value is LibraryBookDetail {
+  if (!isLibraryBookItem(value)) return false
+  const item = value as Record<string, unknown>
+  return (
+    [
+      'publisher',
+      'published_date',
+      'description',
+      'started_at',
+      'last_read_at',
+      'completed_at',
+      'stopped_at',
+      'stop_reason',
+      'memo',
+    ].every((key) => isNullableString(item[key])) &&
+    typeof item.source_url === 'string' &&
+    (item.rating === null ||
+      (Number.isInteger(item.rating) && Number(item.rating) >= 1 && Number(item.rating) <= 5)) &&
+    typeof item.has_completed === 'boolean' &&
+    typeof item.updated_at === 'string'
+  )
+}
+
+const libraryBookPath = (userBookId: string) =>
+  `/library/books/${encodeURIComponent(userBookId)}`
+
+export async function getLibraryBook(
+  accessToken: string,
+  userBookId: string,
+): Promise<LibraryBookDetail> {
+  const data = await apiRequest(libraryBookPath(userBookId), accessToken)
+  if (!isLibraryBookDetail(data)) {
+    throw new Error('책 상세 응답 형식이 올바르지 않습니다.')
+  }
+  return data
+}
+
+export type StatusChange = {
+  status: ReadingStatus
+  started_at?: string
+  completed_at?: string
+}
+
+// 작은 변경 응답으로 상세를 덮지 않도록 성공 여부만 반환하고, 화면은 상세를 다시 조회한다.
+export async function updateLibraryStatus(
+  accessToken: string,
+  userBookId: string,
+  change: StatusChange,
+): Promise<void> {
+  await apiRequest(`${libraryBookPath(userBookId)}/status`, accessToken, {
+    method: 'PATCH',
+    body: change,
+  })
+}
+
+export type RecordPatch = {
+  rating?: number | null
+  memo?: string | null
+  stop_reason?: string | null
+}
+
+export async function updateLibraryRecord(
+  accessToken: string,
+  userBookId: string,
+  patch: RecordPatch,
+): Promise<void> {
+  await apiRequest(`${libraryBookPath(userBookId)}/record`, accessToken, {
+    method: 'PATCH',
+    body: patch,
+  })
+}
+
+export async function deleteLibraryBook(
+  accessToken: string,
+  userBookId: string,
+): Promise<void> {
+  await apiRequest(libraryBookPath(userBookId), accessToken, { method: 'DELETE' })
 }

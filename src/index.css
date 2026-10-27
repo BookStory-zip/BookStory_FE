@@ -19,6 +19,10 @@
   --color-on-accent: oklch(20% 0.03 150);
   --color-focus: oklch(88% 0.14 118);
   --color-bark: oklch(60% 0.12 45);
+  /* 되돌릴 수 없는 동작: 크림색 글자 대비 4.5:1 이상 */
+  --color-danger: oklch(48% 0.13 35);
+  --color-danger-hover: oklch(42% 0.12 35);
+  --color-dialog-backdrop: oklch(8% 0.02 165 / 0.7);
 
   /* 오두막 책장: 세쿼이아 붉은 갈색 나무와 램프 빛 */
   --color-wall: oklch(18% 0.035 38);
@@ -429,6 +433,393 @@ main.app {
   white-space: nowrap;
 }
 
+/* 책 상세 */
+.back-link {
+  display: inline-block;
+  margin-top: var(--space-6);
+  color: var(--color-muted);
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--color-ink);
+}
+
+.detail {
+  max-width: 44rem;
+  margin-inline: auto;
+}
+
+.detail-head {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.detail-cover {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 2px 4px 4px 2px;
+  object-fit: cover;
+  box-shadow: 4px 4px 14px var(--color-shelf-shadow);
+}
+
+.detail-info {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.detail-info h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  text-shadow: none;
+}
+
+.detail-info .book-status {
+  margin: 0;
+}
+
+.detail-info .book-authors {
+  white-space: normal;
+}
+
+.detail-notice[role='status'] {
+  margin: var(--space-4) 0;
+  padding: 0;
+  border: 0;
+  color: var(--color-accent);
+}
+
+.detail-notice.is-error[role='status'] {
+  color: var(--color-lamp);
+}
+
+.detail-notice:empty {
+  margin: 0;
+}
+
+.detail-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin: 0 0 var(--space-6);
+}
+
+.detail-dates dt {
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+}
+
+.detail-dates dd {
+  margin: 0;
+}
+
+.detail-card {
+  margin-bottom: var(--space-6);
+  padding: var(--space-6) var(--space-4);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background-color: var(--color-veil-bottom);
+}
+
+.detail-card h2 {
+  margin-bottom: var(--space-2);
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.status-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(9rem, 100%), 1fr));
+  gap: var(--space-2);
+}
+
+.status-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.status-option:has(input:checked) {
+  border-color: var(--color-accent);
+}
+
+.status-option:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.status-option input {
+  width: auto;
+  min-height: 0;
+  accent-color: var(--color-accent);
+}
+
+.status-option small {
+  flex-basis: 100%;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.rating-stars {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.star {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  color: var(--color-lamp);
+  font-size: 1.75rem;
+  cursor: pointer;
+}
+
+.star input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.star:has(input:focus-visible) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.rating-stars button {
+  margin-left: var(--space-2);
+}
+
+textarea {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  background-color: var(--color-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  resize: vertical;
+}
+
+.counter {
+  justify-self: end;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.detail-card.danger {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.detail-card.danger button {
+  width: auto;
+  border-color: var(--color-bark);
+  color: var(--color-lamp);
+}
+
+/* 날짜 선택: 기본 날짜 입력 대신 크게 펼치는 월 달력 */
+.date-field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.date-label {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.date-trigger {
+  justify-content: flex-start;
+  border-color: var(--color-rule-strong);
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  font-weight: 400;
+  text-align: left;
+}
+
+.date-trigger:hover:not(:disabled) {
+  background-color: var(--color-paper-2);
+}
+
+.calendar {
+  padding: var(--space-4);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  background-color: var(--color-paper-2);
+}
+
+.calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.calendar-head p {
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+button.calendar-nav {
+  width: 2.75rem;
+  padding: 0;
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--color-ink);
+  font-size: 1.5rem;
+}
+
+button.calendar-nav:hover:not(:disabled) {
+  background-color: var(--color-surface);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+
+.calendar-weekday {
+  padding-bottom: var(--space-1);
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+button.calendar-day {
+  min-height: 2.75rem;
+  padding: 0;
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+button.calendar-day:hover:not(:disabled) {
+  background-color: var(--color-surface);
+}
+
+button.calendar-day.is-outside {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+button.calendar-day.is-today {
+  border-color: var(--color-rule-strong);
+}
+
+button.calendar-day[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+button.calendar-day:disabled {
+  opacity: 0.3;
+}
+
+.calendar-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* 확인창: 브라우저 기본 dialog에 숲 테마 적용 */
+.confirm-dialog {
+  width: min(24rem, calc(100% - 2rem));
+  padding: var(--space-6);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  background-color: var(--color-paper-2);
+  color: var(--color-ink);
+  box-shadow: 0 1.5rem 3rem var(--color-case-shade);
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+}
+
+@starting-style {
+  .confirm-dialog[open] {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.confirm-dialog::backdrop {
+  background-color: var(--color-dialog-backdrop);
+}
+
+.confirm-dialog h2 {
+  margin-bottom: var(--space-3);
+  font-size: 1.125rem;
+  word-break: keep-all;
+}
+
+.confirm-dialog p {
+  color: var(--color-muted);
+  word-break: keep-all;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+
+.confirm-actions button {
+  width: auto;
+}
+
+button.danger {
+  border-color: var(--color-danger);
+  background-color: var(--color-danger);
+  color: var(--color-ink);
+}
+
+button.danger:hover:not(:disabled) {
+  background-color: var(--color-danger-hover);
+}
+
 button.compact {
   width: auto;
   min-height: 2.75rem;
@@ -537,7 +928,15 @@ button.compact {
   display: grid;
   align-content: start;
   gap: var(--space-1);
+  height: 100%;
   min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.book:hover .book-title {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 .book > * {
@@ -692,6 +1091,11 @@ button.more {
   .cabin-smoke,
   .shelf {
     animation: none;
+  }
+
+  .confirm-dialog {
+    transition: opacity 150ms var(--ease-out);
+    transform: none;
   }
 
   button:active:not(:disabled) {

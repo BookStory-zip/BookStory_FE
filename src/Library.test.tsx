@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
@@ -32,6 +33,9 @@ function makeBooks(count: number, prefix: string): LibraryBookItem[] {
   }))
 }
 
+// 표지가 상세 링크이므로 라우터 안에서 그린다.
+const renderInRouter = (ui: ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>)
+
 beforeEach(() => vi.resetAllMocks())
 afterEach(cleanup)
 
@@ -39,7 +43,7 @@ test('더 보기는 받은 개수만큼 offset을 넘겨 다음 페이지를 이
   mocks.getLibraryBooks
     .mockResolvedValueOnce(makeBooks(PAGE_SIZE, 'A'))
     .mockResolvedValueOnce(makeBooks(3, 'B'))
-  render(<Library />)
+  renderInRouter(<Library />)
 
   fireEvent.click(await screen.findByRole('button', { name: '더 보기' }))
 
@@ -54,7 +58,7 @@ test('조회 실패를 빈 서재로 표시하지 않고 재시도할 수 있다
   mocks.getLibraryBooks
     .mockRejectedValueOnce(new ApiError(503))
     .mockResolvedValueOnce(makeBooks(1, 'A'))
-  render(<Library />)
+  renderInRouter(<Library />)
 
   expect((await screen.findByRole('alert')).textContent).toContain('잠시 응답할 수 없습니다')
   expect(screen.queryByText(/아직 서재에 담은 책이 없습니다/)).toBeNull()
@@ -65,7 +69,7 @@ test('조회 실패를 빈 서재로 표시하지 않고 재시도할 수 있다
 
 test('빈 배열이면 빈 서재 안내를 표시한다', async () => {
   mocks.getLibraryBooks.mockResolvedValueOnce([])
-  render(<MemoryRouter><Library /></MemoryRouter>)
+  renderInRouter(<Library />)
   await screen.findByText(/아직 서재에 담은 책이 없습니다/)
   expect(screen.getByRole('link', { name: '책 찾으러 가기' }).getAttribute('href')).toBe('/search')
 })
@@ -75,9 +79,9 @@ test('계정이 바뀐 뒤 도착한 이전 계정 응답은 표시하지 않는
   mocks.getLibraryBooks
     .mockReturnValueOnce(new Promise((resolve) => { resolveA = resolve }))
     .mockResolvedValueOnce(makeBooks(1, 'B'))
-  const { rerender } = render(<Library key="user-A" />)
+  const { rerender } = renderInRouter(<Library key="user-A" />)
 
-  rerender(<Library key="user-B" />)
+  rerender(<MemoryRouter><Library key="user-B" /></MemoryRouter>)
   await screen.findByText('B 책 0')
   resolveA(makeBooks(1, 'A'))
 

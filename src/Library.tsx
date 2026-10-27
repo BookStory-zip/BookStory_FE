@@ -114,7 +114,9 @@ export default function Library() {
       {books.length > 0 && (
         <ul className="shelf">
           {books.map((book) => (
-            <li key={book.id} className="book">
+            <li key={book.id}>
+              {/* 상세 경로에는 공통 책 id가 아닌 서재 id(user_book_id)를 쓴다 */}
+              <Link to={`/books/${book.id}`} className="book">
               {book.thumbnail_url ? (
                 <img
                   className="cover"
@@ -135,6 +137,7 @@ export default function Library() {
               <p className={`book-status status-${book.status}`}>
                 {statusLabels[book.status]}
               </p>
+              </Link>
             </li>
           ))}
         </ul>

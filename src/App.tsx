@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { isAuthError } from '@supabase/supabase-js'
 import { Navigate, NavLink, Route, Routes } from 'react-router'
+import BookDetail from './BookDetail'
 import BookSearch from './BookSearch'
 import { ApiError } from './lib/api'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
@@ -239,6 +240,7 @@ function AuthScreen() {
         <Routes key={userId}>
           <Route index element={<Library />} />
           <Route path="search" element={<BookSearch />} />
+          <Route path="books/:userBookId" element={<BookDetail />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

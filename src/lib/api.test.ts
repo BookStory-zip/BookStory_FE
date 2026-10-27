@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { addLibraryBook, getLibraryBooks, getMe, pickIsbn13, searchBooks } from './api'
+import { addLibraryBook, deleteLibraryBook, getLibraryBooks, getMe, pickIsbn13, searchBooks, updateLibraryRecord } from './api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -144,4 +144,25 @@ test('서재 등록은 isbn13만 JSON으로 보내고 응답 id·상태를 돌�
     headers: { Authorization: 'Bearer test-access-token', 'Content-Type': 'application/json' },
     body: JSON.stringify({ isbn13: '9788936433598' }),
   })
+})
+
+test('서재 삭제 204는 본문을 읽지 않고 성공으로 처리한다', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(deleteLibraryBook('test-access-token', 'user-book-1')).resolves.toBeUndefined()
+  expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/library/books/user-book-1', {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer test-access-token' },
+  })
+})
+
+test('기록 PATCH는 명시적 null을 그대로 보낸다', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(Response.json({ id: 'user-book-1' }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await updateLibraryRecord('test-access-token', 'user-book-1', { rating: null })
+  expect(fetchMock.mock.calls[0][1].body).toBe('{"rating":null}')
 })
