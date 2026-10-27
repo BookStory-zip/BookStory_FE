@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
-import { signIn, subscribeAuthState } from './auth'
+import { signIn, signUp, subscribeAuthState } from './auth'
 
 const { auth } = vi.hoisted(() => ({
   auth: {
     getSession: vi.fn(),
     refreshSession: vi.fn(),
     signInWithPassword: vi.fn(),
+    signUp: vi.fn(),
     signOut: vi.fn(),
     onAuthStateChange: vi.fn(),
   },
@@ -59,6 +60,9 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
   vi.stubGlobal('fetch', fetchMock)
+  vi.stubGlobal('window', {
+    location: { origin: 'http://localhost:5173' },
+  })
   fetchMock.mockRejectedValue(new Error('예상하지 않은 API 요청'))
   currentSession = null
 
@@ -198,4 +202,48 @@ test('구독 해제 후에는 진행 중 요청의 결과를 전달하지 않는
 
   expect(onChange).not.toHaveBeenCalled()
   expect(unsubscribeMock).toHaveBeenCalledTimes(1)
+})
+
+test('세션 없는 가입 성공을 이메일 확인 대기 상태로 반환한다', async () => {
+  auth.signUp.mockResolvedValue({
+    data: { session: null },
+    error: null,
+  })
+
+  await expect(
+    signUp('reader@example.test', ' password '),
+  ).resolves.toEqual({ hasSession: false })
+
+  expect(auth.signUp).toHaveBeenCalledWith({
+    email: 'reader@example.test',
+    password: ' password ',
+    options: { emailRedirectTo: 'http://localhost:5173/' },
+  })
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('가입 응답에 세션이 있으면 그 사실만 반환한다', async () => {
+  auth.signUp.mockResolvedValue({
+    data: { session: sessionA },
+    error: null,
+  })
+
+  await expect(
+    signUp('reader@example.test', ' password '),
+  ).resolves.toEqual({ hasSession: true })
+
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('회원가입 SDK 오류를 성공으로 바꾸지 않고 전달한다', async () => {
+  const error = new Error('SMTP request failed')
+  auth.signUp.mockResolvedValue({
+    data: { session: null },
+    error,
+  })
+
+  await expect(
+    signUp('reader@example.test', ' password '),
+  ).rejects.toBe(error)
+  expect(fetchMock).not.toHaveBeenCalled()
 })

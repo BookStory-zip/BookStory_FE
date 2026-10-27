@@ -132,3 +132,20 @@ export function subscribeAuthState(
     data.subscription.unsubscribe()
   }
 }
+
+export async function signUp(
+  email: string,
+  password: string,
+): Promise<{ hasSession: boolean }> {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: `${window.location.origin}/`,
+    },
+  })
+
+  if (error) throw error
+
+  return { hasSession: data.session !== null }
+}
