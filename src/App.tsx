@@ -206,6 +206,7 @@ function AuthScreen() {
   return (
     <main>
       <h1>BookStory</h1>
+      <p className="tagline">읽은 날을 한 권씩 꽂아 두는 서재</p>
       <p role="status">{message}</p>
 
       {isAuthenticated ? (
@@ -277,6 +278,7 @@ function AuthScreen() {
 
           <button
             type="button"
+            className="secondary"
             onClick={handleAuthModeChange}
             disabled={isCheckingSession || isSubmitting}
           >

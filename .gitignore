@@ -29,3 +29,4 @@ dist-ssr
 
 # Local scaffold reference and generated artifacts
 /bookstory-scaffold/
+.playwright-mcp/

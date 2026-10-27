@@ -14,7 +14,7 @@ React·TypeScript·Vite 기본 앱과 환경변수 양식, Supabase SDK 회원�
 
 현재 상태는 **로그인·세션 관리와 회원가입·이메일 인증 안내 단위 완료**입니다. 가입 폼은 비밀번호 확인과 한국어 오류 안내를 제공하며, 세션 없는 가입 성공은 이메일 확인 대기로 표시합니다. 세션이 생겨도 `/me` 성공을 기다립니다. Gmail SMTP 인증 거절(535)을 서버 로그로 확인한 뒤 사용자가 설정을 수정했고, 실제 메일 수신·인증 링크 복귀 후 사용자 확인 완료를 보고했습니다. SMTP 비밀번호는 Supabase에만 설정하며 프론트에 저장하지 않습니다.
 
-세션 변경 시 이전 인증 표시와 입력을 정리하고, 늦은 `/me` 응답과 이전 버튼 요청의 결과를 무시합니다. 계정 A/B 전환과 늦은 응답은 mock 검증이며 실제 서로 다른 두 계정의 브라우저 전환은 별도로 남아 있습니다. 비밀번호 재설정은 2026-10-27 사용자가 로컬 브라우저에서 메일 수신 → 링크 복귀 → 새 비밀번호 저장 → 재로그인·`/me` 성공을 확인하여 **인증 단위를 완료**했습니다. 개인 서재 기능·화면 디자인, React Router·TanStack Query, 개인 캐시·라우트 보호, FE CI/CD와 Vercel 배포는 아직 구성하지 않았습니다.
+세션 변경 시 이전 인증 표시와 입력을 정리하고, 늦은 `/me` 응답과 이전 버튼 요청의 결과를 무시합니다. 계정 A/B 전환과 늦은 응답은 mock 검증이며 실제 서로 다른 두 계정의 브라우저 전환은 별도로 남아 있습니다. 비밀번호 재설정은 2026-10-27 사용자가 로컬 브라우저에서 메일 수신 → 링크 복귀 → 새 비밀번호 저장 → 재로그인·`/me` 성공을 확인하여 **인증 단위를 완료**했습니다. 디자인 기준(어두운 숲 테마)을 정해 인증 화면에 적용했습니다. 개인 서재 기능, React Router·TanStack Query, 개인 캐시·라우트 보호, FE CI/CD와 Vercel 배포는 아직 구성하지 않았습니다.
 
 ### 백엔드 확인 기준
 
@@ -38,7 +38,7 @@ MVP는 이메일 회원가입·인증 안내·로그인·로그아웃·세션 �
 | 확정 | React 웹앱, Vercel 배포, 비용 최소화, 모바일 중심 |
 | 현재 앱 구성 | TypeScript + Vite SPA |
 | 현재 데이터 처리 | 기본 `fetch`, Supabase JavaScript SDK 초기화 |
-| 현재 스타일 | 기본 전역 CSS. CSS Modules와 공통 CSS 변수는 화면 구성 단계에서 적용 검토 |
+| 현재 스타일 | `src/index.css`의 전역 CSS와 `:root` 변수. 어두운 숲 테마, 고운바탕·IBM Plex Sans KR(Google Fonts). 인증 화면 배경 `public/forest.jpg`는 [Valeriia Neganova, Unsplash License](https://unsplash.com/photos/sunlight-streams-through-a-redwood-forest-canopy-NEGTKMK5wtM) |
 | 현재 검사 | ESLint, Vitest, React Testing Library·jsdom, TypeScript 검사와 Vite 빌드 |
 | 후속 도입 검토 | React Router, TanStack Query, 핵심 흐름의 Playwright |
 

@@ -184,8 +184,10 @@ export default function PasswordReset({ recovery = false }: { recovery?: boolean
       <p role="status">{message}</p>
       {phase === 'request' && (
         <form ref={formRef} aria-label="재설정 메일 요청" onSubmit={handleSubmit}>
-          <label htmlFor="reset-email">이메일</label>
-          <input id="reset-email" name="email" type="email" autoComplete="username" disabled={busy} required />
+          <div>
+            <label htmlFor="reset-email">이메일</label>
+            <input id="reset-email" name="email" type="email" autoComplete="username" disabled={busy} required />
+          </div>
           <button type="submit" disabled={busy}>{busy ? '요청 중…' : '재설정 메일 보내기'}</button>
         </form>
       )}
@@ -210,7 +212,7 @@ export default function PasswordReset({ recovery = false }: { recovery?: boolean
         <p><a href="/reset-password">새 재설정 메일 요청</a></p>
       )}
       {phase === 'error' && (
-        <button type="button" onClick={() => window.location.reload()}>다시 확인</button>
+        <button type="button" className="secondary" onClick={() => window.location.reload()}>다시 확인</button>
       )}
       {phase !== 'saved' && <p><a href="/">로그인 화면으로</a></p>}
     </main>
