@@ -1,18 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { ApiError, getLibraryBooks } from './lib/api'
-import type { LibraryBookItem, ReadingStatus } from './lib/api'
+import { ApiError, getLibraryBooks, statusLabels } from './lib/api'
+import type { LibraryBookItem } from './lib/api'
 import { withAccessToken } from './lib/auth'
+import { Link } from 'react-router'
 import CabinIcon from './CabinIcon'
 
 export const PAGE_SIZE = 20
-
-const statusLabels: Record<ReadingStatus, string> = {
-  want_to_read: '읽고 싶음',
-  reading: '읽는 중',
-  completed: '완독',
-  paused: '중단',
-  abandoned: '포기',
-}
 
 function errorMessage(error: unknown) {
   if (error instanceof ApiError) {
@@ -112,7 +105,9 @@ export default function Library() {
 
       {phase === 'ready' && books.length === 0 && (
         <div className="shelf-empty">
-          <p>아직 서재에 담은 책이 없습니다.</p>
+          <p>
+            아직 서재에 담은 책이 없습니다. <Link to="/search">책 찾으러 가기</Link>
+          </p>
         </div>
       )}
 

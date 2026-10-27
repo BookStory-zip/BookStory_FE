@@ -285,6 +285,7 @@ main.app {
 
 .app-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
@@ -307,6 +308,127 @@ main.app {
   color: var(--color-plank);
 }
 
+.app-nav {
+  display: flex;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+/* 좁은 화면에서는 메뉴를 워드마크·로그아웃 아래 한 줄로 내린다 */
+@media (max-width: 25rem) {
+  .app-nav {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+.app-nav a {
+  padding: var(--space-2) 0;
+  border-bottom: 2px solid transparent;
+  color: var(--color-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-nav a:hover {
+  color: var(--color-ink);
+}
+
+.app-nav a[aria-current='page'] {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-ink);
+}
+
+.search h1 {
+  margin: var(--space-8) 0 var(--space-6);
+  font-size: 1.75rem;
+  text-shadow: none;
+}
+
+.search-form {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  padding: 0;
+  border: 0;
+}
+
+.search-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-form button {
+  width: auto;
+}
+
+.results {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.result {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background-color: var(--color-veil-bottom);
+}
+
+.result-cover {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 2px 4px 4px 2px;
+  object-fit: cover;
+  box-shadow: 3px 3px 8px var(--color-shelf-shadow);
+}
+
+.result-cover.cover-empty {
+  font-size: 1.5rem;
+}
+
+.result-body {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.result-body .book-authors {
+  max-width: 100%;
+}
+
+.result-note {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.result-note.is-error {
+  color: var(--color-lamp);
+}
+
+.result-note[role='status'] {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 button.compact {
   width: auto;
   min-height: 2.75rem;
@@ -318,7 +440,7 @@ button.compact {
   text-shadow: none;
 }
 
-.library h1 + .library-sub {
+:is(.library, .search) h1 + .library-sub {
   margin: calc(var(--space-6) * -1 + var(--space-1)) 0 var(--space-6);
   color: var(--color-muted);
   font-size: 0.9375rem;

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
 import type { LibraryBookItem } from './lib/api'
@@ -56,7 +57,7 @@ test('조회 실패를 빈 서재로 표시하지 않고 재시도할 수 있다
   render(<Library />)
 
   expect((await screen.findByRole('alert')).textContent).toContain('잠시 응답할 수 없습니다')
-  expect(screen.queryByText('아직 서재에 담은 책이 없습니다.')).toBeNull()
+  expect(screen.queryByText(/아직 서재에 담은 책이 없습니다/)).toBeNull()
 
   fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
   await screen.findByText('A 책 0')
@@ -64,8 +65,9 @@ test('조회 실패를 빈 서재로 표시하지 않고 재시도할 수 있다
 
 test('빈 배열이면 빈 서재 안내를 표시한다', async () => {
   mocks.getLibraryBooks.mockResolvedValueOnce([])
-  render(<Library />)
-  await screen.findByText('아직 서재에 담은 책이 없습니다.')
+  render(<MemoryRouter><Library /></MemoryRouter>)
+  await screen.findByText(/아직 서재에 담은 책이 없습니다/)
+  expect(screen.getByRole('link', { name: '책 찾으러 가기' }).getAttribute('href')).toBe('/search')
 })
 
 test('계정이 바뀐 뒤 도착한 이전 계정 응답은 표시하지 않는다', async () => {

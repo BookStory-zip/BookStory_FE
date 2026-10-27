@@ -28,9 +28,11 @@ function readDetail(body: unknown): string | undefined {
   return undefined
 }
 
+// accessToken이 null이면 공개 API로 인증 헤더 없이 요청한다.
 export async function apiRequest(
   path: string,
-  accessToken: string,
+  accessToken: string | null,
+  options: { method?: 'POST'; body?: unknown } = {},
 ): Promise<unknown> {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
 
@@ -38,10 +40,14 @@ export async function apiRequest(
     throw new Error('API 주소 설정이 필요합니다.')
   }
 
+  const headers: Record<string, string> = {}
+  if (accessToken !== null) headers.Authorization = `Bearer ${accessToken}`
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
+    headers,
+    ...(options.method && { method: options.method }),
+    ...(options.body !== undefined && { body: JSON.stringify(options.body) }),
   })
 
   if (!response.ok) {
@@ -80,6 +86,14 @@ export const readingStatuses = [
 ] as const
 
 export type ReadingStatus = (typeof readingStatuses)[number]
+
+export const statusLabels: Record<ReadingStatus, string> = {
+  want_to_read: '읽고 싶음',
+  reading: '읽는 중',
+  completed: '완독',
+  paused: '중단',
+  abandoned: '포기',
+}
 
 export type LibraryBookItem = {
   id: string
@@ -124,4 +138,76 @@ export async function getLibraryBooks(
   }
 
   return data
+}
+
+const ISBN13_PATTERN = /^97[89][0-9]{10}$/
+
+// 공급자 isbn은 "ISBN10 ISBN13"처럼 공백으로 이어질 수 있다. ISBN13이 없으면 null.
+export function pickIsbn13(isbn: unknown): string | null {
+  if (typeof isbn !== 'string') return null
+  return isbn.split(/\s+/).find((part) => ISBN13_PATTERN.test(part)) ?? null
+}
+
+export type SearchBook = {
+  title: string
+  authors: string[]
+  publisher: string
+  thumbnail: string | null
+  isbn13: string | null
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+export async function searchBooks(query: string): Promise<SearchBook[]> {
+  const params = new URLSearchParams({ query })
+  const data = await apiRequest(`/books/search?${params}`, null)
+
+  if (
+    typeof data !== 'object' ||
+    data === null ||
+    !('documents' in data) ||
+    !Array.isArray(data.documents)
+  ) {
+    throw new Error('검색 응답 형식이 올바르지 않습니다.')
+  }
+
+  // 공급자 데이터의 누락·null·빈 문자열을 화면에서 쓰기 전에 정리한다.
+  return data.documents
+    .filter((item: unknown): item is Record<string, unknown> =>
+      typeof item === 'object' && item !== null,
+    )
+    .map((item) => ({
+      title: text(item.title),
+      authors: Array.isArray(item.authors)
+        ? item.authors.map(text).filter(Boolean)
+        : [],
+      publisher: text(item.publisher),
+      thumbnail: text(item.thumbnail) || null,
+      isbn13: pickIsbn13(item.isbn),
+    }))
+}
+
+export async function addLibraryBook(
+  accessToken: string,
+  isbn13: string,
+): Promise<{ id: string; status: ReadingStatus }> {
+  const data = await apiRequest('/library/books', accessToken, {
+    method: 'POST',
+    body: { isbn13 },
+  })
+
+  if (
+    typeof data !== 'object' ||
+    data === null ||
+    !('id' in data) ||
+    typeof data.id !== 'string' ||
+    !('status' in data) ||
+    !readingStatuses.includes(data.status as ReadingStatus)
+  ) {
+    throw new Error('서재 등록 응답 형식이 올바르지 않습니다.')
+  }
+
+  return { id: data.id, status: data.status as ReadingStatus }
 }

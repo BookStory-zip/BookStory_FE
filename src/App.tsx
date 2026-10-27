@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { isAuthError } from '@supabase/supabase-js'
-import { Navigate, Route, Routes } from 'react-router'
+import { Navigate, NavLink, Route, Routes } from 'react-router'
+import BookSearch from './BookSearch'
 import { ApiError } from './lib/api'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
 import CabinIcon from './CabinIcon'
@@ -11,13 +12,13 @@ import PasswordReset from './PasswordReset'
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<AuthScreen />} />
       <Route path="/reset-password" element={<PasswordReset key="request" />} />
       <Route
         path="/reset-password/update"
         element={<PasswordReset key="update" recovery />}
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* 그 밖의 경로는 인증 화면이 받고, /me 확인 뒤에만 개인 화면 경로를 연다 */}
+      <Route path="*" element={<AuthScreen />} />
     </Routes>
   )
 }
@@ -220,6 +221,10 @@ function AuthScreen() {
             <CabinIcon className="wordmark-icon" />
             BookStory
           </p>
+          <nav className="app-nav" aria-label="주요 메뉴">
+            <NavLink to="/" end>서재</NavLink>
+            <NavLink to="/search">책 찾기</NavLink>
+          </nav>
           <button
             type="button"
             className="secondary compact"
@@ -230,8 +235,12 @@ function AuthScreen() {
           </button>
         </header>
         <p role="status">{message}</p>
-        {/* 계정이 바뀌면 서재를 새로 마운트해 이전 계정의 목록·늦은 응답을 버린다 */}
-        <Library key={userId} />
+        {/* 계정이 바뀌면 개인 화면을 새로 마운트해 이전 계정의 목록·늦은 응답을 버린다 */}
+        <Routes key={userId}>
+          <Route index element={<Library />} />
+          <Route path="search" element={<BookSearch />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </main>
     )
   }

@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { getLibraryBooks, getMe } from './api'
+import { addLibraryBook, getLibraryBooks, getMe, pickIsbn13, searchBooks } from './api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -97,3 +97,51 @@ test.each([{ total: 1 }, [{ id: 'x', title: '제목' }], [{ status: 'unknown' }]
     )
   },
 )
+
+test.each([
+  ['8936433598 9788936433598', '9788936433598'],
+  ['9788936433598', '9788936433598'],
+  ['8936433598', null],
+  ['', null],
+  [null, null],
+  ['1234567890123', null],
+])('공급자 isbn %j에서 ISBN13만 고른다', (isbn, expected) => {
+  expect(pickIsbn13(isbn)).toBe(expected)
+})
+
+test('검색은 인증 헤더 없이 요청하고 누락·null·빈 문자열을 정리한다', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(Response.json({
+    documents: [
+      { title: ' 소년이 온다 ', authors: ['한강', '', null], publisher: null, thumbnail: '', isbn: '8936433598 9788936433598' },
+      { isbn: '8936433598' },
+      null,
+    ],
+    meta: { total_count: 2 },
+  }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(searchBooks('소년이 온다')).resolves.toEqual([
+    { title: '소년이 온다', authors: ['한강'], publisher: '', thumbnail: null, isbn13: '9788936433598' },
+    { title: '', authors: [], publisher: '', thumbnail: null, isbn13: null },
+  ])
+  const [url, init] = fetchMock.mock.calls[0]
+  expect(url).toBe('https://api.example.test/books/search?query=%EC%86%8C%EB%85%84%EC%9D%B4+%EC%98%A8%EB%8B%A4')
+  expect(init.headers).toEqual({})
+})
+
+test('서재 등록은 isbn13만 JSON으로 보내고 응답 id·상태를 돌려준다', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(Response.json({ id: 'user-book-1', book_id: 'book-1', status: 'reading' }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(addLibraryBook('test-access-token', '9788936433598')).resolves.toEqual({
+    id: 'user-book-1',
+    status: 'reading',
+  })
+  expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/library/books', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer test-access-token', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isbn13: '9788936433598' }),
+  })
+})
