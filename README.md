@@ -14,7 +14,7 @@ React·TypeScript·Vite 기본 앱과 환경변수 양식, Supabase SDK 회원�
 
 현재 상태는 **로그인·세션 관리와 회원가입·이메일 인증 안내 단위 완료**입니다. 가입 폼은 비밀번호 확인과 한국어 오류 안내를 제공하며, 세션 없는 가입 성공은 이메일 확인 대기로 표시합니다. 세션이 생겨도 `/me` 성공을 기다립니다. Gmail SMTP 인증 거절(535)을 서버 로그로 확인한 뒤 사용자가 설정을 수정했고, 실제 메일 수신·인증 링크 복귀 후 사용자 확인 완료를 보고했습니다. SMTP 비밀번호는 Supabase에만 설정하며 프론트에 저장하지 않습니다.
 
-세션 변경 시 이전 인증 표시와 입력을 정리하고, 늦은 `/me` 응답과 이전 버튼 요청의 결과를 무시합니다. 계정 A/B 전환과 늦은 응답은 mock 검증이며 실제 서로 다른 두 계정의 브라우저 전환은 별도로 남아 있습니다. 현재 비밀번호 재설정 단위는 코드·자동 검사를 마쳤고 실제 메일 링크·새 비밀번호 로그인 확인을 기다립니다. 개인 서재 기능·화면 디자인, React Router·TanStack Query, 개인 캐시·라우트 보호, FE CI/CD와 Vercel 배포는 아직 구성하지 않았습니다.
+세션 변경 시 이전 인증 표시와 입력을 정리하고, 늦은 `/me` 응답과 이전 버튼 요청의 결과를 무시합니다. 계정 A/B 전환과 늦은 응답은 mock 검증이며 실제 서로 다른 두 계정의 브라우저 전환은 별도로 남아 있습니다. 비밀번호 재설정은 2026-10-27 사용자가 로컬 브라우저에서 메일 수신 → 링크 복귀 → 새 비밀번호 저장 → 재로그인·`/me` 성공을 확인하여 **인증 단위를 완료**했습니다. 개인 서재 기능·화면 디자인, React Router·TanStack Query, 개인 캐시·라우트 보호, FE CI/CD와 Vercel 배포는 아직 구성하지 않았습니다.
 
 ### 백엔드 확인 기준
 
@@ -100,7 +100,7 @@ BE에는 `/login`·`/signup`이 없습니다. BE 요청은 `Authorization: Beare
 - 비밀번호·확인 값을 입력하고 저장 성공 후 `로그아웃 후 로그인하기`로 새 비밀번호 로그인을 확인합니다. 중복 제출을 막고 일반 저장 실패 시 입력을 보존합니다. 계정 변경·로그아웃 때 폼을 닫고 늦은 결과를 무시하며, 사용자 확인 중이면 저장 요청 시작도 차단합니다. 이미 전송한 변경 요청은 취소됐다고 보장하지 않습니다.
 - `vercel.json`에 SPA 경로 rewrite를 준비했습니다. Vercel 배포 후 상세 경로 새로고침·메일 복귀는 별도 확인합니다. 운영·Preview 주소도 Supabase 허용 목록에 따로 등록해야 합니다.
 
-2026-10-27 코드의 테스트·lint·타입 검사·빌드를 확인했습니다. 실제 재설정 메일 수신 → 링크 복귀 → 변경 → 새 비밀번호 로그인은 아직 사용자 확인 전입니다. [Supabase 메일 재설정](https://supabase.com/docs/reference/javascript/auth-resetpasswordforemail), [리다이렉트 설정](https://supabase.com/docs/guides/auth/redirect-urls), [Vercel Vite SPA 경로](https://vercel.com/docs/frameworks/frontend/vite)를 참고합니다.
+2026-10-27 코드의 테스트·lint·타입 검사·빌드를 확인했고, 로컬(Site URL `http://localhost:5173`)에서 실제 재설정 메일 수신 → 링크 복귀 → 변경 → 새 비밀번호 로그인을 사용자가 확인했습니다. 운영·Preview 주소는 배포 단계에서 따로 확인합니다. [Supabase 메일 재설정](https://supabase.com/docs/reference/javascript/auth-resetpasswordforemail), [리다이렉트 설정](https://supabase.com/docs/guides/auth/redirect-urls), [Vercel Vite SPA 경로](https://vercel.com/docs/frameworks/frontend/vite)를 참고합니다.
 
 세션 저장·복원·갱신은 SDK를 사용합니다. 401에서는 갱신 가능한 세션을 확인하고 재요청은 최대 한 번으로 제한합니다. JWKS 접근 실패 등의 503은 로그아웃 사유로 취급하지 않습니다. 로그아웃·계정 변경 시 개인 캐시와 진행 중인 요청을 정리하여 이전 계정의 늦은 응답을 차단합니다.
 
