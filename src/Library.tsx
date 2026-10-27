@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ApiError, getLibraryBooks } from './lib/api'
 import type { LibraryBookItem, ReadingStatus } from './lib/api'
 import { withAccessToken } from './lib/auth'
+import CabinIcon from './CabinIcon'
 
 export const PAGE_SIZE = 20
 
@@ -89,11 +90,15 @@ export default function Library() {
   return (
     <section className="library" aria-labelledby="library-title" aria-busy={phase === 'loading'}>
       <h1 id="library-title">내 서재</h1>
+      <p className="library-sub">숲속 오두막 책장에 꽂아 둔 책</p>
 
       {phase === 'loading' && (
-        <p className="library-note">
-          {slow ? '서버를 깨우는 중입니다. 처음 접속하면 30초 정도 걸릴 수 있습니다.' : '서재를 불러오고 있습니다.'}
-        </p>
+        <div className="cabin-loading">
+          <CabinIcon className="cabin-icon" />
+          <p>
+            {slow ? '서버를 깨우는 중입니다. 처음 접속하면 30초 정도 걸릴 수 있습니다.' : '오두막 문을 여는 중…'}
+          </p>
+        </div>
       )}
 
       {phase === 'error' && (
@@ -106,7 +111,9 @@ export default function Library() {
       )}
 
       {phase === 'ready' && books.length === 0 && (
-        <p className="library-note">아직 서재에 담은 책이 없습니다.</p>
+        <div className="shelf-empty">
+          <p>아직 서재에 담은 책이 없습니다.</p>
+        </div>
       )}
 
       {books.length > 0 && (

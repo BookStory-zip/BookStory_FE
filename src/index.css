@@ -1,7 +1,8 @@
 /* Hallmark · scope: app screens (auth) · genre: atmospheric · route: custom (tuned)
  * vibe: "깊은 세쿼이아 숲, 빛줄기, 젖은 고사리" · paper: oklch(17% 0.02 160) · accent: oklch(84% 0.13 122)
  * display: Gowun Batang · body: IBM Plex Sans KR · axes: dark / roman-serif / chromatic-fern
- * photo: Valeriia Neganova (Unsplash License) — public/forest.jpg
+ * photo: Valeriia Neganova (Unsplash License) — public/forest.jpg (로그인)
+ * photo: Billy Huynh (Unsplash License) — public/library-forest.jpg (서재, 흐리게)
  */
 :root {
   /* 숲 바닥의 어둠 위에 빛 받은 고사리색 한 가지 포인트, 세쿼이아 껍질색은 장식에만 */
@@ -18,6 +19,28 @@
   --color-on-accent: oklch(20% 0.03 150);
   --color-focus: oklch(88% 0.14 118);
   --color-bark: oklch(60% 0.12 45);
+
+  /* 오두막 책장: 세쿼이아 붉은 갈색 나무와 램프 빛 */
+  --color-wall: oklch(18% 0.035 38);
+  --color-wall-top: oklch(24% 0.045 40);
+  --color-wall-seam: oklch(19% 0.03 50);
+  --color-plank: oklch(44% 0.08 42);
+  --color-plank-top: oklch(58% 0.09 48);
+  --color-plank-edge: oklch(30% 0.06 38);
+  --color-frame-light: oklch(55% 0.1 42);
+  --color-frame-dark: oklch(30% 0.07 35);
+  --color-shelf-shadow: oklch(8% 0.02 35 / 0.8);
+  --color-case-shade: oklch(8% 0.02 35 / 0.85);
+  --color-lamp-spill: oklch(68% 0.1 68 / 0.2);
+  --color-lamp-inner: oklch(82% 0.1 75 / 0.35);
+  /* 나뭇결: 가로로 길게 늘인 노이즈를 갈색으로 칠한 SVG */
+  --wood-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='120'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012 0.9' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.32 0 0 0 0 0.17 0 0 0 0 0.09 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  --color-spine-highlight: oklch(96% 0.01 80 / 0.1);
+  --color-lamp: oklch(84% 0.11 78);
+  --color-lamp-glow: oklch(70% 0.1 70 / 0.22);
+  /* 서재 배경의 어둠: 위는 숲이 비치고 아래로 갈수록 짙다 */
+  --color-veil-top: oklch(12% 0.02 165 / 0.35);
+  --color-veil-bottom: oklch(10% 0.02 165 / 0.85);
   --color-shade: oklch(17% 0.02 160 / 0);
 
   --font-display: 'Gowun Batang', serif;
@@ -37,6 +60,7 @@
   --content-width: 26rem;
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --dur-fast: 120ms;
 
   font-family: var(--font-body);
@@ -225,9 +249,32 @@ main > p:has(a) {
   border: 0;
 }
 
-/* 로그인 후 화면: 숲 사진 없이 같은 숲 바닥색과 변수를 쓴다 */
+/* 로그인 후 화면: 밤 숲속에 불 켜진 책장 하나. 숲은 흐리고 어둡게 분위기만 남긴다 */
+#root:has(main.app) {
+  position: relative;
+  isolation: isolate;
+}
+
+/* 흐린 숲 사진. 흐림 가장자리가 비치지 않게 화면보다 크게 깐다 */
 #root:has(main.app)::before {
-  display: none;
+  position: fixed;
+  z-index: -2;
+  inset: -2rem;
+  height: auto;
+  min-height: 0;
+  background: url('/library-forest.jpg') center / cover;
+  filter: blur(10px) saturate(0.8) brightness(0.55);
+}
+
+/* 책장 쪽에서 번지는 램프 빛과 아래로 짙어지는 어둠 */
+#root:has(main.app)::after {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 42%, var(--color-lamp-spill), transparent 70%),
+    linear-gradient(to bottom, var(--color-veil-top), var(--color-veil-bottom));
 }
 
 main.app {
@@ -246,9 +293,18 @@ main.app {
 }
 
 .wordmark {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-family: var(--font-display);
   font-size: 1.25rem;
   font-weight: 700;
+}
+
+.wordmark-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--color-plank);
 }
 
 button.compact {
@@ -262,6 +318,12 @@ button.compact {
   text-shadow: none;
 }
 
+.library h1 + .library-sub {
+  margin: calc(var(--space-6) * -1 + var(--space-1)) 0 var(--space-6);
+  color: var(--color-muted);
+  font-size: 0.9375rem;
+}
+
 .library-note {
   display: grid;
   gap: var(--space-4);
@@ -273,13 +335,80 @@ button.compact {
   width: auto;
 }
 
-.shelf {
+.cabin-loading {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(9rem, 40%), 1fr));
-  gap: var(--space-8) var(--space-4);
+  justify-items: center;
+  gap: var(--space-4);
+  padding: var(--space-12) 0;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.cabin-icon {
+  width: 5rem;
+  height: 5rem;
+  color: var(--color-plank);
+  filter: drop-shadow(0 0 1.5rem var(--color-lamp-glow));
+}
+
+.cabin-window {
+  fill: var(--color-lamp);
+  animation: lamp-flicker 1.8s var(--ease-in-out) infinite alternate;
+}
+
+.cabin-door {
+  fill: var(--color-plank-edge);
+}
+
+.cabin-smoke {
+  opacity: 0.6;
+  animation: smoke-rise 2.4s var(--ease-out) infinite;
+}
+
+@keyframes lamp-flicker {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes smoke-rise {
+  from {
+    opacity: 0.7;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* 오두막 책장: 나뭇결 판자 뒷벽·나무 테두리·안쪽 램프 빛. 표지 아래 판자를 칸 간격만큼 늘려 한 줄로 잇는다 */
+.shelf,
+.shelf-empty {
+  border: 0.25rem solid transparent;
+  border-image: linear-gradient(135deg, var(--color-frame-light), var(--color-frame-dark)) 1;
+  background:
+    radial-gradient(ellipse 80% 10rem at 50% 0, var(--color-lamp-inner), transparent 75%),
+    /* 가로 반복 이음매가 보이지 않게 한 장을 폭 전체로 늘린다 */
+    var(--wood-grain) 0 0 / 100% 7.5rem,
+    linear-gradient(to bottom, var(--color-wall-top), var(--color-wall));
+  box-shadow:
+    inset 0 0 2rem var(--color-case-shade),
+    0 1.5rem 3rem var(--color-case-shade);
+}
+
+.shelf {
+  --shelf-gap: var(--space-3);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(7rem, 30%), 1fr));
+  gap: var(--space-6) var(--shelf-gap);
   margin: 0;
-  padding: 0;
+  padding: var(--space-6) calc(var(--shelf-gap) / 2) var(--space-4);
   list-style: none;
+  animation: shelf-in 420ms var(--ease-out);
 }
 
 .book {
@@ -289,22 +418,47 @@ button.compact {
   min-width: 0;
 }
 
+.book > * {
+  order: 2;
+  padding-inline: var(--space-2);
+}
+
+.book > .cover {
+  order: 0;
+  padding: 0;
+}
+
+.book::after {
+  content: '';
+  order: 1;
+  height: 0.625rem;
+  /* 이웃 칸 판자와 1px 겹쳐 이음매가 보이지 않게 한다 */
+  margin: 0 calc(var(--shelf-gap) / -2 - 1px) var(--space-2);
+  background:
+    var(--wood-grain),
+    linear-gradient(var(--color-plank-top), var(--color-plank) 55%, var(--color-plank-edge));
+  box-shadow: 0 0.5rem 0.7rem var(--color-shelf-shadow);
+}
+
 .cover {
   display: block;
-  width: 100%;
+  width: 84%;
+  justify-self: center;
   aspect-ratio: 2 / 3;
-  margin-bottom: var(--space-2);
-  border-radius: 0.25rem;
+  border-radius: 2px 4px 4px 2px;
   object-fit: cover;
-  background-color: var(--color-paper-2);
-  box-shadow: 0 6px 18px oklch(8% 0.02 160 / 0.55);
+  background-color: var(--color-wall-seam);
+  box-shadow:
+    4px 4px 12px var(--color-shelf-shadow),
+    inset 3px 0 0 var(--color-spine-highlight);
 }
 
 .cover-empty {
   display: grid;
   place-items: center;
-  border: 1px solid var(--color-rule);
-  color: var(--color-muted);
+  border: 1px solid var(--color-plank-edge);
+  background: linear-gradient(135deg, var(--color-plank), var(--color-plank-edge));
+  color: var(--color-ink);
   font-family: var(--font-display);
   font-size: 2rem;
 }
@@ -329,7 +483,7 @@ button.compact {
 
 .book-status {
   justify-self: start;
-  margin-top: var(--space-1);
+  margin: var(--space-1) var(--space-2) 0;
   padding: 0 var(--space-2);
   border: 1px solid var(--color-rule-strong);
   border-radius: 999px;
@@ -343,13 +497,38 @@ button.compact {
 }
 
 .status-completed {
-  border-color: var(--color-bark);
-  color: var(--color-ink);
+  border-color: var(--color-lamp);
+  color: var(--color-lamp);
+}
+
+/* 빈 책장: 틀은 위 공통 규칙, 안쪽에 빈 선반만 반복 */
+.shelf-empty {
+  display: grid;
+  align-content: end;
+  min-height: 15rem;
+  padding: var(--space-4);
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 4.375rem,
+      var(--color-plank) 4.375rem 5rem
+    ),
+    /* 가로 반복 이음매가 보이지 않게 한 장을 폭 전체로 늘린다 */
+    var(--wood-grain) 0 0 / 100% 7.5rem,
+    linear-gradient(to bottom, var(--color-wall-top), var(--color-wall));
+  color: var(--color-muted);
 }
 
 button.more {
   width: auto;
   margin-top: var(--space-8);
+}
+
+@keyframes shelf-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 
 @media (min-width: 60rem) {
@@ -385,6 +564,12 @@ button.more {
 @media (prefers-reduced-motion: reduce) {
   button {
     transition: none;
+  }
+
+  .cabin-window,
+  .cabin-smoke,
+  .shelf {
+    animation: none;
   }
 
   button:active:not(:disabled) {

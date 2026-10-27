@@ -4,6 +4,7 @@ import { isAuthError } from '@supabase/supabase-js'
 import { Navigate, Route, Routes } from 'react-router'
 import { ApiError } from './lib/api'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
+import CabinIcon from './CabinIcon'
 import Library from './Library'
 import PasswordReset from './PasswordReset'
 
@@ -215,7 +216,10 @@ function AuthScreen() {
     return (
       <main className="app">
         <header className="app-header">
-          <p className="wordmark">BookStory</p>
+          <p className="wordmark">
+            <CabinIcon className="wordmark-icon" />
+            BookStory
+          </p>
           <button
             type="button"
             className="secondary compact"

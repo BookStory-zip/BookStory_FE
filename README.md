@@ -38,7 +38,7 @@ MVP는 이메일 회원가입·인증 안내·로그인·로그아웃·세션 �
 | 확정 | React 웹앱, Vercel 배포, 비용 최소화, 모바일 중심 |
 | 현재 앱 구성 | TypeScript + Vite SPA |
 | 현재 데이터 처리 | 기본 `fetch`와 `src/lib/api.ts` 공통 요청, Supabase JavaScript SDK, React Router 8.4.0 |
-| 현재 스타일 | `src/index.css`의 전역 CSS와 `:root` 변수. 어두운 숲 테마, 고운바탕·IBM Plex Sans KR(Google Fonts). 인증 화면 배경 `public/forest.jpg`는 [Valeriia Neganova, Unsplash License](https://unsplash.com/photos/sunlight-streams-through-a-redwood-forest-canopy-NEGTKMK5wtM) |
+| 현재 스타일 | `src/index.css`의 전역 CSS와 `:root` 변수. 어두운 숲 테마, 고운바탕·IBM Plex Sans KR(Google Fonts). 인증 화면 배경 `public/forest.jpg`는 [Valeriia Neganova, Unsplash License](https://unsplash.com/photos/sunlight-streams-through-a-redwood-forest-canopy-NEGTKMK5wtM), 서재 배경 `public/library-forest.jpg`는 [Billy Huynh, Unsplash License](https://unsplash.com/photos/redwood-forest-with-sunlit-trees-4M1wucdlANA) |
 | 현재 검사 | ESLint, Vitest, React Testing Library·jsdom, TypeScript 검사와 Vite 빌드 |
 | 후속 도입 검토 | TanStack Query(상세·수정 단계), 핵심 흐름의 Playwright |
 
