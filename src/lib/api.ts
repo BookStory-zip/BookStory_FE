@@ -32,7 +32,7 @@ function readDetail(body: unknown): string | undefined {
 export async function apiRequest(
   path: string,
   accessToken: string | null,
-  options: { method?: 'POST' | 'PATCH' | 'DELETE'; body?: unknown } = {},
+  options: { method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown } = {},
 ): Promise<unknown> {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
 
@@ -309,4 +309,93 @@ export async function deleteLibraryBook(
   userBookId: string,
 ): Promise<void> {
   await apiRequest(libraryBookPath(userBookId), accessToken, { method: 'DELETE' })
+}
+
+export type ReadingLog = {
+  id: string
+  user_book_id: string
+  read_date: string
+  created_at: string
+}
+
+export type ReadingLogEntry = ReadingLog & {
+  book_id: string
+  title: string
+  authors: string[]
+  thumbnail_url: string | null
+}
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+function isReadingLog(value: unknown): value is ReadingLog {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Record<string, unknown>
+  return (
+    typeof item.id === 'string' &&
+    typeof item.user_book_id === 'string' &&
+    typeof item.read_date === 'string' &&
+    DATE_PATTERN.test(item.read_date) &&
+    typeof item.created_at === 'string'
+  )
+}
+
+function isReadingLogEntry(value: unknown): value is ReadingLogEntry {
+  if (!isReadingLog(value)) return false
+  const item = value as Record<string, unknown>
+  return (
+    typeof item.book_id === 'string' &&
+    typeof item.title === 'string' &&
+    Array.isArray(item.authors) &&
+    item.authors.every((author) => typeof author === 'string') &&
+    isNullableString(item.thumbnail_url)
+  )
+}
+
+// 오늘 날짜는 서버가 한국 시간으로 정한다. 이미 체크했으면 기존 기록이 그대로 온다.
+export async function checkReadingToday(
+  accessToken: string,
+  userBookId: string,
+): Promise<ReadingLog> {
+  const data = await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/today`, accessToken, {
+    method: 'PUT',
+  })
+  if (!isReadingLog(data)) {
+    throw new Error('독서 체크 응답 형식이 올바르지 않습니다.')
+  }
+  return data
+}
+
+// 오늘 기록이 없어도, 상태가 무엇이든 204로 성공한다.
+export async function cancelReadingToday(
+  accessToken: string,
+  userBookId: string,
+): Promise<void> {
+  await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/today`, accessToken, {
+    method: 'DELETE',
+  })
+}
+
+export const READING_LOG_PAGE_SIZE = 100
+
+// 한 달 기록도 100건을 넘을 수 있으므로 마지막 페이지까지 모두 가져온다.
+export async function getReadingLogs(
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<ReadingLogEntry[]> {
+  const logs: ReadingLogEntry[] = []
+  for (let offset = 0; ; offset += READING_LOG_PAGE_SIZE) {
+    const query = new URLSearchParams({
+      start_date: startDate,
+      end_date: endDate,
+      limit: String(READING_LOG_PAGE_SIZE),
+      offset: String(offset),
+    })
+    const page = await apiRequest(`/reading-logs?${query}`, accessToken)
+    if (!Array.isArray(page) || !page.every(isReadingLogEntry)) {
+      throw new Error('독서 기록 응답 형식이 올바르지 않습니다.')
+    }
+    logs.push(...page)
+    if (page.length < READING_LOG_PAGE_SIZE) return logs
+  }
 }

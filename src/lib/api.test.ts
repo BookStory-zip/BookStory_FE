@@ -1,5 +1,16 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { addLibraryBook, deleteLibraryBook, getLibraryBooks, getMe, pickIsbn13, searchBooks, updateLibraryRecord } from './api'
+import {
+  addLibraryBook,
+  cancelReadingToday,
+  checkReadingToday,
+  deleteLibraryBook,
+  getLibraryBooks,
+  getMe,
+  getReadingLogs,
+  pickIsbn13,
+  searchBooks,
+  updateLibraryRecord,
+} from './api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -165,4 +176,41 @@ test('기록 PATCH는 명시적 null을 그대로 보낸다', async () => {
 
   await updateLibraryRecord('test-access-token', 'user-book-1', { rating: null })
   expect(fetchMock.mock.calls[0][1].body).toBe('{"rating":null}')
+})
+
+function logEntry(index: number) {
+  return {
+    id: `log-${index}`, user_book_id: 'user-book-1', read_date: '2026-10-01', created_at: '2026-10-01T00:00:00Z',
+    book_id: 'book-1', title: '책', authors: [], thumbnail_url: null,
+  }
+}
+
+test('독서 기록은 100건을 넘으면 다음 페이지까지 모두 가져온다', async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(Response.json(Array.from({ length: 100 }, (_, i) => logEntry(i))))
+    .mockResolvedValueOnce(Response.json(Array.from({ length: 30 }, (_, i) => logEntry(100 + i))))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  const logs = await getReadingLogs('test-access-token', '2026-10-01', '2026-10-31')
+
+  expect(logs).toHaveLength(130)
+  expect(fetchMock.mock.calls.map(([url]) => new URL(url).searchParams.get('offset'))).toEqual(['0', '100'])
+  expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('end_date')).toBe('2026-10-31')
+})
+
+test('오늘 체크는 본문 없이 PUT, 취소는 DELETE 204로 처리한다', async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(Response.json({ id: 'log-1', user_book_id: 'user-book-1', read_date: '2026-10-28', created_at: '2026-10-28T00:00:00Z' }))
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(checkReadingToday('test-access-token', 'user-book-1')).resolves.toMatchObject({ read_date: '2026-10-28' })
+  await expect(cancelReadingToday('test-access-token', 'user-book-1')).resolves.toBeUndefined()
+  expect(fetchMock.mock.calls[0]).toEqual([
+    'https://api.example.test/library/books/user-book-1/reading-logs/today',
+    { headers: { Authorization: 'Bearer test-access-token' }, method: 'PUT' },
+  ])
+  expect(fetchMock.mock.calls[1][1].method).toBe('DELETE')
 })

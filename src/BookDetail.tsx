@@ -4,7 +4,10 @@ import { isAuthError } from '@supabase/supabase-js'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
   ApiError,
+  cancelReadingToday,
+  checkReadingToday,
   deleteLibraryBook,
+  getReadingLogs,
   getLibraryBook,
   readingStatuses,
   statusLabels,
@@ -19,15 +22,16 @@ import {
   kstCompletionIso,
   kstStartIso,
   kstDateOf,
-  kstToday,
   recordFormFrom,
 } from './lib/record'
 import type { RecordForm } from './lib/record'
 import CabinIcon from './CabinIcon'
 import ConfirmDialog from './ConfirmDialog'
 import DatePicker from './DatePicker'
+import { spokenDate } from './lib/dates'
+import { useKstToday } from './useKstToday'
 
-type Pending = 'status' | 'record' | 'delete' | null
+type Pending = 'status' | 'record' | 'delete' | 'check' | null
 type WriteResult = 'ok' | 'failed' | 'unclear'
 
 const RELOGIN = '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'
@@ -107,6 +111,9 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   const [pending, setPending] = useState<Pending>(null)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [confirming, setConfirming] = useState<'reset' | 'delete' | null>(null)
+  const [todayLog, setTodayLog] = useState<'unknown' | 'checked' | 'unchecked' | 'error'>('unknown')
+  const today = useKstToday()
+  const todayRef = useRef(today)
   const active = useRef(true)
   const pendingRef = useRef<Pending>(null)
   const bookRef = useRef<LibraryBookDetail | null>(null)
@@ -148,10 +155,44 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // 오늘 체크 여부는 last_read_at이 아니라 오늘 기록(read_date + user_book_id)으로 판단한다.
+  function loadTodayLog(day: string) {
+    return withAccessToken((token) => getReadingLogs(token, day, day)).then(
+      (logs) => {
+        if (!active.current || day !== todayRef.current) return
+        setTodayLog(logs.some((log) => log.user_book_id === userBookId) ? 'checked' : 'unchecked')
+      },
+      () => {
+        if (active.current && day === todayRef.current) setTodayLog('error')
+      },
+    )
+  }
+
+  useEffect(() => {
+    todayRef.current = today
+    void loadTodayLog(today)
+    // 한국 날짜가 바뀌면 다시 확인한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today])
+
+  async function handleCheck(cancel: boolean) {
+    if (!book) return
+    await run(
+      'check',
+      (token) => (cancel ? cancelReadingToday(token, book.id) : checkReadingToday(token, book.id)),
+      cancel ? '오늘 체크를 취소했습니다.' : '오늘 읽은 날로 남겼습니다.',
+      '읽는 중인 책만 오늘 체크할 수 있습니다. 상태를 다시 불러왔습니다.',
+    )
+    // 결과와 관계없이 다시 보내지 않고 서버 기준(오늘 기록·최근 체크·상태)으로 다시 확인한다.
+    void loadTodayLog(todayRef.current)
+    await reload()
+  }
+
   async function run(
     kind: Exclude<Pending, null>,
-    write: (token: string) => Promise<void>,
+    write: (token: string) => Promise<unknown>,
     done: string,
+    conflict?: string,
   ): Promise<WriteResult> {
     if (pendingRef.current) return 'failed'
     pendingRef.current = kind
@@ -162,7 +203,11 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       if (active.current) setNotice({ kind: 'ok', text: done })
       return 'ok'
     } catch (error) {
-      if (active.current) setNotice({ kind: 'error', text: saveErrorMessage(error) })
+      const message =
+        conflict && error instanceof ApiError && error.status === 409
+          ? conflict
+          : saveErrorMessage(error)
+      if (active.current) setNotice({ kind: 'error', text: message })
       return isUnclearWrite(error) ? 'unclear' : 'failed'
     } finally {
       pendingRef.current = null
@@ -176,7 +221,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     const started = book.started_at ? kstDateOf(book.started_at) : ''
     const completed =
       status === 'completed' && (book.status === 'reading' || book.status === 'paused')
-        ? kstToday()
+        ? today
         : ''
     setNextStatus(status)
     setStartedDate(started)
@@ -290,7 +335,6 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   }
 
   const busy = pending !== null
-  const today = kstToday()
 
   return (
     <section className="detail" aria-labelledby="detail-title">
@@ -326,6 +370,36 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         <div><dt>중단일</dt><dd>{formatKstDate(book.stopped_at)}</dd></div>
         <div><dt>최근 체크</dt><dd>{formatKstDate(book.last_read_at)}</dd></div>
       </dl>
+
+      <div className="detail-card today-card" aria-labelledby="today-title">
+        <h2 id="today-title">오늘의 독서</h2>
+        <p className="result-note">{spokenDate(today)} · 한국 시간 기준</p>
+        {todayLog === 'unknown' && <p className="result-note">오늘 기록을 확인하는 중…</p>}
+        {todayLog === 'error' && (
+          <div className="today-actions">
+            <p className="result-note">오늘 체크 여부를 확인하지 못했습니다.</p>
+            <button type="button" className="secondary compact" onClick={() => void loadTodayLog(today)}>
+              다시 확인
+            </button>
+          </div>
+        )}
+        {todayLog === 'checked' && (
+          <div className="today-actions">
+            <p className="today-done">오늘 읽은 날로 남겼어요</p>
+            <button type="button" className="secondary compact" onClick={() => void handleCheck(true)} disabled={busy}>
+              {pending === 'check' ? '취소하는 중…' : '체크 취소'}
+            </button>
+          </div>
+        )}
+        {todayLog === 'unchecked' &&
+          (book.status === 'reading' ? (
+            <button type="button" onClick={() => void handleCheck(false)} disabled={busy}>
+              {pending === 'check' ? '남기는 중…' : '오늘 읽었어요'}
+            </button>
+          ) : (
+            <p className="result-note">읽는 중인 책만 오늘 체크할 수 있습니다.</p>
+          ))}
+      </div>
 
       <form className="detail-card" onSubmit={handleStatus} aria-labelledby="status-title">
         <h2 id="status-title">독서 상태</h2>

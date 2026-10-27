@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
+import { addDays, addMonths, calendarDays, monthOf, spokenDate as spoken } from './lib/dates'
 
 type Props = {
   label: string
@@ -11,25 +12,6 @@ type Props = {
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
-// 날짜는 'YYYY-MM-DD' 문자열로만 다루고, 계산은 UTC 기준 Date로 해서 시간대에 흔들리지 않는다.
-const toUtc = (date: string) => new Date(`${date}T00:00:00Z`)
-const toDate = (utc: Date) => utc.toISOString().slice(0, 10)
-const addDays = (date: string, days: number) => {
-  const utc = toUtc(date)
-  utc.setUTCDate(utc.getUTCDate() + days)
-  return toDate(utc)
-}
-const monthOf = (date: string) => date.slice(0, 7)
-const addMonths = (month: string, delta: number) => {
-  const utc = toUtc(`${month}-01`)
-  utc.setUTCMonth(utc.getUTCMonth() + delta)
-  return toDate(utc).slice(0, 7)
-}
-const spoken = (date: string) => {
-  const [y, m, d] = date.split('-').map(Number)
-  return `${y}년 ${m}월 ${d}일`
-}
-
 export default function DatePicker({ label, value, max, onChange, disabled = false }: Props) {
   const id = useId()
   const [open, setOpen] = useState(false)
@@ -37,9 +19,7 @@ export default function DatePicker({ label, value, max, onChange, disabled = fal
   const triggerRef = useRef<HTMLButtonElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
-  const first = toUtc(`${month}-01`)
-  const start = addDays(`${month}-01`, -first.getUTCDay())
-  const days = Array.from({ length: 42 }, (_, index) => addDays(start, index))
+  const days = calendarDays(month)
   const focusTarget = value && monthOf(value) === month ? value : days.find((day) => monthOf(day) === month && day <= max) ?? `${month}-01`
 
   function toggle() {

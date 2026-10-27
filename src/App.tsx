@@ -9,6 +9,7 @@ import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
 import CabinIcon from './CabinIcon'
 import Library from './Library'
 import PasswordReset from './PasswordReset'
+import ReadingRecords from './ReadingRecords'
 
 function App() {
   return (
@@ -225,6 +226,7 @@ function AuthScreen() {
           <nav className="app-nav" aria-label="주요 메뉴">
             <NavLink to="/" end>서재</NavLink>
             <NavLink to="/search">책 찾기</NavLink>
+            <NavLink to="/records">기록</NavLink>
           </nav>
           <button
             type="button"
@@ -241,6 +243,7 @@ function AuthScreen() {
           <Route index element={<Library />} />
           <Route path="search" element={<BookSearch />} />
           <Route path="books/:userBookId" element={<BookDetail />} />
+          <Route path="records" element={<ReadingRecords />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

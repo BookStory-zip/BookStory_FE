@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   updateLibraryStatus: vi.fn(),
   updateLibraryRecord: vi.fn(),
   deleteLibraryBook: vi.fn(),
+  getReadingLogs: vi.fn(),
+  checkReadingToday: vi.fn(),
+  cancelReadingToday: vi.fn(),
 }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
@@ -62,6 +65,7 @@ function renderDetail() {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  mocks.getReadingLogs.mockResolvedValue([])
   // 한국 시간 2026-10-28 12:00으로 고정해 '오늘' 계산을 안정시킨다.
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-28T03:00:00Z'))
@@ -235,4 +239,56 @@ test('중단은 읽는 중일 때만 고를 수 있다', async () => {
   renderDetail()
 
   expect(await screen.findByRole('radio', { name: /^중단/ })).toHaveProperty('disabled', true)
+})
+
+function todayLog(userBookId = 'user-book-1') {
+  return {
+    id: 'log-1', user_book_id: userBookId, read_date: '2026-10-28', created_at: '2026-10-28T03:00:00Z',
+    book_id: 'book-1', title: '소년이 온다', authors: [], thumbnail_url: null,
+  }
+}
+
+test('오늘 체크는 한국 오늘 날짜의 기록으로 판단하고, 다른 책의 기록은 무시한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.getReadingLogs.mockResolvedValue([todayLog('other-book')])
+  renderDetail()
+
+  await screen.findByRole('button', { name: '오늘 읽었어요' })
+  expect(mocks.getReadingLogs).toHaveBeenCalledWith('test-token', '2026-10-28', '2026-10-28')
+})
+
+test('오늘 읽었어요를 누르면 체크 후 오늘 기록과 상세를 다시 조회한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.getReadingLogs.mockResolvedValueOnce([]).mockResolvedValue([todayLog()])
+  mocks.checkReadingToday.mockResolvedValue(todayLog())
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('button', { name: '오늘 읽었어요' }))
+
+  await screen.findByText('오늘 읽은 날로 남겼어요')
+  expect(mocks.checkReadingToday).toHaveBeenCalledTimes(1)
+  expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2)
+})
+
+test('읽는 중이 아니어도 남은 오늘 체크는 취소할 수 있다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ status: 'paused' }))
+  mocks.getReadingLogs.mockResolvedValueOnce([todayLog()]).mockResolvedValue([])
+  mocks.cancelReadingToday.mockResolvedValue(undefined)
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('button', { name: '체크 취소' }))
+
+  await screen.findByText('읽는 중인 책만 오늘 체크할 수 있습니다.')
+  expect(mocks.cancelReadingToday).toHaveBeenCalledWith('test-token', 'user-book-1')
+})
+
+test('체크 409는 상태 안내로 바꾸고 다시 보내지 않는다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.checkReadingToday.mockRejectedValue(new ApiError(409))
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('button', { name: '오늘 읽었어요' }))
+
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('읽는 중인 책만 오늘 체크'))
+  expect(mocks.checkReadingToday).toHaveBeenCalledTimes(1)
 })
