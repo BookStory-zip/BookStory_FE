@@ -8,19 +8,24 @@
 - [CLAUDE.md](./CLAUDE.md): 에이전트의 단위별 구현·설명·검증 방식과 작업 규칙
 - 이 README: 프로젝트 소개, 환경변수, API 계약과 배포 안내
 
-React·TypeScript·Vite 기본 앱과 환경변수 양식, Supabase SDK 회원가입·이메일 인증 안내·로그인·세션 복원·로그아웃을 구성했습니다. 세션 이벤트를 구독하고 `/me` 성공 후 인증 상태를 표시합니다. 401이면 SDK 세션 갱신 후 최대 한 번 다시 요청하며, 503은 로그아웃으로 처리하지 않습니다. 비밀번호 재설정 메일 요청·링크 복귀·새 비밀번호 저장 코드도 추가했습니다. `/me` 7개·인증 함수 17개·재설정 폼 9개로 총 33개의 mock 테스트를 구성했고, 서재 10개, 검색·등록 14개, 상세 27개, 독서 기록 12개, 날짜 고치기 4개, self-review 반영 10개를 더해 총 110개입니다.
+**현재 상태(2026-10-28):** MVP 기능을 main에 반영해 https://bookstory-fe.vercel.app 에 배포했고, 운영 주소에서 사용자가 통합 동작을 확인했습니다. 배포 기록·미확인 항목·백엔드 전달 사항은 plan.md에 있습니다.
 
-2026-10-27 사용자가 로컬 브라우저에서 로그인 → `/me` 성공, 새로고침 후 세션 복원, 현재 세션 로그아웃과 새로고침 후 미인증 표시를 확인했습니다. 두 탭의 로그인·로그아웃 동기화도 사용자 확인을 받았습니다. 이 결과는 사용자의 수동 확인이며 에이전트가 브라우저를 직접 조작한 검증은 아닙니다. 로그인 폼은 사용자 확인 성공 후 숨기고 세션 종료 시 다시 표시합니다. 로그아웃 요청 실패는 성공으로 표시하지 않으며, 실제 인증 표시는 SDK 세션 이벤트와 `/me` 결과를 따릅니다.
+| 화면·경로 | 기능 |
+| --- | --- |
+| `/` (미인증) | Supabase 회원가입·이메일 인증 안내·로그인. `/me` 확인 후 개인 화면을 열고, 연결 실패 시 로그인 폼 대신 다시 시도 |
+| `/reset-password`, `/reset-password/update` | 재설정 메일 요청, 링크 복귀 후 새 비밀번호 저장 |
+| `/` (인증) | 숲속 오두막 책장 서재, 20개씩 더 보기 |
+| `/search` | 카카오 검색(BE 경유), ISBN13이 있는 책만 담기 |
+| `/books/{user_book_id}` | 상태 전환·날짜(달력)·날짜만 고치기, 별점·메모·중단 사유, 오늘 체크·취소, 서재에서 빼기 |
+| `/records` | 월별 표지 달력(체크한 날만, 다중 페이지 전체 조회, KST 기준) |
 
-현재 상태는 **로그인·세션 관리와 회원가입·이메일 인증 안내 단위 완료**입니다. 가입 폼은 비밀번호 확인과 한국어 오류 안내를 제공하며, 세션 없는 가입 성공은 이메일 확인 대기로 표시합니다. 세션이 생겨도 `/me` 성공을 기다립니다. Gmail SMTP 인증 거절(535)을 서버 로그로 확인한 뒤 사용자가 설정을 수정했고, 실제 메일 수신·인증 링크 복귀 후 사용자 확인 완료를 보고했습니다. SMTP 비밀번호는 Supabase에만 설정하며 프론트에 저장하지 않습니다.
-
-세션 변경 시 이전 인증 표시와 입력을 정리하고, 늦은 `/me` 응답과 이전 버튼 요청의 결과를 무시합니다. 계정 A/B 전환과 늦은 응답은 mock 검증이며 실제 서로 다른 두 계정의 브라우저 전환은 별도로 남아 있습니다. 비밀번호 재설정은 2026-10-27 사용자가 로컬 브라우저에서 메일 수신 → 링크 복귀 → 새 비밀번호 저장 → 재로그인·`/me` 성공을 확인하여 **인증 단위를 완료**했습니다. 디자인 기준(어두운 숲 테마)을 정해 인증 화면에 적용했습니다. React Router로 경로를 나누고, `/me` 확인 후 내 서재 목록(20개씩 더 보기)을 표시합니다. 계정 변경·로그아웃 시 목록과 늦은 응답을 버립니다. `/search`에서 책을 검색해 ISBN13으로 서재에 담고, `/books/{user_book_id}`에서 상태·날짜·별점·메모를 수정하거나 서재에서 뺍니다. 상세에서 오늘 체크·취소를 하고 `/records`에서 월별 독서 기록을 표지 달력으로 봅니다. 백엔드 전달 사항은 plan.md에 정리했습니다. TanStack Query, FE CI/CD와 Vercel 배포는 아직 구성하지 않았습니다.
+인증은 SDK 세션 복원·갱신을 쓰고 401이면 한 번만 갱신해 다시 요청합니다. 계정이 바뀌면 개인 화면을 새로 그려 이전 계정의 늦은 응답을 버리고, 503·네트워크·시간 초과(60초)는 로그아웃으로 처리하지 않습니다. 검증은 단위 테스트 111개(jsdom, mock)와 Playwright e2e 3개(가짜 API)이며, 실제 운영 확인은 사용자의 수동 확인입니다. 서로 다른 두 계정의 실제 브라우저 전환은 아직 확인하지 않았습니다.
 
 ### 백엔드 확인 기준
 
 - 운영 API: https://bookstory-api-w31a.onrender.com
 - [Swagger UI](https://bookstory-api-w31a.onrender.com/docs) · [OpenAPI](https://bookstory-api-w31a.onrender.com/openapi.json)
-- 2026-10-26 문서 정리 시 공개 `/health`, `/ready`, `/openapi.json`의 HTTP 200과 배포된 API 경로를 확인했습니다. 인증 API·쓰기 API·실제 브라우저 연동은 이번에 검증하지 않았습니다.
+- 2026-10-28 운영 주소에서 인증·쓰기 API를 포함한 브라우저 연동을 사용자가 확인했고, 운영·로컬 origin의 CORS 허용을 확인했습니다.
 - 로컬 BE 확인 커밋: `185e11bdcf643c240dfec809d785c5739ad494c1`. 2026-10-28 상세 단위에서 `../BookStory_BE/app/books.py`의 상태 전환 규칙을 다시 대조했습니다. 실제 배포 SHA와 같다고 단정하지 않습니다. 아래 계약은 로컬 코드와 전달받은 운영 인계 내용을 대조한 기준입니다.
 - 사용자 인계 기준으로 운영 배포·주요 API 연동과 GitHub Actions 운영 배치 수동 실행을 확인한 상태입니다. 유지보수 워크플로의 예약은 `17 19 * * *` UTC, 한국 시간 다음 날 04:17입니다. 예약 실행 성공 여부는 별도 확인이 필요합니다.
 - 기존 FE의 `974e5ae` 기준과 BE·Infra README의 일부 “배포 미완료” 문구는 최신 운영 인계와 불일치합니다. 과거 문구로 배포가 안 됐다고 판단하지 않습니다. 개별 배포 DB 마이그레이션 적용 여부는 담당자가 별도로 확인합니다.
@@ -39,8 +44,8 @@ MVP는 이메일 회원가입·인증 안내·로그인·로그아웃·세션 �
 | 현재 앱 구성 | TypeScript + Vite SPA |
 | 현재 데이터 처리 | 기본 `fetch`와 `src/lib/api.ts` 공통 요청, Supabase JavaScript SDK, React Router 8.4.0 |
 | 현재 스타일 | `src/index.css`의 전역 CSS와 `:root` 변수. 어두운 숲 테마, 고운바탕·IBM Plex Sans KR(Google Fonts). 인증 화면 배경 `public/forest.jpg`는 [Valeriia Neganova, Unsplash License](https://unsplash.com/photos/sunlight-streams-through-a-redwood-forest-canopy-NEGTKMK5wtM), 서재 배경 `public/library-forest.jpg`는 [Billy Huynh, Unsplash License](https://unsplash.com/photos/redwood-forest-with-sunlit-trees-4M1wucdlANA) |
-| 현재 검사 | ESLint, Vitest, React Testing Library·jsdom, TypeScript 검사와 Vite 빌드 |
-| 후속 도입 검토 | TanStack Query(상세·수정 단계), 핵심 흐름의 Playwright |
+| 현재 검사 | ESLint, Vitest, React Testing Library·jsdom, Playwright(모바일 Chromium), TypeScript 검사와 Vite 빌드, GitHub Actions |
+| 후속 도입 검토 | TanStack Query는 캐시 요구가 생길 때 재검토(현재 화면별 재조회로 충분) |
 
 권장안은 설치 완료나 최종 확정을 뜻하지 않습니다. 라이브러리·버전·구조는 해당 단계에서 기존 구성과 필요성을 확인한 뒤 선택합니다. 공개 콘텐츠의 검색 노출·공유 미리보기가 필요해지면 SSR을 재검토합니다.
 
