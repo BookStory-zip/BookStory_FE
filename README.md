@@ -212,7 +212,7 @@ BE에는 `/login`·`/signup`이 없습니다. BE 요청은 `Authorization: Beare
 
 ## CI/CD 방향
 
-계획된 검사는 lockfile 설치 → lint·포맷 → 타입 검사 → 핵심 동작 테스트 → 프로덕션 빌드입니다. develop·main push와 두 브랜치 대상 PR을 검사하고, 실제 BE 통합은 운영 DB 자동 테스트와 구분합니다.
+`.github/workflows/ci.yml`(Frontend CI)이 develop·main push와 두 브랜치 대상 PR에서 `npm ci` → `npm run lint` → `npm test` → `npm run build`(타입 검사 포함)를 실행합니다. 액션은 커밋 SHA로 고정하고 읽기 권한만 사용합니다. 테스트는 fetch·Supabase SDK를 대체하므로 운영 API·DB·비밀값 없이 실행되며, 실제 BE 통합 검증과 구분합니다. 별도 포맷 검사 도구는 아직 도입하지 않았습니다.
 
 초기 운영 배포는 CI를 통과한 main 버전을 수동 선택합니다. Vercel 기본 Git 배포가 별도 GitHub CI를 기다린다고 가정하지 않으며 중복 배포를 막습니다. FE 설정은 FE 레포, BE 실행·공통 인프라는 Infra 레포에서 관리합니다. FE·BE 커밋 SHA와 배포 ID 또는 BE 이미지 digest를 기록하고 운영 버전 조합을 검증합니다.
 

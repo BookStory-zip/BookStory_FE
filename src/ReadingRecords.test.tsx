@@ -12,6 +12,8 @@ vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),
   getReadingLogs: mocks.getReadingLogs,
 }))
+// 환경변수 없는 CI에서도 실제 Supabase 클라이언트를 만들지 않는다.
+vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
 vi.mock('./lib/auth', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/auth')>(),
   withAccessToken: (request: (token: string) => Promise<unknown>) => request('test-token'),
