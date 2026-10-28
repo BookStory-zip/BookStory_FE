@@ -76,9 +76,10 @@ npm.cmd run dev
 npm.cmd run lint
 npm.cmd run test
 npm.cmd run build
+npm.cmd run test:e2e
 ```
 
-`dev`는 개발 서버, `lint`는 코드 검사, `test`는 테스트 1회 실행, `build`는 TypeScript 검사 후 프로덕션 빌드입니다. 자동 테스트 110개는 `/me`·서재·검색·등록·상세·독서 기록 요청, 가입·인증 함수·세션 구독, 재설정 폼, 서재·검색·상세·기록 화면과 날짜 선택·한국 날짜 계산을 검사합니다. UI 검사는 jsdom이며 실제 브라우저·메일 수신 검증과 구분합니다. SDK와 `fetch`·API 주소를 대체하므로 운영 계정·DB를 호출하지 않습니다.
+`dev`는 개발 서버, `lint`는 코드 검사, `test`는 테스트 1회 실행, `build`는 TypeScript 검사 후 프로덕션 빌드, `test:e2e`는 Playwright로 실제 브라우저(모바일 Chromium) 핵심 흐름 검사입니다. 처음 한 번 `npx playwright install chromium`이 필요합니다. 단위 테스트 111개는 `/me`·서재·검색·등록·상세·독서 기록 요청, 가입·인증 함수·세션 구독, 재설정 폼, 서재·검색·상세·기록 화면과 날짜 선택·한국 날짜 계산을 검사합니다. UI 검사는 jsdom이며 실제 브라우저·메일 수신 검증과 구분합니다. SDK와 `fetch`·API 주소를 대체하므로 운영 계정·DB를 호출하지 않습니다. e2e 3개(서재→상세→오늘 체크→기록 달력, 503 뒤 다시 시도, 검색→담기→서재)도 테스트 전용 가짜 공개 설정을 쓰고 BE·Supabase 요청을 모두 가짜 응답으로 가로챕니다.
 
 `.env.local`·`node_modules`·`dist`·로컬 임시 `bookstory-scaffold` 폴더는 Git에서 제외합니다. 임시 폴더는 앱 실행에 필요하지 않으며 미사용 템플릿을 로컬에 보존하는 용도로만 남깁니다.
 
@@ -224,7 +225,7 @@ BE에는 `/login`·`/signup`이 없습니다. BE 요청은 `Authorization: Beare
 
 ## CI/CD 방향
 
-`.github/workflows/ci.yml`(Frontend CI)이 develop·main push와 두 브랜치 대상 PR에서 `npm ci` → `npm run lint` → `npm test` → `npm run build`(타입 검사 포함)를 실행합니다. 액션은 커밋 SHA로 고정하고 읽기 권한만 사용합니다. 테스트는 fetch·Supabase SDK를 대체하므로 운영 API·DB·비밀값 없이 실행되며, 실제 BE 통합 검증과 구분합니다. 별도 포맷 검사 도구는 아직 도입하지 않았습니다.
+`.github/workflows/ci.yml`(Frontend CI)이 develop·main push와 두 브랜치 대상 PR에서 `npm ci` → `npm run lint` → `npm test` → `npm run build`(타입 검사 포함)를 실행하고, 별도 `e2e` 작업에서 Playwright 핵심 흐름을 검사합니다. 액션은 커밋 SHA로 고정하고 읽기 권한만 사용합니다. 테스트는 fetch·Supabase SDK를 대체하므로 운영 API·DB·비밀값 없이 실행되며, 실제 BE 통합 검증과 구분합니다. 별도 포맷 검사 도구는 아직 도입하지 않았습니다.
 
 초기 운영 배포는 CI를 통과한 main 버전을 수동 선택합니다. Vercel 기본 Git 배포가 별도 GitHub CI를 기다린다고 가정하지 않으며 중복 배포를 막습니다. FE 설정은 FE 레포, BE 실행·공통 인프라는 Infra 레포에서 관리합니다. FE·BE 커밋 SHA와 배포 ID 또는 BE 이미지 digest를 기록하고 운영 버전 조합을 검증합니다.
 
