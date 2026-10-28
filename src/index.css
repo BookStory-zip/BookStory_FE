@@ -652,6 +652,28 @@ textarea {
   color: var(--color-lamp);
 }
 
+button.link-button {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+button.link-button:hover:not(:disabled) {
+  background: none;
+  text-decoration-thickness: 2px;
+}
+
+.retry-actions {
+  display: grid;
+  gap: var(--space-3);
+}
+
 /* 오늘의 독서 */
 .today-card {
   display: grid;

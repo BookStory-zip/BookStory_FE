@@ -69,6 +69,8 @@ export type AuthState = {
   authUserId: string | null
   isChecking: boolean
   error: unknown
+  // 세션은 남아 있는데 /me 확인이 실패했을 때 같은 계정으로 다시 확인한다.
+  retry?: () => void
 }
 
 export function subscribeAuthState(
@@ -81,34 +83,21 @@ export function subscribeAuthState(
   let hasVerifiedUser = false
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  const { data } = supabase.auth.onAuthStateChange((event, session) => {
-    if (!active) return
-
-    const nextAuthUserId = session?.user.id ?? null
-    const sameUser = nextAuthUserId === authUserId
-
-    if (
-      sameUser &&
-      (event === 'TOKEN_REFRESHED' ||
-        (event === 'SIGNED_IN' && (isChecking || hasVerifiedUser)))
-    ) {
-      return
-    }
-
-    authUserId = nextAuthUserId
+  function startCheck(hasSession: boolean) {
+    const checkedUserId = authUserId
     const currentRequest = ++requestNumber
     clearTimeout(timer)
     hasVerifiedUser = false
-    isChecking = session !== null
+    isChecking = hasSession
 
     onChange({
       user: null,
-      authUserId,
+      authUserId: checkedUserId,
       isChecking,
       error: null,
     })
 
-    if (!session) return
+    if (!hasSession) return
 
     // SDK 이벤트 콜백 밖에서 세션 갱신을 포함한 비동기 확인을 실행한다.
     timer = setTimeout(() => {
@@ -125,7 +114,7 @@ export function subscribeAuthState(
 
           onChange({
             user,
-            authUserId: user ? nextAuthUserId : null,
+            authUserId: user ? checkedUserId : null,
             isChecking: false,
             error: null,
           })
@@ -135,13 +124,29 @@ export function subscribeAuthState(
           isChecking = false
           onChange({
             user: null,
-            authUserId: nextAuthUserId,
+            authUserId: checkedUserId,
             isChecking: false,
             error,
+            retry: () => {
+              if (active && currentRequest === requestNumber) startCheck(true)
+            },
           })
         }
       }
     }, 0)
+  }
+
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (!active) return
+
+    const nextAuthUserId = session?.user.id ?? null
+
+    // 같은 계정의 토큰 갱신·사용자 정보 변경은 확인 중이거나 확인된 화면을 유지한다.
+    // 이전 확인이 실패한 상태라면 이 이벤트를 다시 확인할 기회로 쓴다.
+    if (nextAuthUserId === authUserId && (isChecking || hasVerifiedUser)) return
+
+    authUserId = nextAuthUserId
+    startCheck(session !== null)
   })
 
   return () => {

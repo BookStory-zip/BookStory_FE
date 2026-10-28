@@ -158,7 +158,8 @@ export default function PasswordReset({ recovery = false }: { recovery?: boolean
     }
   }
 
-  async function handleLogin() {
+  // 재설정 링크의 세션은 비밀번호를 바꾸지 않고 서재로 들어가는 데 쓰이지 않게 로그아웃한 뒤 이동한다.
+  async function handleLogin(failure = '비밀번호는 변경되었지만 로그아웃에 실패했습니다. 다시 시도해주세요.') {
     if (pendingAction.current) return
     const currentAction = ++actionVersion.current
     pendingAction.current = 'logout'
@@ -168,7 +169,7 @@ export default function PasswordReset({ recovery = false }: { recovery?: boolean
       if (currentAction === actionVersion.current) window.location.assign('/')
     } catch {
       if (currentAction === actionVersion.current) {
-        setMessage('비밀번호는 변경되었지만 로그아웃에 실패했습니다. 다시 시도해주세요.')
+        setMessage(failure)
       }
     } finally {
       if (currentAction === actionVersion.current) {
@@ -206,7 +207,7 @@ export default function PasswordReset({ recovery = false }: { recovery?: boolean
         </form>
       )}
       {phase === 'saved' && (
-        <button type="button" onClick={handleLogin} disabled={busy}>로그아웃 후 로그인하기</button>
+        <button type="button" onClick={() => void handleLogin()} disabled={busy}>로그아웃 후 로그인하기</button>
       )}
       {(phase === 'invalid' || phase === 'error') && (
         <p><a href="/reset-password">새 재설정 메일 요청</a></p>
@@ -214,7 +215,19 @@ export default function PasswordReset({ recovery = false }: { recovery?: boolean
       {phase === 'error' && (
         <button type="button" className="secondary" onClick={() => window.location.reload()}>다시 확인</button>
       )}
-      {phase !== 'saved' && <p><a href="/">로그인 화면으로</a></p>}
+      {phase !== 'saved' && !recovery && <p><a href="/">로그인 화면으로</a></p>}
+      {phase !== 'saved' && recovery && (
+        <p>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => void handleLogin('로그아웃에 실패했습니다. 다시 시도해주세요.')}
+            disabled={busy}
+          >
+            변경을 그만두고 로그인 화면으로
+          </button>
+        </p>
+      )}
     </main>
   )
 }

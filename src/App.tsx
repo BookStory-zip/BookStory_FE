@@ -4,8 +4,8 @@ import { isAuthError } from '@supabase/supabase-js'
 import { Navigate, NavLink, Route, Routes } from 'react-router'
 import BookDetail from './BookDetail'
 import BookSearch from './BookSearch'
-import { ApiError } from './lib/api'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
+import { commonErrorMessage, isAuthFailure } from './lib/errors'
 import CabinIcon from './CabinIcon'
 import Library from './Library'
 import PasswordReset from './PasswordReset'
@@ -31,6 +31,8 @@ function AuthScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  // 세션은 있는데 서버 확인이 연결 문제로 실패하면 로그인 폼 대신 다시 시도를 보여 준다.
+  const [retryCheck, setRetryCheck] = useState<(() => void) | null>(null)
 
   const formRef = useRef<HTMLFormElement>(null)
   const authUserId = useRef<string | null>(null)
@@ -66,15 +68,17 @@ function AuthScreen() {
 
       setUserId(state.user?.user_id ?? null)
       setIsCheckingSession(state.isChecking)
+      setRetryCheck(() =>
+        state.error !== null && state.retry && !isAuthFailure(state.error)
+          ? state.retry
+          : null,
+      )
 
       if (state.isChecking) {
         setMessage('사용자 확인 중입니다. 서버 응답이 늦을 수 있습니다.')
       } else if (state.error !== null) {
-        if (state.error instanceof ApiError && state.error.status === 401) {
-          setMessage('로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.')
-        } else {
-          setMessage('사용자 확인에 실패했습니다. 잠시 후 다시 시도해주세요.')
-        }
+        // Render 기동 지연·연결 실패는 로그아웃으로 처리하지 않는다.
+        setMessage(commonErrorMessage(state.error, '사용자 확인에 실패했습니다'))
       } else if (state.user) {
         setMessage('')
       } else if (pendingAction.current === 'logout') {
@@ -246,6 +250,22 @@ function AuthScreen() {
           <Route path="records" element={<ReadingRecords />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+      </main>
+    )
+  }
+
+  if (retryCheck) {
+    return (
+      <main>
+        <h1>BookStory</h1>
+        <p className="tagline">읽은 날을 한 권씩 꽂아 두는 서재</p>
+        <p role="status">{message}</p>
+        <div className="retry-actions">
+          <button type="button" onClick={retryCheck}>다시 시도</button>
+          <button type="button" className="secondary" onClick={handleLogout} disabled={isSubmitting}>
+            {isSubmitting ? '처리 중…' : '로그아웃'}
+          </button>
+        </div>
       </main>
     )
   }

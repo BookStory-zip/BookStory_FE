@@ -151,3 +151,15 @@ test('변경 성공 후 로그아웃 실패를 비밀번호 저장 실패로 표
   await screen.findByText(/변경되었지만 로그아웃/)
   expect(mocks.updatePassword).toHaveBeenCalledTimes(1)
 })
+
+test('재설정 화면에서 그만두면 재설정 세션을 로그아웃한 뒤 이동한다', async () => {
+  mocks.signOut.mockRejectedValue(new Error('로그아웃 실패'))
+  render(<PasswordReset recovery />)
+  await screen.findByRole('form', { name: '새 비밀번호' })
+
+  expect(screen.queryByRole('link', { name: '로그인 화면으로' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '변경을 그만두고 로그인 화면으로' }))
+
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('로그아웃에 실패했습니다'))
+  expect(mocks.signOut).toHaveBeenCalledTimes(1)
+})

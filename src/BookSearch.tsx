@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { addLibraryBook, ApiError, searchBooks, statusLabels } from './lib/api'
 import type { SearchBook } from './lib/api'
 import { withAccessToken } from './lib/auth'
+import { commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
 
 type SaveState = { phase: 'saving' | 'saved' | 'error'; message: string }
 
@@ -12,30 +13,24 @@ function searchErrorMessage(error: unknown) {
     if (error.status === 422) return '검색어를 확인해주세요. (1~200자)'
     if (error.status === 502) return '책 정보 제공처에서 오류가 발생했습니다. 잠시 후 다시 검색해주세요.'
     if (error.status === 504) return '책 정보 제공처의 응답이 늦습니다. 잠시 후 다시 검색해주세요.'
-    if (error.status === 503) return '서버가 잠시 응답할 수 없습니다. 잠시 후 다시 검색해주세요.'
-    return `검색에 실패했습니다. (${error.status})`
   }
-  if (error instanceof TypeError) {
-    return '서버에 연결하지 못했습니다. 네트워크를 확인하고 다시 검색해주세요.'
-  }
-  return '검색에 실패했습니다. 잠시 후 다시 검색해주세요.'
+  return commonErrorMessage(error, '검색에 실패했습니다')
 }
 
 function saveErrorMessage(error: unknown) {
+  if (isAuthFailure(error)) return RELOGIN_MESSAGE
+  // 요청이 서버에 닿았는지 알 수 없으므로 자동으로 다시 보내지 않는다.
+  if (error instanceof TypeError || isTimeout(error)) {
+    return '저장 결과를 확인하지 못했습니다. 서재에서 담겼는지 확인해주세요.'
+  }
   if (error instanceof ApiError) {
-    if (error.status === 401) return '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'
     if (error.status === 404) return '책 정보를 찾지 못해 담지 못했습니다.'
     if (error.status === 422) return 'ISBN 형식이 올바르지 않아 담지 못했습니다.'
     if (error.status === 502 || error.status === 504) {
-      return '책 정보 제공처 문제로 담지 못했습니다. 잠시 후 다시 시도해주세요.'
+      return '책 정보 제공처 문제로 담지 못했을 수 있습니다. 서재에서 확인한 뒤 다시 시도해주세요.'
     }
-    return `서재에 담지 못했습니다. (${error.status})`
   }
-  // 요청이 서버에 닿았는지 알 수 없으므로 자동으로 다시 보내지 않는다.
-  if (error instanceof TypeError) {
-    return '저장 결과를 확인하지 못했습니다. 서재에서 담겼는지 확인해주세요.'
-  }
-  return '서재에 담지 못했습니다. 잠시 후 다시 시도해주세요.'
+  return commonErrorMessage(error, '서재에 담지 못했습니다')
 }
 
 export default function BookSearch() {

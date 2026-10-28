@@ -28,6 +28,8 @@ function readDetail(body: unknown): string | undefined {
   return undefined
 }
 
+export const REQUEST_TIMEOUT_MS = 60_000
+
 // accessToken이 null이면 공개 API로 인증 헤더 없이 요청한다.
 export async function apiRequest(
   path: string,
@@ -44,8 +46,10 @@ export async function apiRequest(
   if (accessToken !== null) headers.Authorization = `Bearer ${accessToken}`
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
 
+  // Render 기동 지연을 기다리되, 응답이 끝나지 않는 요청이 화면을 영원히 잠그지 않게 한다.
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     ...(options.method && { method: options.method }),
     ...(options.body !== undefined && { body: JSON.stringify(options.body) }),
   })

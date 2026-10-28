@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
@@ -338,4 +338,51 @@ test('중단·포기 상태는 현재 상태로 날짜를 고칠 수 없다', as
   renderDetail()
 
   expect(await screen.findByRole('radio', { name: /^중단/ })).toHaveProperty('disabled', true)
+})
+
+test('완독한 책을 다시 읽는 중으로 바꾸면 미리 채운 시작일도 보내 덮어쓰기를 막는다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(
+    detail({ status: 'completed', completed_at: '2026-10-10T05:00:00Z', has_completed: true }),
+  )
+  mocks.updateLibraryStatus.mockResolvedValue(undefined)
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^읽는 중/ }))
+  fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
+
+  await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
+  expect(mocks.updateLibraryStatus.mock.calls[0][2]).toEqual({
+    status: 'reading',
+    started_at: '2026-10-01T00:00:00+09:00',
+  })
+})
+
+test('중단 후 재개는 미리 채운 시작일을 바꾸지 않으면 보내지 않는다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ status: 'paused' }))
+  mocks.updateLibraryStatus.mockResolvedValue(undefined)
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^읽는 중/ }))
+  fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
+
+  await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
+  expect(mocks.updateLibraryStatus.mock.calls[0][2]).toEqual({ status: 'reading' })
+})
+
+test('오늘로 채운 완독일을 연 채 한국 자정을 넘기면 화면의 날짜를 보낸다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.updateLibraryStatus.mockResolvedValue(undefined)
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^완독/ }))
+  // 한국 시간 2026-10-29 00:01로 넘어가고 창으로 돌아온다.
+  vi.setSystemTime(new Date('2026-10-28T15:01:00Z'))
+  act(() => { window.dispatchEvent(new Event('focus')) })
+  fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
+
+  await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
+  expect(mocks.updateLibraryStatus.mock.calls[0][2]).toEqual({
+    status: 'completed',
+    completed_at: '2026-10-28T23:59:59+09:00',
+  })
 })

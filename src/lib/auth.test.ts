@@ -127,11 +127,13 @@ test('401 재시도 중 갱신 이벤트가 와도 요청을 반복하지 않는
     authUserId: sessionA.user.id,
     isChecking: false,
     error: expect.objectContaining({ status: 401 }),
+    retry: expect.any(Function),
   })
   expect(auth.refreshSession).toHaveBeenCalledTimes(1)
   expect(fetchMock).toHaveBeenCalledTimes(2)
   expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.example.test/me', {
     headers: { Authorization: 'Bearer refreshed-token' },
+    signal: expect.any(AbortSignal),
   })
 })
 
@@ -148,9 +150,46 @@ test('503은 인증 확인 오류로 전달하고 로그아웃하지 않는다',
     authUserId: sessionA.user.id,
     isChecking: false,
     error: expect.objectContaining({ status: 503 }),
+    retry: expect.any(Function),
   })
   expect(auth.refreshSession).not.toHaveBeenCalled()
   expect(auth.signOut).not.toHaveBeenCalled()
+})
+
+test('503 뒤 다시 시도하면 같은 세션으로 /me를 다시 확인한다', async () => {
+  fetchMock
+    .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    .mockResolvedValueOnce(Response.json(userA))
+  const onChange = vi.fn()
+  stop = subscribeAuthState(onChange)
+
+  emit('INITIAL_SESSION', sessionA)
+  await vi.advanceTimersByTimeAsync(0)
+  onChange.mock.lastCall?.[0].retry()
+  await vi.advanceTimersByTimeAsync(0)
+
+  expect(onChange).toHaveBeenLastCalledWith({
+    user: userA,
+    authUserId: sessionA.user.id,
+    isChecking: false,
+    error: null,
+  })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
+test('확인된 같은 계정의 사용자 정보 변경 이벤트는 개인 화면을 다시 확인하지 않는다', async () => {
+  fetchMock.mockResolvedValue(Response.json(userA))
+  const onChange = vi.fn()
+  stop = subscribeAuthState(onChange)
+
+  emit('INITIAL_SESSION', sessionA)
+  await vi.advanceTimersByTimeAsync(0)
+  onChange.mockClear()
+  emit('USER_UPDATED', sessionA)
+  await vi.advanceTimersByTimeAsync(0)
+
+  expect(onChange).not.toHaveBeenCalled()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
 })
 
 test('로그아웃 뒤 도착한 이전 사용자 응답을 무시한다', async () => {

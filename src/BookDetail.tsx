@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { isAuthError } from '@supabase/supabase-js'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
   ApiError,
@@ -15,7 +14,8 @@ import {
   updateLibraryStatus,
 } from './lib/api'
 import type { LibraryBookDetail, ReadingStatus, StatusChange } from './lib/api'
-import { SessionMissingError, withAccessToken } from './lib/auth'
+import { withAccessToken } from './lib/auth'
+import { commonErrorMessage, isAuthFailure, isUnclearWrite, RELOGIN_MESSAGE } from './lib/errors'
 import {
   buildRecordPatch,
   formatKstDate,
@@ -34,34 +34,14 @@ import { useKstToday } from './useKstToday'
 type Pending = 'status' | 'record' | 'delete' | 'check' | null
 type WriteResult = 'ok' | 'failed' | 'unclear'
 
-const RELOGIN = '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'
-
-const isAuthFailure = (error: unknown) =>
-  error instanceof SessionMissingError ||
-  isAuthError(error) ||
-  (error instanceof ApiError && error.status === 401)
-
-// 네트워크 오류·게이트웨이 시간 초과는 서버에 반영됐는지 알 수 없다.
-const isUnclearWrite = (error: unknown) =>
-  error instanceof TypeError ||
-  (error instanceof ApiError && (error.status === 502 || error.status === 504))
-
 function loadErrorMessage(error: unknown) {
-  if (isAuthFailure(error)) return RELOGIN
-  if (error instanceof ApiError) {
-    // 타인 기록과 없는 기록은 같은 404이므로 구분하지 않는다.
-    if (error.status === 404) return '서재에서 이 책을 찾을 수 없습니다.'
-    if (error.status === 503) return '서버가 잠시 응답할 수 없습니다. 잠시 후 다시 시도해주세요.'
-    return `책 정보를 불러오지 못했습니다. (${error.status})`
-  }
-  if (error instanceof TypeError) {
-    return '서버에 연결하지 못했습니다. 네트워크를 확인하고 다시 시도해주세요.'
-  }
-  return '책 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'
+  // 타인 기록과 없는 기록은 같은 404이므로 구분하지 않는다.
+  if (error instanceof ApiError && error.status === 404) return '서재에서 이 책을 찾을 수 없습니다.'
+  return commonErrorMessage(error, '책 정보를 불러오지 못했습니다')
 }
 
 function saveErrorMessage(error: unknown) {
-  if (isAuthFailure(error)) return RELOGIN
+  if (isAuthFailure(error)) return RELOGIN_MESSAGE
   if (isUnclearWrite(error)) {
     return '저장 결과를 확인하지 못했습니다. 최신 상태를 다시 불러오고 있으니 확인 후 다시 시도해주세요.'
   }
@@ -75,9 +55,8 @@ function saveErrorMessage(error: unknown) {
     if (error.status === 503) {
       return '서버가 잠시 응답할 수 없습니다. 입력은 그대로 두었으니 잠시 후 다시 시도해주세요.'
     }
-    return `저장하지 못했습니다. (${error.status})`
   }
-  return '저장하지 못했습니다. 잠시 후 다시 시도해주세요.'
+  return commonErrorMessage(error, '저장하지 못했습니다')
 }
 
 // BE 전환 규칙: 중단은 읽는 중에서만, 포기는 읽는 중·중단에서만 새로 가능하다.
@@ -107,7 +86,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   const [startedDate, setStartedDate] = useState('')
   const [completedDate, setCompletedDate] = useState('')
   // 미리 채운 날짜를 그대로 두면 보내지 않아 서버의 원래 시각을 유지한다.
-  const [prefilled, setPrefilled] = useState({ started: '', completed: '' })
+  const [prefilled, setPrefilled] = useState({ started: '', completed: '', completedIsToday: false })
   const [pending, setPending] = useState<Pending>(null)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [confirming, setConfirming] = useState<'reset' | 'delete' | null>(null)
@@ -233,7 +212,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     setNextStatus(status)
     setStartedDate(started)
     setCompletedDate(completed)
-    setPrefilled({ started, completed })
+    setPrefilled({ started, completed, completedIsToday: completed !== '' && completed === today })
   }
 
   async function handleStatus(event: SubmitEvent<HTMLFormElement>) {
@@ -253,14 +232,24 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     setConfirming(null)
     if (!book || !nextStatus) return
     const change: StatusChange = { status: nextStatus }
+    // BE는 완독 전환, 중단 후 재개, 읽는 중 날짜 고치기에서만 생략한 시작일을 유지한다.
+    // 완독·포기·읽고 싶음에서 다시 읽는 중으로 갈 때는 생략하면 현재 시각으로 덮으므로 미리 채운 날짜도 보낸다.
+    const keepsStart =
+      nextStatus === 'completed' || book.status === 'paused' || book.status === 'reading'
     if (
       (nextStatus === 'reading' || nextStatus === 'completed') &&
       startedDate &&
-      startedDate !== prefilled.started
+      (startedDate !== prefilled.started || !keepsStart)
     ) {
       change.started_at = kstStartIso(startedDate)
     }
-    if (nextStatus === 'completed' && completedDate && completedDate !== prefilled.completed) {
+    // 오늘로 채운 완독일을 연 채 한국 자정을 넘기면 화면에 보인 날짜를 그대로 보낸다.
+    const staleToday = prefilled.completedIsToday && completedDate === prefilled.completed && completedDate !== today
+    if (
+      nextStatus === 'completed' &&
+      completedDate &&
+      (completedDate !== prefilled.completed || staleToday)
+    ) {
       change.completed_at = kstCompletionIso(completedDate)
     }
 

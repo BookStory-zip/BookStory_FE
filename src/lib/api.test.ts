@@ -34,6 +34,7 @@ test('토큰으로 /me를 요청하고 사용자 정보를 반환한다', async 
     headers: {
       Authorization: 'Bearer test-access-token',
     },
+    signal: expect.any(AbortSignal),
   })
   expect(user).toEqual(expectedUser)
 })
@@ -154,6 +155,7 @@ test('서재 등록은 isbn13만 JSON으로 보내고 응답 id·상태를 돌�
     method: 'POST',
     headers: { Authorization: 'Bearer test-access-token', 'Content-Type': 'application/json' },
     body: JSON.stringify({ isbn13: '9788936433598' }),
+    signal: expect.any(AbortSignal),
   })
 })
 
@@ -166,6 +168,7 @@ test('서재 삭제 204는 본문을 읽지 않고 성공으로 처리한다', a
   expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/library/books/user-book-1', {
     method: 'DELETE',
     headers: { Authorization: 'Bearer test-access-token' },
+    signal: expect.any(AbortSignal),
   })
 })
 
@@ -210,7 +213,18 @@ test('오늘 체크는 본문 없이 PUT, 취소는 DELETE 204로 처리한다',
   await expect(cancelReadingToday('test-access-token', 'user-book-1')).resolves.toBeUndefined()
   expect(fetchMock.mock.calls[0]).toEqual([
     'https://api.example.test/library/books/user-book-1/reading-logs/today',
-    { headers: { Authorization: 'Bearer test-access-token' }, method: 'PUT' },
+    { headers: { Authorization: 'Bearer test-access-token' }, method: 'PUT', signal: expect.any(AbortSignal) },
   ])
   expect(fetchMock.mock.calls[1][1].method).toBe('DELETE')
+})
+
+test('응답이 끝나지 않는 요청은 시간 제한으로 끊는다', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(Response.json({ user_id: 'user-1' }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await getMe('test-access-token')
+  const signal: AbortSignal = fetchMock.mock.calls[0][1].signal
+  expect(signal).toBeInstanceOf(AbortSignal)
+  expect(signal.aborted).toBe(false)
 })

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ApiError, getReadingLogs } from './lib/api'
+import { getReadingLogs } from './lib/api'
 import type { ReadingLogEntry } from './lib/api'
 import { withAccessToken } from './lib/auth'
+import { commonErrorMessage } from './lib/errors'
 import { addMonths, calendarDays, monthOf, monthRange, spokenDate, spokenMonth } from './lib/dates'
 import { useKstToday } from './useKstToday'
 import CabinIcon from './CabinIcon'
@@ -10,15 +11,7 @@ import CabinIcon from './CabinIcon'
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
 function errorMessage(error: unknown) {
-  if (error instanceof ApiError) {
-    if (error.status === 401) return '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'
-    if (error.status === 503) return '서버가 잠시 응답할 수 없습니다. 잠시 후 다시 시도해주세요.'
-    return `독서 기록을 불러오지 못했습니다. (${error.status})`
-  }
-  if (error instanceof TypeError) {
-    return '서버에 연결하지 못했습니다. 네트워크를 확인하고 다시 시도해주세요.'
-  }
-  return '독서 기록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'
+  return commonErrorMessage(error, '독서 기록을 불러오지 못했습니다')
 }
 
 // 달력은 실제 체크 기록(read_date + user_book_id)만으로 그리고, 체크 없는 날을 지어내지 않는다.

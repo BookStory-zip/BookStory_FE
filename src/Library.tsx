@@ -1,22 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { ApiError, getLibraryBooks, statusLabels } from './lib/api'
+import { getLibraryBooks, statusLabels } from './lib/api'
 import type { LibraryBookItem } from './lib/api'
 import { withAccessToken } from './lib/auth'
+import { commonErrorMessage } from './lib/errors'
 import { Link } from 'react-router'
 import CabinIcon from './CabinIcon'
 
 export const PAGE_SIZE = 20
 
 function errorMessage(error: unknown) {
-  if (error instanceof ApiError) {
-    if (error.status === 401) return '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'
-    if (error.status === 503) return '서버가 잠시 응답할 수 없습니다. 잠시 후 다시 시도해주세요.'
-    return `서재를 불러오지 못했습니다. (${error.status})`
-  }
-  if (error instanceof TypeError) {
-    return '서버에 연결하지 못했습니다. 네트워크를 확인하고 다시 시도해주세요.'
-  }
-  return '서재를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'
+  return commonErrorMessage(error, '서재를 불러오지 못했습니다')
 }
 
 // 계정이 바뀌면 부모가 key로 새로 마운트하므로 이전 계정 목록이 남지 않는다.
