@@ -292,3 +292,48 @@ test('체크 409는 상태 안내로 바꾸고 다시 보내지 않는다', asyn
   await waitFor(() => expect(screen.getByRole('status').textContent).toContain('읽는 중인 책만 오늘 체크'))
   expect(mocks.checkReadingToday).toHaveBeenCalledTimes(1)
 })
+
+test('읽는 중인 책은 상태를 그대로 두고 바꾼 시작일만 보낸다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.updateLibraryStatus.mockResolvedValue(undefined)
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^읽는 중.*날짜 고치기/ }))
+  fireEvent.click(screen.getByRole('button', { name: '시작일 (선택) 2026년 10월 1일' }))
+  fireEvent.click(screen.getByRole('button', { name: '2026년 10월 2일' }))
+  fireEvent.click(screen.getByRole('button', { name: '날짜 고치기' }))
+
+  await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
+  expect(mocks.updateLibraryStatus).toHaveBeenCalledWith('test-token', 'user-book-1', {
+    status: 'reading',
+    started_at: '2026-10-02T00:00:00+09:00',
+  })
+})
+
+test('날짜를 바꾸지 않은 날짜 고치기는 요청하지 않는다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^읽는 중/ }))
+  fireEvent.click(screen.getByRole('button', { name: '날짜 고치기' }))
+
+  expect(screen.getByRole('status').textContent).toContain('바뀐 날짜가 없습니다')
+  expect(mocks.updateLibraryStatus).not.toHaveBeenCalled()
+})
+
+test('완독한 책의 날짜 고치기는 오늘이 아닌 기존 완독일을 채운다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(
+    detail({ status: 'completed', completed_at: '2026-10-10T05:00:00Z', has_completed: true }),
+  )
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^완독/ }))
+  expect(screen.getByRole('button', { name: '완독일 (선택) 2026년 10월 10일' })).toBeTruthy()
+})
+
+test('중단·포기 상태는 현재 상태로 날짜를 고칠 수 없다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ status: 'paused' }))
+  renderDetail()
+
+  expect(await screen.findByRole('radio', { name: /^중단/ })).toHaveProperty('disabled', true)
+})

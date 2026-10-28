@@ -219,10 +219,17 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   function chooseStatus(status: ReadingStatus) {
     if (!book) return
     const started = book.started_at ? kstDateOf(book.started_at) : ''
+    // 이미 완독한 책의 날짜 고치기는 기존 완독일을 채운다.
     const completed =
-      status === 'completed' && (book.status === 'reading' || book.status === 'paused')
-        ? today
-        : ''
+      status !== 'completed'
+        ? ''
+        : book.status === 'completed'
+          ? book.completed_at
+            ? kstDateOf(book.completed_at)
+            : ''
+          : book.status === 'reading' || book.status === 'paused'
+            ? today
+            : ''
     setNextStatus(status)
     setStartedDate(started)
     setCompletedDate(completed)
@@ -257,10 +264,17 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       change.completed_at = kstCompletionIso(completedDate)
     }
 
+    // 같은 상태로 보내면 BE가 날짜만 고친다. 바꾼 날짜가 없으면 보내지 않는다.
+    const editingDates = nextStatus === book.status
+    if (editingDates && !change.started_at && !change.completed_at) {
+      setNotice({ kind: 'ok', text: '바뀐 날짜가 없습니다.' })
+      return
+    }
+
     const result = await run(
       'status',
       (token) => updateLibraryStatus(token, book.id, change),
-      `상태를 ${statusLabels[nextStatus]}(으)로 바꿨습니다.`,
+      editingDates ? '날짜를 고쳤습니다.' : `상태를 ${statusLabels[nextStatus]}(으)로 바꿨습니다.`,
     )
     if (result === 'ok') {
       setNextStatus(null)
@@ -335,6 +349,8 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   }
 
   const busy = pending !== null
+  // BE는 읽는 중·완독 상태에 같은 상태로 날짜를 보내면 날짜만 고친다.
+  const canEditDates = book.status === 'reading' || book.status === 'completed'
 
   return (
     <section className="detail" aria-labelledby="detail-title">
@@ -413,12 +429,12 @@ function BookDetail({ userBookId }: { userBookId: string }) {
                   type="radio"
                   name="status"
                   value={status}
-                  checked={(nextStatus ?? book.status) === status}
-                  disabled={status === book.status || blocked !== null}
+                  checked={nextStatus === status}
+                  disabled={(status === book.status && !canEditDates) || blocked !== null}
                   onChange={() => chooseStatus(status)}
                 />
                 <span>{statusLabels[status]}</span>
-                {status === book.status && <small>현재</small>}
+                {status === book.status && <small>{canEditDates ? '현재 · 날짜 고치기' : '현재'}</small>}
                 {blocked && <small>{blocked}</small>}
               </label>
             )
@@ -445,12 +461,18 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         )}
         {(nextStatus === 'reading' || nextStatus === 'completed') && (
           <p className="result-note">
-            그대로 두면 기존 날짜를 유지하고, 비우면 서버 규칙에 따라 비워 두거나 현재 시각으로 기록합니다. 날짜는 한국 시간 기준입니다.
+            {nextStatus === book.status
+              ? '바꾼 날짜만 고칩니다. 비워도 기존 날짜는 지워지지 않습니다. 날짜는 한국 시간 기준입니다.'
+              : '그대로 두면 기존 날짜를 유지하고, 비우면 서버 규칙에 따라 비워 두거나 현재 시각으로 기록합니다. 날짜는 한국 시간 기준입니다.'}
           </p>
         )}
 
         <button type="submit" disabled={busy || nextStatus === null}>
-          {pending === 'status' ? '바꾸는 중…' : '상태 바꾸기'}
+          {pending === 'status'
+            ? '바꾸는 중…'
+            : nextStatus !== null && nextStatus === book.status
+              ? '날짜 고치기'
+              : '상태 바꾸기'}
         </button>
       </form>
 
