@@ -235,8 +235,9 @@ function AuthScreen() {
   if (userId !== null) {
     return (
       <main className="app">
+        <a href="#content" className="skip-link">본문으로 바로가기</a>
         <header className="app-header">
-          <p className="wordmark">
+          <p className="wordmark" translate="no">
             <CabinIcon className="wordmark-icon" />
             BookStory
           </p>
@@ -256,15 +257,17 @@ function AuthScreen() {
         </header>
         <p role="status">{message}</p>
         {/* 계정이 바뀌면 개인 화면을 새로 마운트해 이전 계정의 목록·늦은 응답을 버린다 */}
-        <Suspense fallback={<PageLoading />}>
-          <Routes key={userId}>
-            <Route index element={<Library />} />
-            <Route path="search" element={<BookSearch />} />
-            <Route path="books/:userBookId" element={<BookDetail />} />
-            <Route path="records" element={<ReadingRecords />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
+        <div id="content" tabIndex={-1}>
+          <Suspense fallback={<PageLoading />}>
+            <Routes key={userId}>
+              <Route index element={<Library />} />
+              <Route path="search" element={<BookSearch />} />
+              <Route path="books/:userBookId" element={<BookDetail />} />
+              <Route path="records" element={<ReadingRecords />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </div>
       </main>
     )
   }
@@ -272,7 +275,7 @@ function AuthScreen() {
   if (retryCheck) {
     return (
       <main>
-        <h1>BookStory</h1>
+        <h1 translate="no">BookStory</h1>
         <p className="tagline">읽은 날을 한 권씩 꽂아 두는 서재</p>
         <p role="status">{message}</p>
         <div className="retry-actions">
@@ -287,7 +290,7 @@ function AuthScreen() {
 
   return (
     <main>
-      <h1>BookStory</h1>
+      <h1 translate="no">BookStory</h1>
       <p className="tagline">읽은 날을 한 권씩 꽂아 두는 서재</p>
       <p role="status">{message}</p>
 
@@ -304,6 +307,7 @@ function AuthScreen() {
             id="email"
             name="email"
             type="email"
+            spellCheck={false}
             autoComplete="username"
             disabled={isCheckingSession || isSubmitting}
             required

@@ -115,6 +115,7 @@ main {
 h1,
 h2 {
   margin: 0;
+  text-wrap: balance;
   font-family: var(--font-display);
   font-weight: 700;
   font-style: normal;
@@ -182,6 +183,12 @@ input {
 
 input:disabled {
   background-color: var(--color-paper-2);
+}
+
+a,
+button {
+  /* 누름 표시는 :active·포커스 스타일이 맡는다 */
+  -webkit-tap-highlight-color: transparent;
 }
 
 button {
@@ -387,6 +394,7 @@ main.app {
 
 .result-cover {
   width: 100%;
+  height: auto;
   aspect-ratio: 2 / 3;
   border-radius: 2px 4px 4px 2px;
   object-fit: cover;
@@ -459,6 +467,7 @@ main.app {
 
 .detail-cover {
   width: 100%;
+  height: auto;
   aspect-ratio: 2 / 3;
   border-radius: 2px 4px 4px 2px;
   object-fit: cover;
@@ -672,6 +681,28 @@ button.link-button:hover:not(:disabled) {
 .retry-actions {
   display: grid;
   gap: var(--space-3);
+}
+
+/* 키보드 사용자를 위한 본문 바로가기: 포커스를 받을 때만 보인다 */
+.skip-link {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 10;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: none;
+}
+
+/* 바로가기로 옮겨 간 본문 묶음 자체는 조작 대상이 아니라 테두리를 그리지 않는다 */
+#content:focus {
+  outline: none;
 }
 
 /* 오늘의 독서 */
@@ -934,6 +965,14 @@ button.calendar-nav:hover:not(:disabled) {
   text-align: center;
 }
 
+button.calendar-day,
+.records-num,
+.records-count,
+.counter,
+.detail-dates dd {
+  font-variant-numeric: tabular-nums;
+}
+
 button.calendar-day {
   min-height: 2.75rem;
   padding: 0;
@@ -976,6 +1015,7 @@ button.calendar-day:disabled {
 /* 확인창: 브라우저 기본 dialog에 숲 테마 적용 */
 .confirm-dialog {
   width: min(24rem, calc(100% - 2rem));
+  overscroll-behavior: contain;
   padding: var(--space-6);
   border: 1px solid var(--color-rule-strong);
   border-radius: var(--radius);
@@ -1175,6 +1215,7 @@ button.compact {
 
 .cover {
   display: block;
+  height: auto;
   width: 84%;
   justify-self: center;
   aspect-ratio: 2 / 3;

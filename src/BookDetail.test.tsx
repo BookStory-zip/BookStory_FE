@@ -386,3 +386,18 @@ test('오늘로 채운 완독일을 연 채 한국 자정을 넘기면 화면의
     completed_at: '2026-10-28T23:59:59+09:00',
   })
 })
+
+test('저장하지 않은 기록이 있을 때만 새로고침 전에 경고한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  renderDetail()
+
+  const memo = await screen.findByLabelText('메모')
+  const before = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(before)
+  expect(before.defaultPrevented).toBe(false)
+
+  fireEvent.change(memo, { target: { value: '아직 저장 안 한 메모' } })
+  const dirty = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(dirty)
+  expect(dirty.defaultPrevented).toBe(true)
+})

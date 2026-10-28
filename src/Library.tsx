@@ -115,6 +115,8 @@ export default function Library() {
                   className="cover"
                   src={book.thumbnail_url}
                   alt=""
+                  width={120}
+                  height={174}
                   loading="lazy"
                   referrerPolicy="no-referrer"
                 />

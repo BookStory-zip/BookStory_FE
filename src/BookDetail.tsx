@@ -167,6 +167,15 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     await reload()
   }
 
+  // 저장하지 않은 기록이 있으면 새로고침·창 닫기 전에 브라우저 확인을 띄워 입력을 지킨다.
+  const recordDirty = book !== null && !sameForm(form, recordFormFrom(book))
+  useEffect(() => {
+    if (!recordDirty) return
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [recordDirty])
+
   async function run(
     kind: Exclude<Pending, null>,
     write: (token: string) => Promise<unknown>,
@@ -347,7 +356,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
 
       <div className="detail-head">
         {book.thumbnail_url ? (
-          <img className="detail-cover" src={book.thumbnail_url} alt="" referrerPolicy="no-referrer" />
+          <img className="detail-cover" src={book.thumbnail_url} alt="" width={120} height={174} fetchPriority="high" referrerPolicy="no-referrer" />
         ) : (
           <div className="detail-cover cover-empty" aria-hidden="true">{book.title.slice(0, 1)}</div>
         )}

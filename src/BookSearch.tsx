@@ -105,7 +105,7 @@ export default function BookSearch() {
           id="search-query"
           name="query"
           type="search"
-          placeholder="책 제목, 저자 또는 ISBN"
+          placeholder="예: 소년이 온다, 한강, 9788936434120…"
           maxLength={200}
           enterKeyHint="search"
           autoComplete="off"
@@ -134,6 +134,8 @@ export default function BookSearch() {
                     className="result-cover"
                     src={book.thumbnail}
                     alt=""
+                    width={120}
+                    height={174}
                     loading="lazy"
                     referrerPolicy="no-referrer"
                   />

@@ -17,7 +17,7 @@ const missing = [
 if (missing.length > 0) {
   root.render(
     <main>
-      <h1>BookStory</h1>
+      <h1 translate="no">BookStory</h1>
       <p role="alert">
         앱 설정이 완료되지 않았습니다. 관리자에게 다음 공개 설정을 확인해 달라고 알려주세요:{' '}
         {missing.join(', ')}

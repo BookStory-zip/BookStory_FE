@@ -135,7 +135,7 @@ export default function ReadingRecords() {
                   <span className="records-tile" aria-hidden="true">
                     {cover &&
                       (cover.thumbnail_url ? (
-                        <img src={cover.thumbnail_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                        <img src={cover.thumbnail_url} alt="" width={120} height={174} loading="lazy" referrerPolicy="no-referrer" />
                       ) : (
                         <span className="records-initial">{cover.title.slice(0, 1)}</span>
                       ))}
@@ -158,7 +158,7 @@ export default function ReadingRecords() {
                     <li key={log.id}>
                       <Link to={`/books/${log.user_book_id}`} className="records-book">
                         {log.thumbnail_url ? (
-                          <img className="result-cover" src={log.thumbnail_url} alt="" referrerPolicy="no-referrer" />
+                          <img className="result-cover" src={log.thumbnail_url} alt="" width={120} height={174} loading="lazy" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="result-cover cover-empty" aria-hidden="true">{log.title.slice(0, 1)}</div>
                         )}
