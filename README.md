@@ -4,7 +4,7 @@
 
 ## 문서와 현재 상태
 
-- [plan.md](./plan.md): 단계별 계획, 최소 화면, 외부 설정과 다음 작업의 완료 기준
+- [plan.md](./plan.md): 운영 배포 기록, 미확인 항목, 백엔드 전달 사항과 남은 작업
 - [CLAUDE.md](./CLAUDE.md): 에이전트의 단위별 구현·설명·검증 방식과 작업 규칙
 - 이 README: 프로젝트 소개, 환경변수, API 계약과 배포 안내
 
@@ -207,7 +207,19 @@ BE에는 `/login`·`/signup`이 없습니다. BE 요청은 `Authorization: Beare
 - 로컬 origin과 Vercel origin을 Render `CORS_ORIGINS`에 정확히 등록합니다. 포트가 다르면 별도 origin이며 경로·마지막 슬래시·와일드카드를 붙이지 않습니다. Preview 주소도 자동 허용되지 않습니다. 설정 후 BE 재시작·재배포 및 실제 브라우저 검증이 필요합니다.
 - BE와 같은 Supabase 프로젝트의 Publishable key, Site URL·Redirect URLs·메일 발송을 확인합니다. 공개 가입 전 SMTP 수신자·발송 제한을 해결합니다. [인증](https://supabase.com/docs/guides/auth/passwords) · [키](https://supabase.com/docs/guides/getting-started/api-keys) · [SMTP](https://supabase.com/docs/guides/auth/auth-smtp)
 - Vercel 환경변수 등록 후 재빌드·배포하고 SPA 상세 주소 새로고침과 인증 리다이렉트를 확인합니다. Vite 환경변수는 빌드에 반영되므로 환경별 빌드는 각각 검증합니다.
-- 현재 FE는 조직 비공개 저장소입니다. [Hobby의 조직 비공개 Git 연동 제한](https://vercel.com/docs/git#using-hobby-teams)과 [개인·비상업적 사용 조건](https://vercel.com/docs/plans/hobby)을 고려하여 소유·공개 범위 또는 플랜을 배포 전에 결정합니다. 저장소 공개·이전·유료 전환은 별도 승인 없이 실행하지 않습니다.
+- 현재 FE는 조직 비공개 저장소입니다. [Hobby의 조직 비공개 Git 연동 제한](https://vercel.com/docs/git#using-hobby-teams)과 [개인·비상업적 사용 조건](https://vercel.com/docs/plans/hobby) 때문에 2026-10-28 사용자 결정으로 Git 연동 없이 Vercel CLI 수동 배포를 사용합니다. 저장소 공개·이전·유료 전환은 별도 승인 없이 실행하지 않습니다.
+
+### 운영 배포 (Vercel CLI 수동)
+
+운영 주소는 https://bookstory-fe.vercel.app 이고 Vercel 프로젝트는 개인 계정의 `bookstory-fe`입니다. 공개 환경변수 3개는 Vercel 프로젝트 Production에 Config 타입으로 등록되어 있습니다.
+
+1. develop → main PR을 self-review·CI 통과 후 merge commit으로 병합하고 main CI 통과를 확인합니다.
+2. 로컬 변경과 `.env.local`이 없는 main 작업 트리를 따로 만듭니다(`git worktree add --detach <폴더> origin/main`).
+3. 그 폴더에서 `npx vercel@64.0.2 link --yes --project bookstory-fe` 후 CLI가 만든 `.env.local`(Vercel 토큰)을 지우고 `.gitignore` 변경을 되돌립니다.
+4. `npx vercel@64.0.2 deploy --prod --yes`로 배포하고 SPA 경로·CORS·통합 동작을 확인합니다.
+5. 배포 URL·배포 ID와 FE·BE 커밋을 plan.md "운영 배포 기록"에 남기고 임시 작업 트리를 지웁니다.
+
+새 origin을 쓰면 Render `CORS_ORIGINS`와 Supabase Site URL·Redirect URLs(`/`, `/reset-password/update`)에 함께 등록합니다. 2026-10-28 운영 주소를 두 곳에 등록했습니다.
 - 정적 FE와 기본 `vercel.app` 주소, 필요한 API 캐시를 우선합니다. 프론트 전용 서버·DB·이미지 저장소·유료 UI·분석 서비스·Docker 빌드는 선행 추가하지 않습니다. [Supabase Free의 일시 중지·용량 조건](https://supabase.com/pricing)과 BE·메일 비용까지 확인하며 전체 운영비 0원을 보장하지 않습니다.
 
 ## CI/CD 방향
