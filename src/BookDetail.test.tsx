@@ -340,7 +340,7 @@ test('중단·포기 상태는 현재 상태로 날짜를 고칠 수 없다', as
   expect(await screen.findByRole('radio', { name: /^중단/ })).toHaveProperty('disabled', true)
 })
 
-test('완독한 책을 다시 읽는 중으로 바꾸면 미리 채운 시작일도 보내 덮어쓰기를 막는다', async () => {
+test('완독한 책을 다시 읽으면 새 독서로 보고 시작일을 비워 오늘부터 시작한다', async () => {
   mocks.getLibraryBook.mockResolvedValue(
     detail({ status: 'completed', completed_at: '2026-10-10T05:00:00Z', has_completed: true }),
   )
@@ -348,12 +348,28 @@ test('완독한 책을 다시 읽는 중으로 바꾸면 미리 채운 시작일
   renderDetail()
 
   fireEvent.click(await screen.findByRole('radio', { name: /^읽는 중/ }))
+  expect(screen.getByRole('button', { name: '시작일 (선택) 날짜 선택' })).toBeTruthy()
+  expect(screen.getByText(/오늘부터 시작하고, 이전 완독일은 유지됩니다/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
+
+  await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
+  expect(mocks.updateLibraryStatus.mock.calls[0][2]).toEqual({ status: 'reading' })
+})
+
+test('다시 읽을 때 시작일을 직접 고르면 그 날짜를 보낸다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ status: 'abandoned' }))
+  mocks.updateLibraryStatus.mockResolvedValue(undefined)
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^읽는 중/ }))
+  fireEvent.click(screen.getByRole('button', { name: '시작일 (선택) 날짜 선택' }))
+  fireEvent.click(screen.getByRole('button', { name: '2026년 10월 20일' }))
   fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
 
   await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
   expect(mocks.updateLibraryStatus.mock.calls[0][2]).toEqual({
     status: 'reading',
-    started_at: '2026-10-01T00:00:00+09:00',
+    started_at: '2026-10-20T00:00:00+09:00',
   })
 })
 

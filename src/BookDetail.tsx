@@ -203,10 +203,14 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     }
   }
 
-  // 기존 시작일을, 읽는 중·중단에서 완독하면 오늘(서버도 지금 시각을 씀)을 미리 채운다.
+  // 재독 규칙(2026-10-28 확정): 읽고 싶음·완독·포기 → 읽는 중은 새 독서라 시작일을 채우지 않고,
+  // 빈칸이면 서버가 오늘로 시작한다. 중단 후 재개·읽는 중 날짜 고치기·완독 전환은 기존 시작일을 채운다.
+  // 읽는 중·중단에서 완독하면 완독일은 오늘(서버도 지금 시각을 씀)을 채운다.
   function chooseStatus(status: ReadingStatus) {
     if (!book) return
-    const started = book.started_at ? kstDateOf(book.started_at) : ''
+    const newReading =
+      status === 'reading' && book.status !== 'reading' && book.status !== 'paused'
+    const started = book.started_at && !newReading ? kstDateOf(book.started_at) : ''
     // 이미 완독한 책의 날짜 고치기는 기존 완독일을 채운다.
     const completed =
       status !== 'completed'
@@ -241,14 +245,11 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     setConfirming(null)
     if (!book || !nextStatus) return
     const change: StatusChange = { status: nextStatus }
-    // BE는 완독 전환, 중단 후 재개, 읽는 중 날짜 고치기에서만 생략한 시작일을 유지한다.
-    // 완독·포기·읽고 싶음에서 다시 읽는 중으로 갈 때는 생략하면 현재 시각으로 덮으므로 미리 채운 날짜도 보낸다.
-    const keepsStart =
-      nextStatus === 'completed' || book.status === 'paused' || book.status === 'reading'
+    // 미리 채운 시작일을 그대로 두면 보내지 않아 기존 시작일(또는 새 독서면 오늘)을 서버가 정한다.
     if (
       (nextStatus === 'reading' || nextStatus === 'completed') &&
       startedDate &&
-      (startedDate !== prefilled.started || !keepsStart)
+      startedDate !== prefilled.started
     ) {
       change.started_at = kstStartIso(startedDate)
     }
@@ -461,7 +462,9 @@ function BookDetail({ userBookId }: { userBookId: string }) {
           <p className="result-note">
             {nextStatus === book.status
               ? '바꾼 날짜만 고칩니다. 비워도 기존 날짜는 지워지지 않습니다. 날짜는 한국 시간 기준입니다.'
-              : '그대로 두면 기존 날짜를 유지하고, 비우면 서버 규칙에 따라 비워 두거나 현재 시각으로 기록합니다. 날짜는 한국 시간 기준입니다.'}
+              : nextStatus === 'reading' && book.status !== 'paused'
+                ? '새로 읽기 시작합니다. 시작일을 비워 두면 오늘부터 시작하고, 이전 완독일은 유지됩니다. 날짜는 한국 시간 기준입니다.'
+                : '그대로 두면 기존 날짜를 유지하고, 비우면 서버 규칙에 따라 비워 두거나 현재 시각으로 기록합니다. 날짜는 한국 시간 기준입니다.'}
           </p>
         )}
 
