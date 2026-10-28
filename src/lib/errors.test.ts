@@ -1,0 +1,25 @@
+import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js'
+import { expect, test, vi } from 'vitest'
+import { ApiError } from './api'
+import { SessionMissingError } from './auth'
+import { commonErrorMessage, isAuthFailure, isUnclearWrite } from './errors'
+
+vi.mock('./supabase', () => ({ supabase: { auth: {} } }))
+
+test('세션 갱신 중 연결 실패는 다시 로그인 안내가 아니라 연결 안내다', () => {
+  const error = new AuthRetryableFetchError('Failed to fetch', 0)
+  expect(isAuthFailure(error)).toBe(false)
+  expect(commonErrorMessage(error, '불러오지 못했습니다')).toContain('서버에 연결하지 못했습니다')
+})
+
+test('세션 없음·갱신 거절·401은 다시 로그인 안내다', () => {
+  for (const error of [new SessionMissingError(), new AuthApiError('invalid', 400, 'refresh_token_not_found'), new ApiError(401)]) {
+    expect(commonErrorMessage(error, '불러오지 못했습니다')).toContain('다시 로그인')
+  }
+})
+
+test('시간 초과는 반영 여부를 알 수 없는 쓰기로 보고 안내한다', () => {
+  const timeout = new DOMException('signal timed out', 'TimeoutError')
+  expect(isUnclearWrite(timeout)).toBe(true)
+  expect(commonErrorMessage(timeout, '불러오지 못했습니다')).toContain('서버 응답이 없습니다')
+})
