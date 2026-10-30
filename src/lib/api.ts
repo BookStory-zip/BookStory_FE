@@ -403,3 +403,55 @@ export async function getReadingLogs(
     if (page.length < READING_LOG_PAGE_SIZE) return logs
   }
 }
+
+export type ReadingStatistics = {
+  library: {
+    total_books: number
+    status_counts: Record<ReadingStatus, number>
+    completed_books: number
+  }
+  period: {
+    year: number
+    month: number | null
+    start_date: string
+    end_date: string
+    reading_days: number
+  }
+}
+
+const isCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0
+
+function isReadingStatistics(value: unknown): value is ReadingStatistics {
+  if (typeof value !== 'object' || value === null) return false
+  const { library, period } = value as Record<string, unknown>
+  if (typeof library !== 'object' || library === null ||
+      typeof period !== 'object' || period === null) return false
+  const shelf = library as Record<string, unknown>
+  const selected = period as Record<string, unknown>
+  const counts = shelf.status_counts
+  return (
+    isCount(shelf.total_books) && isCount(shelf.completed_books) &&
+    typeof counts === 'object' && counts !== null &&
+    readingStatuses.every((status) => isCount((counts as Record<string, unknown>)[status])) &&
+    typeof selected.year === 'number' && Number.isInteger(selected.year) &&
+    (selected.month === null || (typeof selected.month === 'number' && Number.isInteger(selected.month))) &&
+    typeof selected.start_date === 'string' && DATE_PATTERN.test(selected.start_date) &&
+    typeof selected.end_date === 'string' && DATE_PATTERN.test(selected.end_date) &&
+    isCount(selected.reading_days)
+  )
+}
+
+export async function getReadingStatistics(
+  accessToken: string,
+  year: number,
+  month?: number,
+): Promise<ReadingStatistics> {
+  const query = new URLSearchParams({ year: String(year) })
+  if (month !== undefined) query.set('month', String(month))
+  const data = await apiRequest(`/me/statistics?${query}`, accessToken)
+  if (!isReadingStatistics(data) || data.period.year !== year || data.period.month !== (month ?? null)) {
+    throw new Error('통계 응답 형식이 올바르지 않습니다.')
+  }
+  return data
+}

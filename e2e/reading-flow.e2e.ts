@@ -119,3 +119,56 @@ test('검색해서 서재에 담으면 서재에서 보인다', async ({ page })
   await page.getByRole('link', { name: '서재로 가기' }).click()
   await expect(page.getByRole('link', { name: /소년이 온다/ })).toBeVisible()
 })
+
+test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온다', async ({ page }, testInfo) => {
+  const requests: URLSearchParams[] = []
+  await signInWithMockSession(page)
+  await mockBackend(page, async (route, url) => {
+    if (url.pathname === '/reading-logs') return json(route, []).then(() => true)
+    if (url.pathname === '/me/statistics') {
+      requests.push(url.searchParams)
+      const year = Number(url.searchParams.get('year'))
+      const month = url.searchParams.has('month') ? Number(url.searchParams.get('month')) : null
+      const prefix = `${year}-${String(month ?? 1).padStart(2, '0')}`
+      const end = month === null
+        ? `${year}-12-31`
+        : new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
+      return json(route, {
+        library: {
+          total_books: 4,
+          status_counts: { want_to_read: 1, reading: 2, completed: 1, paused: 0, abandoned: 0 },
+          completed_books: 2,
+        },
+        period: {
+          year, month, start_date: `${prefix}-01`, end_date: end,
+          reading_days: month === null ? 42 : 7,
+        },
+      }).then(() => true)
+    }
+    return false
+  })
+
+  await page.goto('/records')
+  await expect(page.getByText('이 달에는 체크한 날이 없습니다.')).toBeVisible()
+  await page.getByRole('button', { name: '통계', exact: true }).click()
+  await expect(page.getByText('7', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '현재 서재' })).toBeVisible()
+  expect(requests.at(-1)?.has('month')).toBe(true)
+
+  await page.getByRole('button', { name: '연간', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByText('42', { exact: true })).toBeVisible()
+  expect(requests.at(-1)?.has('month')).toBe(false)
+  await expect(page.getByRole('button', { name: '연간', exact: true })).toHaveAttribute('aria-pressed', 'true')
+
+  await page.screenshot({ path: testInfo.outputPath('statistics-mobile.png'), fullPage: true })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.setViewportSize({ width: 768, height: 1024 })
+  await page.screenshot({ path: testInfo.outputPath('statistics-tablet.png'), fullPage: true })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.screenshot({ path: testInfo.outputPath('statistics-desktop.png'), fullPage: true })
+
+  await page.getByRole('button', { name: '달력', exact: true }).click()
+  await expect(page.getByText('이 달에는 체크한 날이 없습니다.')).toBeVisible()
+})

@@ -7,6 +7,7 @@ import { commonErrorMessage } from './lib/errors'
 import { addMonths, calendarDays, monthOf, monthRange, spokenDate, spokenMonth } from './lib/dates'
 import { useKstToday } from './useKstToday'
 import CabinIcon from './CabinIcon'
+import ReadingStatistics from './ReadingStatistics'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -18,6 +19,8 @@ function errorMessage(error: unknown) {
 export default function ReadingRecords() {
   const today = useKstToday()
   const [month, setMonth] = useState(() => monthOf(today))
+  const [view, setView] = useState<'calendar' | 'statistics'>('calendar')
+  const [statisticsMode, setStatisticsMode] = useState<'month' | 'year'>('month')
   const [logs, setLogs] = useState<ReadingLogEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -41,12 +44,13 @@ export default function ReadingRecords() {
   }
 
   useEffect(() => {
+    if (view !== 'calendar') return
     load(month)
     return () => {
       // 화면을 떠나거나 달이 바뀌면 이전 요청의 늦은 응답을 버린다.
       version.current += 1
     }
-  }, [month])
+  }, [month, view])
 
   function moveMonth(delta: number) {
     setMonth(addMonths(month, delta))
@@ -70,7 +74,19 @@ export default function ReadingRecords() {
   return (
     <section className="records" aria-labelledby="records-title">
       <h1 id="records-title">독서 기록</h1>
-      <p className="library-sub">체크한 날만 달력에 남습니다</p>
+      <p className="library-sub">읽은 날을 돌아보고, 나의 독서를 살펴보세요</p>
+      <div className="records-switch" role="group" aria-label="독서 기록 보기">
+        <button type="button" aria-pressed={view === 'calendar'} onClick={() => { if (view !== 'calendar') { setView('calendar'); setLogs(null); setError(null) } }}>달력</button>
+        <button type="button" aria-pressed={view === 'statistics'} onClick={() => setView('statistics')}>통계</button>
+      </div>
+
+      {view === 'statistics' ? (
+        <ReadingStatistics
+          month={month} today={today} mode={statisticsMode}
+          onModeChange={setStatisticsMode} onMove={moveMonth}
+        />
+      ) : (
+        <>
 
       <div className="records-month">
         <button type="button" className="calendar-nav" aria-label="이전 달" onClick={() => moveMonth(-1)}>
@@ -175,6 +191,8 @@ export default function ReadingRecords() {
               )}
             </div>
           )}
+        </>
+      )}
         </>
       )}
     </section>
