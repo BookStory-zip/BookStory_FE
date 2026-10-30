@@ -142,6 +142,34 @@ test('달력에서 선택한 월을 통계에서도 유지하고 과거 연도�
   await screen.findByRole('heading', { name: '2025년 9월' })
 })
 
+test('과거 12월에서 다음 해로 이동해도 월간 통계와 달력은 현재 월을 넘지 않는다', async () => {
+  vi.setSystemTime(new Date('2026-10-30T03:00:00Z'))
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getReadingStatistics.mockResolvedValue(monthlyStatistics)
+  renderRecords()
+  await screen.findByText('이 달에는 체크한 날이 없습니다.')
+  for (let index = 0; index < 10; index += 1) {
+    fireEvent.click(screen.getByRole('button', { name: '이전 달' }))
+  }
+  await screen.findByRole('heading', { name: '2025년 12월' })
+  fireEvent.click(screen.getByRole('button', { name: '통계' }))
+  await screen.findByText('3')
+  fireEvent.click(screen.getByRole('button', { name: '연간' }))
+  fireEvent.click(screen.getByRole('button', { name: '다음 해' }))
+  await screen.findByRole('heading', { name: '2026년' })
+
+  fireEvent.click(screen.getByRole('button', { name: '월간' }))
+  await screen.findByRole('heading', { name: '2026년 10월' })
+  expect(mocks.getReadingStatistics).toHaveBeenLastCalledWith('test-token', 2026, 10)
+  expect(mocks.getReadingStatistics).not.toHaveBeenCalledWith('test-token', 2026, 12)
+  expect(screen.getByRole('button', { name: '다음 달' })).toHaveProperty('disabled', true)
+
+  fireEvent.click(screen.getByRole('button', { name: '달력' }))
+  await screen.findByRole('heading', { name: '2026년 10월' })
+  expect(mocks.getReadingLogs).toHaveBeenLastCalledWith('test-token', '2026-10-01', '2026-10-31')
+  expect(screen.getByRole('button', { name: '2026년 10월 30일' })).toHaveProperty('disabled', false)
+})
+
 test('월을 바꾸면 늦게 온 이전 통계가 최신 통계를 덮지 않는다', async () => {
   let resolveOctober!: (data: typeof monthlyStatistics) => void
   mocks.getReadingLogs.mockResolvedValue([])

@@ -53,7 +53,9 @@ export default function ReadingRecords() {
   }, [month, view])
 
   function moveMonth(delta: number) {
-    setMonth(addMonths(month, delta))
+    const nextMonth = addMonths(month, delta)
+    const latestMonth = monthOf(today)
+    setMonth(nextMonth > latestMonth ? latestMonth : nextMonth)
     setLogs(null)
     setError(null)
     setSelected(null)
