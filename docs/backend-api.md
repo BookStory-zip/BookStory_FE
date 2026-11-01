@@ -5,7 +5,7 @@ FE가 사용하는 BookStory BE API 계약과 FE 반영 방식, BE 전달 사항
 BE가 FE용으로 정리한 계약은 BE 저장소 `docs/frontend-api.md`에 있습니다.
 
 - 운영 API: https://bookstory-api-w31a.onrender.com · [Swagger](https://bookstory-api-w31a.onrender.com/docs)
-- 기준: 운영 OpenAPI와 로컬 BE `185e11b` (2026-10-28 확인)
+- 기준: 운영 OpenAPI(2026-11-02 확인, BE main `7246de9`의 연동 개선 반영). 통계는 BE develop 계약
 
 ## 인증
 
@@ -20,21 +20,22 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 
 | 메서드·경로 | 요점 | FE 반영 |
 | --- | --- | --- |
-| `GET /books/search?query=` | 공개. 1~200자, 최대 10개 `{documents, meta}` | 공급자 값의 누락·null 방어, 이전 검색 응답 차단 |
+| `GET /books/search?query=&page=` | 공개. 1~200자, 페이지당 10개, `page` 1~50. 항목별 `isbn13`(없으면 null), `meta.is_end` | "결과 더 보기"(50페이지 또는 `is_end`면 숨김). 표시 값의 누락·null 방어, 이전 검색 응답 차단 |
 | `GET /me` | `{user_id}` | 개인 화면 진입 조건 |
-| `POST /library/books` | `{isbn13}` → `{id, book_id, status}`. 이미 있으면 기존 기록 반환 | ISBN13 없는 결과는 담기 막음 |
+| `POST /library/books` | `{isbn13}` → `{id, book_id, status}`. 새로 담으면 201, 이미 있으면 200과 기존 기록 | 201 "담았습니다", 200 "이미 서재에 있는 책(상태)". ISBN13 없는 결과는 담기 막음 |
 | `GET /library/books?limit&offset` | 배열, 기본 20·최대 100, 최신 등록순. 전체 건수 없음 | 20개씩 더 보기. 부분 목록으로 통계를 만들지 않음 |
-| `GET /library/books/{id}` | 상세. 날짜·별점·메모 등 null 가능 | 없는 값을 채우지 않음. 404는 타인 항목과 구분하지 않음 |
-| `PATCH …/{id}/status` | `status` + 선택 `started_at`·`completed_at` | 아래 날짜 규칙 |
+| `GET /library/books/{id}` | 상세. 날짜·별점·메모 등 null 가능. `allowed_statuses`(현재 상태 재요청 포함) | 고를 수 있는 상태를 `allowed_statuses`로 결정. 없는 값을 채우지 않음. 404는 타인 항목과 구분하지 않음 |
+| `PATCH …/{id}/status` | `status` + 선택 `started_date`·`completed_date`(`YYYY-MM-DD`). 시각 필드도 받지만 같은 필드에 둘 다 보내면 422 | 고른 날짜만 날짜 필드로 전송. 아래 날짜 규칙 |
 | `PATCH …/{id}/record` | 선택 `rating`(1~5)·`memo`(1만 자)·`stop_reason`(1천 자) | 바뀐 필드만 전송. 빈 값은 null(삭제), 별점 0은 보내지 않음 |
 | `DELETE …/{id}` | 204. 연결된 독서 체크도 삭제 | 확인창 후 삭제 |
 | `PUT·DELETE …/{id}/reading-logs/today` | 체크는 읽는 중만, 취소는 상태 무관·기록 없어도 204. 날짜는 서버 KST | 오늘 체크 여부는 오늘 기록의 `user_book_id`로 판단 |
-| `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩 | 마지막 페이지까지 전부 조회. 실제 체크한 날만 달력에 표시 |
+| `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩. 항목의 `completed_at`·`status`·`has_completed`는 현재 기록(체크 당시 아님) | 마지막 페이지까지 전부 조회. 체크한 날 표시에만 사용 |
+| `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
 | `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`) | 기록 화면 통계 탭에서만 요청. 아래 통계 참고 |
 
 | 값 | 의미 |
 | --- | --- |
-| `isbn13` | 등록용 ISBN. 공백으로 이어진 `isbn`에서 `97[89]`로 시작하는 13자리만 사용 |
+| `isbn13` | 등록용 ISBN. 검색 응답에서 BE가 고른 값(`97[89]`로 시작하는 13자리, 없으면 null)을 그대로 사용 |
 | `book_id` | 사용자 공용 책 UUID |
 | 서재 `id` | `user_book_id`. 상세·수정·체크·삭제 경로에 사용 |
 
@@ -57,7 +58,8 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `paused` 중단 | 읽는 중에서만 |
 | `abandoned` 포기 | 읽는 중·중단에서만 |
 
-- 사용자가 고른 날짜만 보냅니다. 시작은 KST 00:00, 완독은 KST 23:59:59(오늘이면 지금)로 보냅니다.
+- 사용자가 고른 날짜만 `started_date`·`completed_date`로 보냅니다. BE가 시작은 KST 00:00, 완독은 KST 23:59:59(오늘이면 서버 현재 시각)로 저장합니다.
+- 고를 수 있는 상태는 상세의 `allowed_statuses`를 따릅니다. 현재 상태는 읽는 중·완독일 때 날짜 고치기용으로만 고릅니다.
 - `read_date`·`published_date`는 문자열 그대로 다뤄 시간대 변환으로 하루가 밀리지 않게 합니다.
 - 중단 7일 경과 포기와 도서 정보 갱신은 BE 배치 몫이며 FE 타이머로 처리하지 않습니다.
 
@@ -67,8 +69,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | --- | --- |
 | 401 | 다시 로그인 |
 | 404 | 서재에서 찾을 수 없음 |
-| 409 | 지금 상태에서 바꿀 수 없거나 날짜 충돌 |
-| 422 | 입력값 확인(영어 `detail`은 노출하지 않음) |
+| 409·422 | 최상위 `code`별 한국어 안내(`invalid_transition`, `date_order`, `ambiguous_dates`, `invalid_date_fields`, `reading_check_not_allowed`, `date_range`, `blank_query`, `validation_error`). 코드가 없으면 상태별 기본 안내. 영어 `detail`은 노출하지 않음 |
 | 502·504 | 책 정보 제공처 문제·응답 지연 |
 | 503 | 서버가 잠시 응답할 수 없음 |
 
@@ -90,12 +91,4 @@ FE 작업 중 확인한 BE 제약과 최소 변경 제안입니다. BE 반영·�
 | 후속 | 서재 순서 바꾸기 | 최신 등록순 고정 | 순서 필드·API | 드래그 정렬(MVP 이후) |
 | 후속 | 실제 책등 이미지·판형 | 카카오는 앞표지만 제공 | 데이터 출처 조사 | 책등이 꽂힌 서재 |
 
-**진행 상황(2026-10-28):** BE가 1~7번을 모두 다루는 계약(BE `docs/frontend-api.md`)을 보냈고, 재독 시작일 규칙을 확정했습니다. 운영 OpenAPI에는 아직 반영되지 않았습니다. 운영 배포를 OpenAPI로 확인한 뒤 아래 FE 작업을 진행합니다.
-
-배포 후 FE 작업:
-
-- [ ] 검색: `page` "결과 더 보기"(50페이지 또는 `meta.is_end`면 숨김), BE `isbn13` 사용 후 `pickIsbn13` 삭제
-- [ ] 등록: 201 "서재에 담았습니다", 200 "이미 서재에 있는 책(상태)". 요청 함수가 응답 상태 코드도 반환
-- [ ] 상세: `started_date`·`completed_date` 전송 후 KST 시각 변환·자정 보정 삭제, `allowed_statuses`로 전환 제한 후 `blockedReason` 삭제
-- [ ] 기록 달력: `/reading-completions` 다중 페이지 조회, `user_book_id`+날짜로 체크와 합쳐 표지에 "완독" 라벨, 안내 문구 수정
-- [ ] 오류: `code`별 한국어 안내
+**진행 상황(2026-11-02):** 1~7번이 운영에 배포되었고(운영 OpenAPI 확인), FE가 검색 더 보기·201/200 안내·날짜 필드 전송·`allowed_statuses`·완독 라벨·오류 코드 안내로 전환했습니다. FE의 `pickIsbn13`·KST 시각 변환·전환 규칙 복제는 삭제했습니다.

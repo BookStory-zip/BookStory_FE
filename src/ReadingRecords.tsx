@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { getReadingLogs } from './lib/api'
-import type { ReadingLogEntry } from './lib/api'
+import { getReadingCompletions, getReadingLogs } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { commonErrorMessage } from './lib/errors'
 import { addMonths, calendarDays, monthOf, monthRange, spokenDate, spokenMonth } from './lib/dates'
@@ -15,13 +14,23 @@ function errorMessage(error: unknown) {
   return commonErrorMessage(error, '독서 기록을 불러오지 못했습니다')
 }
 
-// 달력은 실제 체크 기록(read_date + user_book_id)만으로 그리고, 체크 없는 날을 지어내지 않는다.
+type DayBook = {
+  user_book_id: string
+  title: string
+  authors: string[]
+  thumbnail_url: string | null
+  read: boolean
+  completed: boolean
+}
+
+// 달력은 서버의 체크 기록(read_date)과 완독 기록(completed_date)으로만 그리고,
+// 같은 날 같은 책은 하나로 합친다. 현재 상태로 완독일·읽은 날을 추정하지 않는다.
 export default function ReadingRecords() {
   const today = useKstToday()
   const [month, setMonth] = useState(() => monthOf(today))
   const [view, setView] = useState<'calendar' | 'statistics'>('calendar')
   const [statisticsMode, setStatisticsMode] = useState<'month' | 'year'>('month')
-  const [logs, setLogs] = useState<ReadingLogEntry[] | null>(null)
+  const [days, setDays] = useState<Map<string, DayBook[]> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const version = useRef(0)
@@ -29,12 +38,24 @@ export default function ReadingRecords() {
   function load(target: string) {
     const current = ++version.current
     const { start, end } = monthRange(target)
-    withAccessToken((token) => getReadingLogs(token, start, end)).then(
-      (fresh) => {
+    withAccessToken((token) =>
+      Promise.all([getReadingLogs(token, start, end), getReadingCompletions(token, start, end)]),
+    ).then(
+      ([logs, completions]) => {
         if (current !== version.current) return
-        setLogs(fresh)
+        const merged = new Map<string, DayBook[]>()
+        const add = (date: string, book: Omit<DayBook, 'read' | 'completed'>, kind: 'read' | 'completed') => {
+          const list = merged.get(date) ?? []
+          const found = list.find((item) => item.user_book_id === book.user_book_id)
+          if (found) found[kind] = true
+          else list.push({ ...book, read: kind === 'read', completed: kind === 'completed' })
+          merged.set(date, list)
+        }
+        for (const log of logs) add(log.read_date, log, 'read')
+        for (const done of completions) add(done.completed_date, done, 'completed')
+        setDays(merged)
         setError(null)
-        setSelected((prev) => prev ?? fresh.at(-1)?.read_date ?? null)
+        setSelected((prev) => prev ?? [...merged.keys()].sort().at(-1) ?? null)
       },
       (loadError: unknown) => {
         if (current !== version.current) return
@@ -56,7 +77,7 @@ export default function ReadingRecords() {
     const nextMonth = addMonths(month, delta)
     const latestMonth = monthOf(today)
     setMonth(nextMonth > latestMonth ? latestMonth : nextMonth)
-    setLogs(null)
+    setDays(null)
     setError(null)
     setSelected(null)
   }
@@ -66,19 +87,18 @@ export default function ReadingRecords() {
     load(month)
   }
 
-  const byDate = new Map<string, ReadingLogEntry[]>()
-  for (const log of logs ?? []) {
-    byDate.set(log.read_date, [...(byDate.get(log.read_date) ?? []), log])
-  }
-  const bookCount = new Set((logs ?? []).map((log) => log.user_book_id)).size
-  const selectedLogs = selected ? byDate.get(selected) ?? [] : []
+  const all = [...(days?.values() ?? [])].flat()
+  const readDays = [...(days?.values() ?? [])].filter((list) => list.some((book) => book.read)).length
+  const bookCount = new Set(all.filter((book) => book.read).map((book) => book.user_book_id)).size
+  const completedCount = all.filter((book) => book.completed).length
+  const selectedBooks = selected ? days?.get(selected) ?? [] : []
 
   return (
     <section className="records" aria-labelledby="records-title">
       <h1 id="records-title">독서 기록</h1>
       <p className="library-sub">읽은 날을 돌아보고, 나의 독서를 살펴보세요</p>
       <div className="records-switch" role="group" aria-label="독서 기록 보기">
-        <button type="button" aria-pressed={view === 'calendar'} onClick={() => { if (view !== 'calendar') { setView('calendar'); setLogs(null); setError(null) } }}>달력</button>
+        <button type="button" aria-pressed={view === 'calendar'} onClick={() => { if (view !== 'calendar') { setView('calendar'); setDays(null); setError(null) } }}>달력</button>
         <button type="button" aria-pressed={view === 'statistics'} onClick={() => setView('statistics')}>통계</button>
       </div>
 
@@ -113,19 +133,22 @@ export default function ReadingRecords() {
         </div>
       )}
 
-      {!error && logs === null && (
+      {!error && days === null && (
         <div className="cabin-loading">
           <CabinIcon className="cabin-icon" />
           <p>기록을 펼치는 중…</p>
         </div>
       )}
 
-      {!error && logs !== null && (
+      {!error && days !== null && (
         <>
           <p className="records-summary">
-            {logs.length === 0
-              ? '이 달에는 체크한 날이 없습니다.'
-              : `${byDate.size}일 동안 ${bookCount}권을 읽었어요.`}
+            {all.length === 0
+              ? '이 달에는 체크하거나 완독한 기록이 없습니다.'
+              : [
+                  readDays > 0 && `${readDays}일 동안 ${bookCount}권을 읽었어요.`,
+                  completedCount > 0 && `완독 ${completedCount}권.`,
+                ].filter(Boolean).join(' ')}
           </p>
 
           <div className="records-calendar">
@@ -134,10 +157,11 @@ export default function ReadingRecords() {
             ))}
             {calendarDays(month).map((day) => {
               if (monthOf(day) !== month) return <span key={day} aria-hidden="true" />
-              const dayLogs = byDate.get(day) ?? []
-              const cover = dayLogs[0]
-              const label = dayLogs.length
-                ? `${spokenDate(day)}, ${dayLogs.length}권 읽음: ${dayLogs.map((log) => log.title).join(', ')}`
+              const dayBooks = days.get(day) ?? []
+              const cover = dayBooks[0]
+              const hasCompleted = dayBooks.some((book) => book.completed)
+              const label = dayBooks.length
+                ? `${spokenDate(day)}, ${dayBooks.length}권: ${dayBooks.map((book) => (book.completed ? `${book.title}(완독)` : book.title)).join(', ')}`
                 : spokenDate(day)
               return (
                 <button
@@ -149,7 +173,7 @@ export default function ReadingRecords() {
                   onClick={() => setSelected(day)}
                   disabled={day > today}
                 >
-                  {/* 그날 체크한 첫 책의 표지로 칸을 채우고, 여러 권이면 권수를 붙인다 */}
+                  {/* 그날 첫 책의 표지로 칸을 채우고, 여러 권이면 권수, 완독한 책이 있으면 완독 라벨을 붙인다 */}
                   <span className="records-tile" aria-hidden="true">
                     {cover &&
                       (cover.thumbnail_url ? (
@@ -157,7 +181,8 @@ export default function ReadingRecords() {
                       ) : (
                         <span className="records-initial">{cover.title.slice(0, 1)}</span>
                       ))}
-                    {dayLogs.length > 1 && <span className="records-count">{dayLogs.length}</span>}
+                    {dayBooks.length > 1 && <span className="records-count">{dayBooks.length}</span>}
+                    {hasCompleted && <span className="records-done">완독</span>}
                   </span>
                   <span className="records-num" aria-hidden="true">{Number(day.slice(8))}</span>
                 </button>
@@ -168,23 +193,26 @@ export default function ReadingRecords() {
           {selected && (
             <div className="records-day-list">
               <h3>{spokenDate(selected)}</h3>
-              {selectedLogs.length === 0 ? (
-                <p className="result-note">이 날은 체크한 책이 없습니다.</p>
+              {selectedBooks.length === 0 ? (
+                <p className="result-note">이 날은 체크하거나 완독한 책이 없습니다.</p>
               ) : (
                 <ul>
-                  {selectedLogs.map((log) => (
-                    <li key={log.id}>
-                      <Link to={`/books/${log.user_book_id}`} className="records-book">
-                        {log.thumbnail_url ? (
-                          <img className="result-cover" src={log.thumbnail_url} alt="" width={120} height={174} loading="lazy" referrerPolicy="no-referrer" />
+                  {selectedBooks.map((book) => (
+                    <li key={book.user_book_id}>
+                      <Link to={`/books/${book.user_book_id}`} className="records-book">
+                        {book.thumbnail_url ? (
+                          <img className="result-cover" src={book.thumbnail_url} alt="" width={120} height={174} loading="lazy" referrerPolicy="no-referrer" />
                         ) : (
-                          <div className="result-cover cover-empty" aria-hidden="true">{log.title.slice(0, 1)}</div>
+                          <div className="result-cover cover-empty" aria-hidden="true">{book.title.slice(0, 1)}</div>
                         )}
                         <span>
-                          <span className="book-title">{log.title}</span>
-                          {log.authors.length > 0 && (
-                            <span className="book-authors">{log.authors.join(', ')}</span>
+                          <span className="book-title">{book.title}</span>
+                          {book.authors.length > 0 && (
+                            <span className="book-authors">{book.authors.join(', ')}</span>
                           )}
+                          <span className="book-authors">
+                            {[book.read && '읽은 날', book.completed && '완독한 날'].filter(Boolean).join(' · ')}
+                          </span>
                         </span>
                       </Link>
                     </li>

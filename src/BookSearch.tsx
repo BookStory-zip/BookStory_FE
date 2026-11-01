@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { Link } from 'react-router'
-import { addLibraryBook, ApiError, searchBooks, statusLabels } from './lib/api'
+import { addLibraryBook, ApiError, SEARCH_LAST_PAGE, searchBooks, statusLabels } from './lib/api'
 import type { SearchBook } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
@@ -38,6 +38,10 @@ export default function BookSearch() {
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saves, setSaves] = useState<Record<string, SaveState>>({})
+  // 더 보기는 마지막으로 검색한 검색어의 다음 페이지를 이어 붙인다.
+  const [paging, setPaging] = useState<{ query: string; page: number; isEnd: boolean } | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [moreError, setMoreError] = useState<string | null>(null)
   const searchVersion = useRef(0)
 
   async function handleSearch(event: SubmitEvent<HTMLFormElement>) {
@@ -53,20 +57,43 @@ export default function BookSearch() {
       return
     }
 
-    // 새 검색을 보내면 이전 검색의 늦은 응답은 버린다.
+    // 새 검색을 보내면 이전 검색·더 보기의 늦은 응답은 버린다.
     const version = ++searchVersion.current
     setSearching(true)
+    setLoadingMore(false)
     setError(null)
+    setMoreError(null)
     try {
-      const books = await searchBooks(query.trim())
+      const { books, isEnd } = await searchBooks(query.trim())
       if (version !== searchVersion.current) return
       setResults(books)
+      setPaging({ query: query.trim(), page: 1, isEnd })
     } catch (searchError) {
       if (version !== searchVersion.current) return
       setResults(null)
       setError(searchErrorMessage(searchError))
     } finally {
       if (version === searchVersion.current) setSearching(false)
+    }
+  }
+
+  async function handleMore() {
+    if (!paging || loadingMore) return
+    const version = searchVersion.current
+    const nextPage = paging.page + 1
+    setLoadingMore(true)
+    setMoreError(null)
+    try {
+      const { books, isEnd } = await searchBooks(paging.query, nextPage)
+      if (version !== searchVersion.current) return
+      setResults((current) => [...(current ?? []), ...books])
+      setPaging({ query: paging.query, page: nextPage, isEnd })
+    } catch (moreLoadError) {
+      if (version !== searchVersion.current) return
+      // 이미 보이는 결과는 그대로 두고 더 보기만 다시 시도하게 한다.
+      setMoreError(searchErrorMessage(moreLoadError))
+    } finally {
+      if (version === searchVersion.current) setLoadingMore(false)
     }
   }
 
@@ -78,11 +105,10 @@ export default function BookSearch() {
     }))
     try {
       const saved = await withAccessToken((token) => addLibraryBook(token, isbn13))
-      // 이미 담은 책이면 서버가 기존 기록을 그대로 돌려준다.
-      const message =
-        saved.status === 'want_to_read'
-          ? '서재에 담았습니다.'
-          : `이미 서재에 있는 책입니다. (${statusLabels[saved.status]})`
+      // 새로 담으면 201, 이미 있던 책이면 200과 기존 기록이 온다.
+      const message = saved.created
+        ? '서재에 담았습니다.'
+        : `이미 서재에 있는 책입니다. (${statusLabels[saved.status]})`
       setSaves((current) => ({ ...current, [isbn13]: { phase: 'saved', message } }))
     } catch (saveError) {
       setSaves((current) => ({
@@ -187,6 +213,14 @@ export default function BookSearch() {
             )
           })}
         </ul>
+      )}
+
+      {moreError && <p className="library-note" role="alert">{moreError}</p>}
+
+      {results !== null && results.length > 0 && paging && !paging.isEnd && paging.page < SEARCH_LAST_PAGE && (
+        <button type="button" className="secondary more" onClick={() => void handleMore()} disabled={loadingMore}>
+          {loadingMore ? '불러오는 중…' : '결과 더 보기'}
+        </button>
       )}
     </section>
   )

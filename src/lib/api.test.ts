@@ -6,8 +6,8 @@ import {
   deleteLibraryBook,
   getLibraryBooks,
   getMe,
+  getReadingCompletions,
   getReadingLogs,
-  pickIsbn13,
   searchBooks,
   updateLibraryRecord,
 } from './api'
@@ -110,46 +110,55 @@ test.each([{ total: 1 }, [{ id: 'x', title: '제목' }], [{ status: 'unknown' }]
   },
 )
 
-test.each([
-  ['8936433598 9788936433598', '9788936433598'],
-  ['9788936433598', '9788936433598'],
-  ['8936433598', null],
-  ['', null],
-  [null, null],
-  ['1234567890123', null],
-])('공급자 isbn %j에서 ISBN13만 고른다', (isbn, expected) => {
-  expect(pickIsbn13(isbn)).toBe(expected)
-})
-
-test('검색은 인증 헤더 없이 요청하고 누락·null·빈 문자열을 정리한다', async () => {
+test('검색은 인증 없이 page를 보내고, BE가 고른 isbn13과 is_end를 쓴다', async () => {
   const fetchMock = vi.fn().mockResolvedValue(Response.json({
     documents: [
-      { title: ' 소년이 온다 ', authors: ['한강', '', null], publisher: null, thumbnail: '', isbn: '8936433598 9788936433598' },
-      { isbn: '8936433598' },
+      { title: ' 소년이 온다 ', authors: ['한강', '', null], publisher: null, thumbnail: '', isbn: '8936433598 9788936433598', isbn13: '9788936433598' },
+      { isbn: '8936433598', isbn13: null },
+      { title: '형식이 다른 값', isbn13: '8936433598' },
       null,
     ],
-    meta: { total_count: 2 },
+    meta: { total_count: 3, is_end: false },
   }))
   vi.stubGlobal('fetch', fetchMock)
   vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
 
-  await expect(searchBooks('소년이 온다')).resolves.toEqual([
-    { title: '소년이 온다', authors: ['한강'], publisher: '', thumbnail: null, isbn13: '9788936433598' },
-    { title: '', authors: [], publisher: '', thumbnail: null, isbn13: null },
-  ])
+  await expect(searchBooks('소년이 온다', 2)).resolves.toEqual({
+    books: [
+      { title: '소년이 온다', authors: ['한강'], publisher: '', thumbnail: null, isbn13: '9788936433598' },
+      { title: '', authors: [], publisher: '', thumbnail: null, isbn13: null },
+      { title: '형식이 다른 값', authors: [], publisher: '', thumbnail: null, isbn13: null },
+    ],
+    isEnd: false,
+  })
   const [url, init] = fetchMock.mock.calls[0]
-  expect(url).toBe('https://api.example.test/books/search?query=%EC%86%8C%EB%85%84%EC%9D%B4+%EC%98%A8%EB%8B%A4')
+  expect(url).toBe('https://api.example.test/books/search?query=%EC%86%8C%EB%85%84%EC%9D%B4+%EC%98%A8%EB%8B%A4&page=2')
   expect(init.headers).toEqual({})
 })
 
-test('서재 등록은 isbn13만 JSON으로 보내고 응답 id·상태를 돌려준다', async () => {
-  const fetchMock = vi.fn().mockResolvedValue(Response.json({ id: 'user-book-1', book_id: 'book-1', status: 'reading' }))
+test('검색 meta에 is_end가 없으면 더 보기를 막는다', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ documents: [], meta: {} })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(searchBooks('책')).resolves.toMatchObject({ isEnd: true })
+})
+
+test('서재 등록은 isbn13만 JSON으로 보내고, 201·200으로 신규·기존을 구분한다', async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(Response.json({ id: 'user-book-1', book_id: 'book-1', status: 'want_to_read' }, { status: 201 }))
+    .mockResolvedValueOnce(Response.json({ id: 'user-book-1', book_id: 'book-1', status: 'reading' }, { status: 200 }))
   vi.stubGlobal('fetch', fetchMock)
   vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
 
   await expect(addLibraryBook('test-access-token', '9788936433598')).resolves.toEqual({
     id: 'user-book-1',
+    status: 'want_to_read',
+    created: true,
+  })
+  await expect(addLibraryBook('test-access-token', '9788936433598')).resolves.toEqual({
+    id: 'user-book-1',
     status: 'reading',
+    created: false,
   })
   expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/library/books', {
     method: 'POST',
@@ -227,4 +236,27 @@ test('응답이 끝나지 않는 요청은 시간 제한으로 끊는다', async
   const signal: AbortSignal = fetchMock.mock.calls[0][1].signal
   expect(signal).toBeInstanceOf(AbortSignal)
   expect(signal.aborted).toBe(false)
+})
+
+test('409·422 응답의 code를 오류에 담는다', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ detail: 'Invalid transition', code: 'invalid_transition' }, { status: 409 })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(getLibraryBooks('test-access-token', 20, 0)).rejects.toMatchObject({ status: 409, code: 'invalid_transition' })
+})
+
+test('완독 기록도 100건을 넘으면 다음 페이지까지 모두 가져온다', async () => {
+  const done = (index: number) => ({
+    user_book_id: `user-book-${index}`, book_id: 'book-1', title: '책', authors: [], thumbnail_url: null,
+    status: 'completed', completed_at: '2026-10-15T05:00:00Z', completed_date: '2026-10-15',
+  })
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(Response.json(Array.from({ length: 100 }, (_, i) => done(i))))
+    .mockResolvedValueOnce(Response.json([done(100)]))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(getReadingCompletions('test-access-token', '2026-10-01', '2026-10-31')).resolves.toHaveLength(101)
+  expect(fetchMock.mock.calls.map(([url]) => new URL(url).pathname + '?' + new URL(url).searchParams.get('offset')))
+    .toEqual(['/reading-completions?0', '/reading-completions?100'])
 })

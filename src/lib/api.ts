@@ -1,10 +1,13 @@
 export class ApiError extends Error {
   status: number
+  // BE가 409·422에 붙이는 원인 코드(예: invalid_transition). 없으면 undefined.
+  code?: string
 
-  constructor(status: number, detail?: string) {
+  constructor(status: number, detail?: string, code?: string) {
     super(detail ?? `요청에 실패했습니다. (${status})`)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
 }
 
@@ -30,12 +33,23 @@ function readDetail(body: unknown): string | undefined {
 
 export const REQUEST_TIMEOUT_MS = 60_000
 
-// accessToken이 null이면 공개 API로 인증 헤더 없이 요청한다.
+type RequestOptions = { method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown }
+
 export async function apiRequest(
   path: string,
   accessToken: string | null,
-  options: { method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown } = {},
+  options: RequestOptions = {},
 ): Promise<unknown> {
+  return (await apiRequestWithStatus(path, accessToken, options)).data
+}
+
+// accessToken이 null이면 공개 API로 인증 헤더 없이 요청한다.
+// 성공 코드로 뜻이 갈리는 API(등록 201·200)를 위해 상태 코드도 돌려준다.
+export async function apiRequestWithStatus(
+  path: string,
+  accessToken: string | null,
+  options: RequestOptions = {},
+): Promise<{ status: number; data: unknown }> {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
 
   if (!apiBaseUrl) {
@@ -56,11 +70,15 @@ export async function apiRequest(
 
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null)
-    throw new ApiError(response.status, readDetail(body))
+    const code =
+      typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string'
+        ? body.code
+        : undefined
+    throw new ApiError(response.status, readDetail(body), code)
   }
 
-  if (response.status === 204) return null
-  return response.json()
+  if (response.status === 204) return { status: 204, data: null }
+  return { status: response.status, data: await response.json() }
 }
 
 export async function getMe(
@@ -145,12 +163,8 @@ export async function getLibraryBooks(
 }
 
 const ISBN13_PATTERN = /^97[89][0-9]{10}$/
-
-// 공급자 isbn은 "ISBN10 ISBN13"처럼 공백으로 이어질 수 있다. ISBN13이 없으면 null.
-export function pickIsbn13(isbn: unknown): string | null {
-  if (typeof isbn !== 'string') return null
-  return isbn.split(/\s+/).find((part) => ISBN13_PATTERN.test(part)) ?? null
-}
+// 카카오 검색은 한 페이지 10개, 최대 50페이지까지 요청할 수 있다.
+export const SEARCH_LAST_PAGE = 50
 
 export type SearchBook = {
   title: string
@@ -164,8 +178,11 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export async function searchBooks(query: string): Promise<SearchBook[]> {
-  const params = new URLSearchParams({ query })
+export async function searchBooks(
+  query: string,
+  page = 1,
+): Promise<{ books: SearchBook[]; isEnd: boolean }> {
+  const params = new URLSearchParams({ query, page: String(page) })
   const data = await apiRequest(`/books/search?${params}`, null)
 
   if (
@@ -177,8 +194,8 @@ export async function searchBooks(query: string): Promise<SearchBook[]> {
     throw new Error('검색 응답 형식이 올바르지 않습니다.')
   }
 
-  // 공급자 데이터의 누락·null·빈 문자열을 화면에서 쓰기 전에 정리한다.
-  return data.documents
+  // 등록용 isbn13은 BE가 고른 값을 쓰고, 공급자 표시 값의 누락·null·빈 문자열만 정리한다.
+  const books = data.documents
     .filter((item: unknown): item is Record<string, unknown> =>
       typeof item === 'object' && item !== null,
     )
@@ -189,15 +206,20 @@ export async function searchBooks(query: string): Promise<SearchBook[]> {
         : [],
       publisher: text(item.publisher),
       thumbnail: text(item.thumbnail) || null,
-      isbn13: pickIsbn13(item.isbn),
+      isbn13:
+        typeof item.isbn13 === 'string' && ISBN13_PATTERN.test(item.isbn13) ? item.isbn13 : null,
     }))
+  const meta = 'meta' in data && typeof data.meta === 'object' && data.meta !== null ? data.meta : {}
+  // is_end가 없으면 더 보기를 막아 존재하지 않는 페이지를 반복 요청하지 않는다.
+  const isEnd = !('is_end' in meta) || meta.is_end !== false
+  return { books, isEnd }
 }
 
 export async function addLibraryBook(
   accessToken: string,
   isbn13: string,
-): Promise<{ id: string; status: ReadingStatus }> {
-  const data = await apiRequest('/library/books', accessToken, {
+): Promise<{ id: string; status: ReadingStatus; created: boolean }> {
+  const { status: httpStatus, data } = await apiRequestWithStatus('/library/books', accessToken, {
     method: 'POST',
     body: { isbn13 },
   })
@@ -213,7 +235,8 @@ export async function addLibraryBook(
     throw new Error('서재 등록 응답 형식이 올바르지 않습니다.')
   }
 
-  return { id: data.id, status: data.status as ReadingStatus }
+  // 새로 담으면 201, 이미 서재에 있으면 기존 기록과 함께 200이 온다.
+  return { id: data.id, status: data.status as ReadingStatus, created: httpStatus === 201 }
 }
 
 export type LibraryBookDetail = LibraryBookItem & {
@@ -230,6 +253,8 @@ export type LibraryBookDetail = LibraryBookItem & {
   memo: string | null
   has_completed: boolean
   updated_at: string
+  // 지금 요청할 수 있는 상태(현재 상태 재요청 포함). 날짜 검증은 요청 시점에 서버가 따로 한다.
+  allowed_statuses: ReadingStatus[]
 }
 
 function isNullableString(value: unknown) {
@@ -255,7 +280,9 @@ function isLibraryBookDetail(value: unknown): value is LibraryBookDetail {
     (item.rating === null ||
       (Number.isInteger(item.rating) && Number(item.rating) >= 1 && Number(item.rating) <= 5)) &&
     typeof item.has_completed === 'boolean' &&
-    typeof item.updated_at === 'string'
+    typeof item.updated_at === 'string' &&
+    Array.isArray(item.allowed_statuses) &&
+    item.allowed_statuses.every((status) => readingStatuses.includes(status as ReadingStatus))
   )
 }
 
@@ -273,10 +300,11 @@ export async function getLibraryBook(
   return data
 }
 
+// 날짜는 YYYY-MM-DD로 보내고 BE가 한국 시간으로 해석한다(시작 00:00, 완독 23:59:59, 오늘 완독은 지금).
 export type StatusChange = {
   status: ReadingStatus
-  started_at?: string
-  completed_at?: string
+  started_date?: string
+  completed_date?: string
 }
 
 // 작은 변경 응답으로 상세를 덮지 않도록 성공 여부만 반환하고, 화면은 상세를 다시 조회한다.
@@ -381,13 +409,16 @@ export async function cancelReadingToday(
 
 export const READING_LOG_PAGE_SIZE = 100
 
-// 한 달 기록도 100건을 넘을 수 있으므로 마지막 페이지까지 모두 가져온다.
-export async function getReadingLogs(
+// 기간 조회는 100건씩 나뉘므로 마지막 페이지까지 모두 가져온다.
+async function getAllPages<T>(
+  path: string,
   accessToken: string,
   startDate: string,
   endDate: string,
-): Promise<ReadingLogEntry[]> {
-  const logs: ReadingLogEntry[] = []
+  isItem: (value: unknown) => value is T,
+  invalid: string,
+): Promise<T[]> {
+  const items: T[] = []
   for (let offset = 0; ; offset += READING_LOG_PAGE_SIZE) {
     const query = new URLSearchParams({
       start_date: startDate,
@@ -395,13 +426,56 @@ export async function getReadingLogs(
       limit: String(READING_LOG_PAGE_SIZE),
       offset: String(offset),
     })
-    const page = await apiRequest(`/reading-logs?${query}`, accessToken)
-    if (!Array.isArray(page) || !page.every(isReadingLogEntry)) {
-      throw new Error('독서 기록 응답 형식이 올바르지 않습니다.')
-    }
-    logs.push(...page)
-    if (page.length < READING_LOG_PAGE_SIZE) return logs
+    const page = await apiRequest(`${path}?${query}`, accessToken)
+    if (!Array.isArray(page) || !page.every(isItem)) throw new Error(invalid)
+    items.push(...page)
+    if (page.length < READING_LOG_PAGE_SIZE) return items
   }
+}
+
+export function getReadingLogs(
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<ReadingLogEntry[]> {
+  return getAllPages('/reading-logs', accessToken, startDate, endDate, isReadingLogEntry, '독서 기록 응답 형식이 올바르지 않습니다.')
+}
+
+// 완독일이 알려진 완독. 체크 기록과 별개이며 재독·상태 변경 후에도 저장된 완독일을 돌려준다.
+export type ReadingCompletion = {
+  user_book_id: string
+  book_id: string
+  title: string
+  authors: string[]
+  thumbnail_url: string | null
+  status: ReadingStatus
+  completed_at: string
+  completed_date: string
+}
+
+function isReadingCompletion(value: unknown): value is ReadingCompletion {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Record<string, unknown>
+  return (
+    typeof item.user_book_id === 'string' &&
+    typeof item.book_id === 'string' &&
+    typeof item.title === 'string' &&
+    Array.isArray(item.authors) &&
+    item.authors.every((author) => typeof author === 'string') &&
+    isNullableString(item.thumbnail_url) &&
+    readingStatuses.includes(item.status as ReadingStatus) &&
+    typeof item.completed_at === 'string' &&
+    typeof item.completed_date === 'string' &&
+    DATE_PATTERN.test(item.completed_date)
+  )
+}
+
+export function getReadingCompletions(
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<ReadingCompletion[]> {
+  return getAllPages('/reading-completions', accessToken, startDate, endDate, isReadingCompletion, '완독 기록 응답 형식이 올바르지 않습니다.')
 }
 
 export type ReadingStatistics = {

@@ -15,12 +15,10 @@ import {
 } from './lib/api'
 import type { LibraryBookDetail, ReadingStatus, StatusChange } from './lib/api'
 import { withAccessToken } from './lib/auth'
-import { commonErrorMessage, isAuthFailure, isUnclearWrite, RELOGIN_MESSAGE } from './lib/errors'
+import { codeMessage, commonErrorMessage, isAuthFailure, isUnclearWrite, RELOGIN_MESSAGE } from './lib/errors'
 import {
   buildRecordPatch,
   formatKstDate,
-  kstCompletionIso,
-  kstStartIso,
   kstDateOf,
   recordFormFrom,
 } from './lib/record'
@@ -45,6 +43,8 @@ function saveErrorMessage(error: unknown) {
   if (isUnclearWrite(error)) {
     return '저장 결과를 확인하지 못했습니다. 최신 상태를 다시 불러오고 있으니 확인 후 다시 시도해주세요.'
   }
+  const byCode = codeMessage(error)
+  if (byCode) return byCode
   if (error instanceof ApiError) {
     if (error.status === 409) {
       return '지금 상태에서는 바꿀 수 없거나 날짜가 기존 기록과 맞지 않습니다.'
@@ -57,15 +57,6 @@ function saveErrorMessage(error: unknown) {
     }
   }
   return commonErrorMessage(error, '저장하지 못했습니다')
-}
-
-// BE 전환 규칙: 중단은 읽는 중에서만, 포기는 읽는 중·중단에서만 새로 가능하다.
-function blockedReason(current: ReadingStatus, next: ReadingStatus): string | null {
-  if (next === 'paused' && current !== 'reading') return '읽는 중일 때만 중단할 수 있습니다.'
-  if (next === 'abandoned' && current !== 'reading' && current !== 'paused') {
-    return '읽는 중이거나 중단한 책만 포기할 수 있습니다.'
-  }
-  return null
 }
 
 const sameForm = (a: RecordForm, b: RecordForm) =>
@@ -251,7 +242,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       startedDate &&
       startedDate !== prefilled.started
     ) {
-      change.started_at = kstStartIso(startedDate)
+      change.started_date = startedDate
     }
     // 오늘로 채운 완독일을 연 채 한국 자정을 넘기면 화면에 보인 날짜를 그대로 보낸다.
     const staleToday = prefilled.completedIsToday && completedDate === prefilled.completed && completedDate !== today
@@ -260,12 +251,12 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       completedDate &&
       (completedDate !== prefilled.completed || staleToday)
     ) {
-      change.completed_at = kstCompletionIso(completedDate)
+      change.completed_date = completedDate
     }
 
     // 같은 상태로 보내면 BE가 날짜만 고친다. 바꾼 날짜가 없으면 보내지 않는다.
     const editingDates = nextStatus === book.status
-    if (editingDates && !change.started_at && !change.completed_at) {
+    if (editingDates && !change.started_date && !change.completed_date) {
       setNotice({ kind: 'ok', text: '바뀐 날짜가 없습니다.' })
       return
     }
@@ -421,7 +412,8 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         <fieldset className="status-options" disabled={busy}>
           <legend className="visually-hidden">바꿀 상태</legend>
           {readingStatuses.map((status) => {
-            const blocked = status === book.status ? null : blockedReason(book.status, status)
+            // 고를 수 있는 상태는 서버가 준 allowed_statuses를 따른다. 현재 상태는 날짜 고치기용으로만 고른다.
+            const blocked = status !== book.status && !book.allowed_statuses.includes(status)
             return (
               <label key={status} className="status-option">
                 <input
@@ -429,12 +421,12 @@ function BookDetail({ userBookId }: { userBookId: string }) {
                   name="status"
                   value={status}
                   checked={nextStatus === status}
-                  disabled={(status === book.status && !canEditDates) || blocked !== null}
+                  disabled={(status === book.status && !canEditDates) || blocked}
                   onChange={() => chooseStatus(status)}
                 />
                 <span>{statusLabels[status]}</span>
                 {status === book.status && <small>{canEditDates ? '현재 · 날짜 고치기' : '현재'}</small>}
-                {blocked && <small>{blocked}</small>}
+                {blocked && <small>지금 상태에서는 고를 수 없습니다.</small>}
               </label>
             )
           })}

@@ -27,7 +27,16 @@ vi.mock('./lib/auth', async (importOriginal) => ({
   withAccessToken: (request: (token: string) => Promise<unknown>) => request('test-token'),
 }))
 
+// BE 규칙: 중단은 읽는 중·중단에서, 포기는 읽는 중·중단·포기에서, 나머지는 언제나 요청할 수 있다.
+function allowedFor(status: LibraryBookDetail['status']): LibraryBookDetail['allowed_statuses'] {
+  const base: LibraryBookDetail['allowed_statuses'] = ['want_to_read', 'reading', 'completed']
+  if (status === 'reading' || status === 'paused') return [...base, 'paused', 'abandoned']
+  if (status === 'abandoned') return [...base, 'abandoned']
+  return base
+}
+
 function detail(overrides: Partial<LibraryBookDetail> = {}): LibraryBookDetail {
+  const status = overrides.status ?? 'reading'
   return {
     id: 'user-book-1',
     book_id: 'book-1',
@@ -50,6 +59,7 @@ function detail(overrides: Partial<LibraryBookDetail> = {}): LibraryBookDetail {
     memo: '첫 메모',
     has_completed: false,
     updated_at: '2026-10-01T00:00:00Z',
+    allowed_statuses: allowedFor(status),
     ...overrides,
   }
 }
@@ -150,7 +160,7 @@ test('완독일을 바꾸면 그 한국 날짜로 보내고 시작일은 그대�
   await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
   expect(mocks.updateLibraryStatus).toHaveBeenCalledWith('test-token', 'user-book-1', {
     status: 'completed',
-    completed_at: '2026-10-20T23:59:59+09:00',
+    completed_date: '2026-10-20',
   })
 })
 
@@ -308,7 +318,7 @@ test('읽는 중인 책은 상태를 그대로 두고 바꾼 시작일만 보낸
   await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
   expect(mocks.updateLibraryStatus).toHaveBeenCalledWith('test-token', 'user-book-1', {
     status: 'reading',
-    started_at: '2026-10-02T00:00:00+09:00',
+    started_date: '2026-10-02',
   })
 })
 
@@ -369,7 +379,7 @@ test('다시 읽을 때 시작일을 직접 고르면 그 날짜를 보낸다', 
   await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
   expect(mocks.updateLibraryStatus.mock.calls[0][2]).toEqual({
     status: 'reading',
-    started_at: '2026-10-20T00:00:00+09:00',
+    started_date: '2026-10-20',
   })
 })
 
@@ -399,7 +409,7 @@ test('오늘로 채운 완독일을 연 채 한국 자정을 넘기면 화면의
   await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
   expect(mocks.updateLibraryStatus.mock.calls[0][2]).toEqual({
     status: 'completed',
-    completed_at: '2026-10-28T23:59:59+09:00',
+    completed_date: '2026-10-28',
   })
 })
 
@@ -416,4 +426,25 @@ test('저장하지 않은 기록이 있을 때만 새로고침 전에 경고한�
   const dirty = new Event('beforeunload', { cancelable: true })
   window.dispatchEvent(dirty)
   expect(dirty.defaultPrevented).toBe(true)
+})
+
+test('고를 수 있는 상태는 서버의 allowed_statuses를 따른다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ allowed_statuses: ['want_to_read', 'completed'] }))
+  renderDetail()
+
+  expect(await screen.findByRole('radio', { name: /^완독/ })).toHaveProperty('disabled', false)
+  expect(screen.getByRole('radio', { name: /^중단/ })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('radio', { name: /^포기/ })).toHaveProperty('disabled', true)
+})
+
+test('오류 code가 있으면 원인별 한국어로 안내한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.updateLibraryStatus.mockRejectedValue(new ApiError(409, 'Final reading start must not be after completion', 'date_order'))
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^완독/ }))
+  fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
+
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('시작일은 완독일보다 늦을 수 없습니다'))
+  expect(screen.getByRole('status').textContent).not.toContain('Final reading')
 })

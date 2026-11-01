@@ -27,6 +27,7 @@ const detail = {
   memo: null,
   has_completed: false,
   updated_at: '2026-10-01T00:00:00Z',
+  allowed_statuses: ['want_to_read', 'reading', 'completed', 'paused', 'abandoned'],
 }
 
 test('서재 → 상세 → 오늘 체크 → 기록 달력까지 이어진다', async ({ page }) => {
@@ -66,7 +67,7 @@ test('서재 → 상세 → 오늘 체크 → 기록 달력까지 이어진다',
 
   await page.getByRole('link', { name: '기록' }).click()
   await expect(page.getByText('1일 동안 1권을 읽었어요.')).toBeVisible()
-  await expect(page.getByRole('button', { name: /1권 읽음: 소년이 온다/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /1권: 소년이 온다/ })).toBeVisible()
 })
 
 test('서버 확인이 503이면 로그아웃하지 않고 다시 시도로 들어간다', async ({ page }) => {
@@ -95,15 +96,15 @@ test('검색해서 서재에 담으면 서재에서 보인다', async ({ page })
     if (url.pathname === '/books/search') {
       return json(route, {
         documents: [
-          { title: '소년이 온다', authors: ['한강'], publisher: '창비', thumbnail: '', isbn: '8936434128 9788936434120' },
-          { title: 'ISBN10만 있는 책', authors: [], publisher: null, thumbnail: null, isbn: '8936434128' },
+          { title: '소년이 온다', authors: ['한강'], publisher: '창비', thumbnail: '', isbn: '8936434128 9788936434120', isbn13: '9788936434120' },
+          { title: 'ISBN10만 있는 책', authors: [], publisher: null, thumbnail: null, isbn: '8936434128', isbn13: null },
         ],
         meta: { is_end: true },
       }).then(() => true)
     }
     if (url.pathname === '/library/books' && method === 'POST') {
       shelf.push(book)
-      return json(route, { id: book.id, book_id: book.book_id, status: 'want_to_read' }).then(() => true)
+      return json(route, { id: book.id, book_id: book.book_id, status: 'want_to_read' }, 201).then(() => true)
     }
     if (url.pathname === '/library/books') return json(route, shelf).then(() => true)
     return false
@@ -149,7 +150,7 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
   })
 
   await page.goto('/records')
-  await expect(page.getByText('이 달에는 체크한 날이 없습니다.')).toBeVisible()
+  await expect(page.getByText('이 달에는 체크하거나 완독한 기록이 없습니다.')).toBeVisible()
   await page.getByRole('button', { name: '통계', exact: true }).click()
   await expect(page.getByText('7', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '현재 서재' })).toBeVisible()
@@ -170,5 +171,5 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
   await page.screenshot({ path: testInfo.outputPath('statistics-desktop.png'), fullPage: true })
 
   await page.getByRole('button', { name: '달력', exact: true }).click()
-  await expect(page.getByText('이 달에는 체크한 날이 없습니다.')).toBeVisible()
+  await expect(page.getByText('이 달에는 체크하거나 완독한 기록이 없습니다.')).toBeVisible()
 })
