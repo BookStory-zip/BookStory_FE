@@ -173,6 +173,39 @@ test('추가 페이지에서 옮기면 불러온 범위를 한 번에 다시 읽
   expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
 })
 
+test.each([100, 101, 123])('%i권을 끝까지 불러온 뒤 이동해도 재조회 범위 밖의 책을 이어 볼 수 있다', async (count) => {
+  let books = makeBooks(count, 'A')
+  mocks.getLibraryBooks.mockImplementation((_token: string, limit: number, offset: number) =>
+    Promise.resolve(books.slice(offset, offset + limit)))
+  mocks.moveLibraryBook.mockImplementation(() => {
+    books = [books[1], books[0], ...books.slice(2)]
+    return Promise.resolve()
+  })
+  renderInRouter(<Library />)
+  await screen.findByText('A 책 0')
+  for (let offset = PAGE_SIZE; offset < count; offset += PAGE_SIZE) {
+    fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(Math.min(offset + PAGE_SIZE, count)))
+  }
+  if (count % PAGE_SIZE === 0) fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull())
+
+  fireEvent.click(screen.getByRole('button', { name: '순서 편집' }))
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 0 뒤로' }))
+  await waitFor(() => expect((screen.getByRole('button', { name: '편집 마치기' }) as HTMLButtonElement).disabled).toBe(false))
+  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', 100, 0)
+  expect(screen.getAllByRole('listitem')).toHaveLength(100)
+  for (let offset = 100; offset < count; offset += PAGE_SIZE) {
+    const more = screen.queryByRole('button', { name: '더 보기' })
+    expect(more).not.toBeNull()
+    fireEvent.click(more!)
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(Math.min(offset + PAGE_SIZE, count)))
+    expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, offset)
+  }
+  expect(screen.getAllByRole('listitem').map((item) => item.querySelector('.book-title')?.textContent)).toEqual(books.map((book) => book.title))
+  expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
+})
+
 test.each([new TypeError('network'), new DOMException('timeout', 'TimeoutError'), new ApiError(504)])('불명확한 실패 %s는 한 번만 쓰고 서버 순서로 복구한다', async (error) => {
   const books = makeBooks(2, 'A')
   mocks.getLibraryBooks.mockResolvedValueOnce(books).mockResolvedValueOnce([books[1], books[0]])

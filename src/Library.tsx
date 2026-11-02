@@ -47,7 +47,7 @@ export default function Library() {
   const locked = saving || loadingMore || needsRefresh
 
   // 첫 조회는 초기 상태가 이미 loading이므로 화면 상태 전환은 버튼 핸들러에서만 한다.
-  async function load(offset: number, preserve = false, limit = PAGE_SIZE) {
+  async function load(offset: number, preserve = false, limit = PAGE_SIZE, truncated = false) {
     busy.current = true
     const version = ++loadVersion.current
 
@@ -61,8 +61,8 @@ export default function Library() {
       )
       if (!active.current || version !== loadVersion.current) return false
       setBooks((current) => (offset === 0 ? page : [...current, ...page]))
-      // 불러온 범위를 다시 읽을 때는 꽉 차도 뒤에 책이 더 있는지 알 수 없으므로 기존 판단을 유지한다.
-      setHasMore((previous) => page.length === limit && (limit === PAGE_SIZE || previous))
+      // 재조회 한도로 잘라낸 책이 있으면 끝까지 읽었던 서재도 더 보기로 이어 받는다.
+      setHasMore((previous) => page.length === limit && (limit === PAGE_SIZE || previous || truncated))
       setPhase('ready')
       return true
     } catch (loadError) {
@@ -144,7 +144,7 @@ export default function Library() {
     setError(null)
     // 더 보기로 불러온 범위까지 다시 읽어 옮긴 책이 화면에서 사라지지 않게 한다.
     // ponytail: 100개(API 최대) 넘게 불러온 뒤 옮기면 100개까지만 다시 읽고 나머지는 더 보기로 이어 받는다.
-    if (await load(0, true, Math.min(Math.max(count, PAGE_SIZE), MAX_LIMIT))) {
+    if (await load(0, true, Math.min(Math.max(count, PAGE_SIZE), MAX_LIMIT), count > MAX_LIMIT)) {
       if (!active.current) return
       setNeedsRefresh(false)
       setNotice(message)
