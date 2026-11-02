@@ -25,10 +25,81 @@ const detail = {
   stop_reason: null,
   rating: null,
   memo: null,
+  is_review_public: false,
+  review_published_at: null,
+  review_updated_at: null,
   has_completed: false,
   updated_at: '2026-10-01T00:00:00Z',
   allowed_statuses: ['want_to_read', 'reading', 'completed', 'paused', 'abandoned'],
 }
+
+test('책 검색 → 공통 상세 → 후기 공개·수정·비공개가 연결된다', async ({ page }, testInfo) => {
+  const saved = { ...detail, memo: '마음에 남은 문장', rating: 4, is_review_public: false,
+    review_published_at: null as string | null, review_updated_at: null as string | null }
+  const patches: object[] = []
+  await signInWithMockSession(page)
+  await mockBackend(page, async (route, url, method) => {
+    if (url.pathname === '/books/search') return json(route, {
+      documents: [{ ...book, isbn13: book.isbn13, thumbnail: book.thumbnail_url, publisher: '창비' }], meta: { is_end: true },
+    }).then(() => true)
+    if (url.pathname === `/books/${book.isbn13}`) return json(route, {
+      isbn13: book.isbn13, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url,
+      publisher: '창비', published_date: '2014-05-19', source_url: 'https://example.test/book',
+      description: '오래 기억하고 싶은 이야기.\n함께 읽으며 각자의 감상을 남겨보세요.',
+      reviews: { total_reviews: saved.is_review_public ? 1 : 0, rating_count: saved.is_review_public ? 1 : 0, average_rating: saved.is_review_public ? saved.rating : null },
+    }).then(() => true)
+    if (url.pathname === `/books/${book.isbn13}/reviews`) return json(route, saved.is_review_public ? [{
+      id: book.id, author_name: '독서가', memo: saved.memo, rating: saved.rating, published_at: saved.review_published_at,
+      updated_at: saved.review_updated_at, is_mine: true,
+    }] : []).then(() => true)
+    if (url.pathname === `/library/books/by-isbn/${book.isbn13}` || url.pathname === `/library/books/${book.id}`) return json(route, saved).then(() => true)
+    if (url.pathname === '/reading-logs') return json(route, []).then(() => true)
+    if (url.pathname === `/library/books/${book.id}/record` && method === 'PATCH') {
+      const patch = route.request().postDataJSON()
+      patches.push(patch)
+      Object.assign(saved, patch)
+      saved.review_published_at = saved.is_review_public ? '2026-11-02T00:00:00Z' : null
+      saved.review_updated_at = saved.is_review_public ? '2026-11-02T01:00:00Z' : null
+      return json(route, { id: saved.id }).then(() => true)
+    }
+    return false
+  })
+  await page.goto('/search')
+  await page.getByRole('searchbox').fill('소년이 온다')
+  await page.getByRole('button', { name: '검색', exact: true }).click()
+  await page.getByRole('link', { name: '소년이 온다', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '소년이 온다' })).toBeVisible()
+  await expect(page.getByText('아직 공개된 후기가 없습니다.')).toBeVisible()
+  await page.getByRole('link', { name: '내 기록 수정', exact: true }).click()
+  await expect(page.getByRole('checkbox', { name: '메모와 별점 공개' })).not.toBeChecked()
+  await page.getByRole('checkbox', { name: '메모와 별점 공개' }).check()
+  await page.getByRole('button', { name: '기록 저장', exact: true }).click()
+  await expect(page.getByText('저장된 상태: 공개', { exact: false })).toBeVisible()
+  expect(patches).toEqual([{ is_review_public: true }])
+  await page.getByRole('link', { name: '책 정보·공개 후기 보기' }).click()
+  const reviews = page.getByRole('region', { name: '함께 읽은 이야기' })
+  await expect(reviews.getByText('마음에 남은 문장')).toBeVisible()
+  await expect(page.getByText('★ 4.0 / 5 · 1명 평가')).toBeVisible()
+  for (const [name, width, height] of [['mobile', 390, 844], ['tablet', 768, 1024], ['desktop', 1440, 900]] as const) {
+    await page.setViewportSize({ width, height })
+    await page.screenshot({ path: testInfo.outputPath(`catalog-${name}.png`), fullPage: true })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  }
+  await page.getByRole('link', { name: '후기 수정', exact: true }).click()
+  await page.getByLabel('메모', { exact: true }).fill('다시 읽으며 달라진 감상')
+  await page.getByRole('button', { name: '기록 저장', exact: true }).click()
+  await expect(page.getByText('기록을 저장했습니다.')).toBeVisible()
+  await page.getByRole('link', { name: '책 정보·공개 후기 보기' }).click()
+  await expect(reviews.getByText('다시 읽으며 달라진 감상')).toBeVisible()
+  await page.getByRole('link', { name: '후기 수정', exact: true }).click()
+  await page.getByRole('checkbox', { name: '메모와 별점 공개' }).uncheck()
+  await page.getByRole('button', { name: '기록 저장', exact: true }).click()
+  await expect(page.getByText('저장된 상태: 비공개')).toBeVisible()
+  await page.getByRole('link', { name: '책 정보·공개 후기 보기' }).click()
+  await expect(reviews.getByText('아직 공개된 후기가 없습니다.')).toBeVisible()
+  await expect(page.getByText('다시 읽으며 달라진 감상')).toBeVisible()
+  expect(patches.at(-1)).toEqual({ is_review_public: false })
+})
 
 test('서재 → 상세 → 오늘 체크 → 기록 달력까지 이어진다', async ({ page }) => {
   const logs: object[] = []

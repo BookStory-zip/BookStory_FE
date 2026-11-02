@@ -4,6 +4,7 @@ export type RecordForm = {
   rating: number | null
   memo: string
   stopReason: string
+  isReviewPublic: boolean
 }
 
 export function recordFormFrom(detail: LibraryBookDetail): RecordForm {
@@ -11,6 +12,7 @@ export function recordFormFrom(detail: LibraryBookDetail): RecordForm {
     rating: detail.rating,
     memo: detail.memo ?? '',
     stopReason: detail.stop_reason ?? '',
+    isReviewPublic: detail.is_review_public,
   }
 }
 
@@ -23,6 +25,7 @@ export function buildRecordPatch(
   form: RecordForm,
 ): RecordPatch {
   const patch: RecordPatch = {}
+  if (form.isReviewPublic !== saved.is_review_public) patch.is_review_public = form.isReviewPublic
   if (form.rating !== saved.rating) patch.rating = form.rating
   if (orNull(form.memo) !== saved.memo) patch.memo = orNull(form.memo)
   if (orNull(form.stopReason) !== saved.stop_reason) {

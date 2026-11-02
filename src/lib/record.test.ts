@@ -11,6 +11,7 @@ const saved = {
   rating: 4,
   memo: '좋았던 문장',
   stop_reason: null,
+  is_review_public: false,
 } as LibraryBookDetail
 
 test('바꾸지 않은 필드는 보내지 않는다', () => {
@@ -29,6 +30,14 @@ test('없던 중단 사유를 입력하면 그 필드만 보낸다', () => {
   expect(buildRecordPatch(saved, { ...recordFormFrom(saved), stopReason: '바빠서' })).toEqual({
     stop_reason: '바빠서',
   })
+})
+
+test('공개 스위치를 바꿀 때만 불리언을 전송한다', () => {
+  expect(buildRecordPatch(saved, { ...recordFormFrom(saved), isReviewPublic: true })).toEqual({ is_review_public: true })
+  const published = { ...saved, is_review_public: true }
+  expect(recordFormFrom(published).isReviewPublic).toBe(true)
+  expect(buildRecordPatch(published, recordFormFrom(published))).toEqual({})
+  expect(buildRecordPatch(published, { ...recordFormFrom(published), isReviewPublic: false })).toEqual({ is_review_public: false })
 })
 
 test('한국 자정 직후에도 오늘 날짜는 한국 기준이다', () => {

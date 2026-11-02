@@ -172,7 +172,9 @@ export default function BookSearch() {
                   </div>
                 )}
                 <div className="result-body">
-                  <p className="book-title">{book.title || '제목 정보 없음'}</p>
+                  <p className="book-title">{book.isbn13
+                    ? <Link to={`/catalog/${book.isbn13}`}>{book.title || '제목 정보 없음'}</Link>
+                    : book.title || '제목 정보 없음'}</p>
                   <p className="book-authors">
                     {[book.authors.join(', '), book.publisher].filter(Boolean).join(' · ') ||
                       '저자 정보 없음'}

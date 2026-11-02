@@ -251,6 +251,9 @@ export type LibraryBookDetail = LibraryBookItem & {
   stop_reason: string | null
   rating: number | null
   memo: string | null
+  is_review_public: boolean
+  review_published_at: string | null
+  review_updated_at: string | null
   has_completed: boolean
   updated_at: string
   // 지금 요청할 수 있는 상태(현재 상태 재요청 포함). 날짜 검증은 요청 시점에 서버가 따로 한다.
@@ -276,10 +279,13 @@ function isLibraryBookDetail(value: unknown): value is LibraryBookDetail {
       'stop_reason',
       'memo',
     ].every((key) => isNullableString(item[key])) &&
+    ['review_published_at', 'review_updated_at'].every((key) => item[key] === null ||
+      (typeof item[key] === 'string' && Number.isFinite(Date.parse(item[key])))) &&
     typeof item.source_url === 'string' &&
     (item.rating === null ||
       (Number.isInteger(item.rating) && Number(item.rating) >= 1 && Number(item.rating) <= 5)) &&
     typeof item.has_completed === 'boolean' &&
+    typeof item.is_review_public === 'boolean' &&
     typeof item.updated_at === 'string' &&
     Array.isArray(item.allowed_statuses) &&
     item.allowed_statuses.every((status) => readingStatuses.includes(status as ReadingStatus))
@@ -298,6 +304,22 @@ export async function getLibraryBook(
     throw new Error('책 상세 응답 형식이 올바르지 않습니다.')
   }
   return data
+}
+
+export async function getLibraryBookByIsbn(
+  accessToken: string,
+  isbn13: string,
+): Promise<LibraryBookDetail | null> {
+  try {
+    const data = await apiRequest(`/library/books/by-isbn/${encodeURIComponent(isbn13)}`, accessToken)
+    if (!isLibraryBookDetail(data) || data.isbn13 !== isbn13) {
+      throw new Error('책 상세 응답 형식이 올바르지 않습니다.')
+    }
+    return data
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null
+    throw error
+  }
 }
 
 // 날짜는 YYYY-MM-DD로 보내고 BE가 한국 시간으로 해석한다(시작 00:00, 완독 23:59:59, 오늘 완독은 지금).
@@ -323,6 +345,7 @@ export type RecordPatch = {
   rating?: number | null
   memo?: string | null
   stop_reason?: string | null
+  is_review_public?: boolean
 }
 
 export async function updateLibraryRecord(

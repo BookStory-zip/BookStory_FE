@@ -57,6 +57,9 @@ function detail(overrides: Partial<LibraryBookDetail> = {}): LibraryBookDetail {
     stop_reason: null,
     rating: null,
     memo: '첫 메모',
+    is_review_public: false,
+    review_published_at: null,
+    review_updated_at: null,
     has_completed: false,
     updated_at: '2026-10-01T00:00:00Z',
     allowed_statuses: allowedFor(status),
@@ -74,6 +77,52 @@ function renderDetail() {
     </MemoryRouter>,
   )
 }
+
+test('메모는 기본 비공개이며 직접 선택해 저장해야 공개한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  renderDetail()
+  const checkbox = await screen.findByRole('checkbox', { name: '메모와 별점 공개' })
+  expect((checkbox as HTMLInputElement).checked).toBe(false)
+  fireEvent.click(checkbox)
+  fireEvent.click(screen.getByRole('button', { name: '기록 저장' }))
+  await waitFor(() => expect(mocks.updateLibraryRecord).toHaveBeenCalledWith('test-token', 'user-book-1', { is_review_public: true }))
+})
+
+test('공개된 메모를 비우면 공개 선택을 끄고, 다시 입력해도 자동 공개하지 않는다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ is_review_public: true, review_published_at: '2026-11-02T00:00:00Z', review_updated_at: '2026-11-02T00:00:00Z' }))
+  renderDetail()
+  const memo = await screen.findByLabelText('메모')
+  fireEvent.change(memo, { target: { value: '   ' } })
+  const checkbox = screen.getByRole('checkbox', { name: '메모와 별점 공개' }) as HTMLInputElement
+  expect(checkbox.checked).toBe(false)
+  expect(checkbox.disabled).toBe(true)
+  fireEvent.change(memo, { target: { value: '새 메모' } })
+  expect(checkbox.checked).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: '기록 저장' }))
+  await waitFor(() => expect(mocks.updateLibraryRecord).toHaveBeenCalledWith('test-token', 'user-book-1', { memo: '새 메모', is_review_public: false }))
+})
+
+test('공개 전환 저장 실패 시 공개 선택과 메모 입력을 보존한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.updateLibraryRecord.mockRejectedValue(new ApiError(503))
+  renderDetail()
+  fireEvent.click(await screen.findByRole('checkbox', { name: '메모와 별점 공개' }))
+  fireEvent.click(screen.getByRole('button', { name: '기록 저장' }))
+  await screen.findByText(/입력은 그대로 두었으니/)
+  expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
+  expect((screen.getByLabelText('메모') as HTMLTextAreaElement).value).toBe('첫 메모')
+})
+
+test('공개 설정만 수정해도 책 정보로 이동하기 전에 미저장 경고를 보여준다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  renderDetail()
+  fireEvent.click(await screen.findByRole('checkbox', { name: '메모와 별점 공개' }))
+  fireEvent.click(screen.getByRole('link', { name: '책 정보·공개 후기 보기' }))
+  const dialog = screen.getByRole('dialog', { name: '저장하지 않은 기록이 있습니다' })
+  fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+  expect(mocks.updateLibraryRecord).not.toHaveBeenCalled()
+  expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
+})
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -221,12 +270,12 @@ test('읽고 싶음 전환과 삭제는 확인창에서 취소하면 요청하�
   fireEvent.click(await screen.findByRole('radio', { name: /^읽고 싶음/ }))
   fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
   const reset = screen.getByRole('dialog', { name: '읽고 싶음으로 되돌릴까요?' })
-  expect(reset.textContent).toContain('완독일·별점·메모도 초기화')
+  expect(reset.textContent).toContain('완독일·별점·메모와 공개 후기도 초기화')
   fireEvent.click(within(reset).getByRole('button', { name: '취소' }))
 
   fireEvent.click(screen.getByRole('button', { name: '서재에서 빼기' }))
   const remove = screen.getByRole('dialog', { name: /서재에서 뺄까요/ })
-  expect(remove.textContent).toContain('독서 체크 기록도 함께 삭제')
+  expect(remove.textContent).toContain('독서 체크 기록과 공개 후기도 함께 삭제')
   fireEvent.click(within(remove).getByRole('button', { name: '취소' }))
 
   expect(mocks.updateLibraryStatus).not.toHaveBeenCalled()

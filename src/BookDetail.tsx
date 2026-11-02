@@ -61,7 +61,7 @@ function saveErrorMessage(error: unknown) {
 }
 
 const sameForm = (a: RecordForm, b: RecordForm) =>
-  a.rating === b.rating && a.memo === b.memo && a.stopReason === b.stopReason
+  a.rating === b.rating && a.memo === b.memo && a.stopReason === b.stopReason && a.isReviewPublic === b.isReviewPublic
 
 // 다른 책으로 이동하면 새로 마운트해 이전 책의 늦은 응답과 입력을 버린다.
 export default function BookDetailPage() {
@@ -73,7 +73,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   const navigate = useNavigate()
   const [book, setBook] = useState<LibraryBookDetail | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [form, setForm] = useState<RecordForm>({ rating: null, memo: '', stopReason: '' })
+  const [form, setForm] = useState<RecordForm>({ rating: null, memo: '', stopReason: '', isReviewPublic: false })
   const [nextStatus, setNextStatus] = useState<ReadingStatus | null>(null)
   const [startedDate, setStartedDate] = useState('')
   const [completedDate, setCompletedDate] = useState('')
@@ -81,7 +81,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   const [prefilled, setPrefilled] = useState({ started: '', completed: '', completedIsToday: false })
   const [pending, setPending] = useState<Pending>(null)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-  const [confirming, setConfirming] = useState<'reset' | 'delete' | null>(null)
+  const [confirming, setConfirming] = useState<'reset' | 'delete' | 'catalog' | null>(null)
   const [todayLog, setTodayLog] = useState<'unknown' | 'checked' | 'unchecked' | 'error'>('unknown')
   const today = useKstToday()
   const todayRef = useRef(today)
@@ -363,6 +363,9 @@ function BookDetail({ userBookId }: { userBookId: string }) {
           {book.has_completed && book.status !== 'completed' && (
             <p className="result-note">완독한 적이 있는 책입니다.</p>
           )}
+          <Link to={`/catalog/${book.isbn13}`} onClick={(event) => {
+            if (recordDirty) { event.preventDefault(); setConfirming('catalog') }
+          }}>책 정보·공개 후기 보기</Link>
         </div>
       </div>
 
@@ -506,10 +509,20 @@ function BookDetail({ userBookId }: { userBookId: string }) {
             rows={6}
             maxLength={10000}
             value={form.memo}
-            onChange={(event) => setForm({ ...form, memo: event.target.value })}
+            onChange={(event) => setForm({ ...form, memo: event.target.value, isReviewPublic: form.isReviewPublic && event.target.value.trim().length > 0 })}
             disabled={busy}
           />
           <small className="counter">{form.memo.length} / 10000</small>
+        </div>
+
+        <div className="review-disclosure">
+          <label className="review-toggle">
+            <input type="checkbox" checked={form.isReviewPublic} disabled={busy || !form.memo.trim()}
+              onChange={(event) => setForm({ ...form, isReviewPublic: event.target.checked })} aria-describedby="review-help" />
+            <span>메모와 별점 공개</span>
+          </label>
+          <p id="review-help" className="result-note">공개를 선택해 저장하면 다른 독서가에게 메모와 별점이 보입니다. 수정 내용도 반영되며, 메모를 비우면 비공개로 바뀝니다.</p>
+          <p className="result-note">저장된 상태: {book.is_review_public ? '공개' : '비공개'}{book.review_updated_at && ` · ${formatKstDate(book.review_updated_at)} 수정`}</p>
         </div>
 
         {showStopReason && (
@@ -534,7 +547,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
 
       <div className="detail-card danger">
         <h2>서재에서 빼기</h2>
-        <p className="result-note">이 책과 연결된 독서 체크 기록도 함께 삭제됩니다.</p>
+        <p className="result-note">이 책과 연결된 독서 체크 기록과 공개 후기도 함께 삭제됩니다.</p>
         <button type="button" className="secondary" onClick={() => setConfirming('delete')} disabled={busy}>
           {pending === 'delete' ? '빼는 중…' : '서재에서 빼기'}
         </button>
@@ -545,8 +558,8 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         title="읽고 싶음으로 되돌릴까요?"
         message={
           book.has_completed
-            ? '시작일·중단일·중단 사유가 초기화됩니다. 완독 경험이 있어 완독일·별점·메모는 유지됩니다.'
-            : '시작일·중단일·중단 사유와 함께 완독일·별점·메모도 초기화됩니다.'
+            ? '시작일·중단일·중단 사유가 초기화됩니다. 완독 경험이 있어 완독일·별점·메모와 공개 상태는 유지됩니다.'
+            : '시작일·중단일·중단 사유와 함께 완독일·별점·메모와 공개 후기도 초기화됩니다.'
         }
         confirmLabel="되돌리기"
         onConfirm={() => void submitStatus()}
@@ -555,10 +568,18 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       <ConfirmDialog
         open={confirming === 'delete'}
         title={`'${book.title}'을(를) 서재에서 뺄까요?`}
-        message="이 책에 남긴 독서 체크 기록도 함께 삭제되며 되돌릴 수 없습니다."
+        message="이 책에 남긴 독서 체크 기록과 공개 후기도 함께 삭제되며 되돌릴 수 없습니다."
         confirmLabel="서재에서 빼기"
         danger
         onConfirm={() => void submitDelete()}
+        onCancel={() => setConfirming(null)}
+      />
+      <ConfirmDialog
+        open={confirming === 'catalog'}
+        title="저장하지 않은 기록이 있습니다"
+        message="수정한 메모·별점·공개 설정을 저장하지 않고 책 정보로 이동할까요?"
+        confirmLabel="저장하지 않고 이동"
+        onConfirm={() => navigate(`/catalog/${book.isbn13}`)}
         onCancel={() => setConfirming(null)}
       />
     </section>

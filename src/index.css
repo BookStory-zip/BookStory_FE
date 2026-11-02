@@ -539,6 +539,25 @@ main.app {
   margin-bottom: var(--space-2);
 }
 
+.catalog-nav, .review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.catalog .detail-head { margin-bottom: var(--space-6); }
+.catalog-eyebrow, .review-visibility { color: var(--color-muted); font-size: .8125rem; }
+.catalog-eyebrow { margin: 0; }
+.review-summary { color: var(--color-accent); font-variant-numeric: tabular-nums; }
+.review-memo { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; }
+.public-reviews { list-style: none; padding: 0; margin: 0; }
+.public-reviews > li { padding-block: var(--space-4); border-top: 1px solid var(--color-rule); }
+.review-disclosure { border-top: 1px solid var(--color-rule); padding-top: var(--space-4); }
+.review-toggle { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; }
+.review-toggle input { width: 1.125rem; height: 1.125rem; margin: 0; accent-color: var(--color-accent); }
+
 fieldset {
   margin: 0;
   padding: 0;

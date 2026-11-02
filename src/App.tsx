@@ -10,6 +10,7 @@ import Library from './Library'
 // 첫 화면(로그인·서재)에 필요 없는 화면은 들어갈 때 받아 모바일 첫 로딩을 줄인다.
 const BookDetail = lazy(() => import('./BookDetail'))
 const BookSearch = lazy(() => import('./BookSearch'))
+const BookCatalog = lazy(() => import('./BookCatalog'))
 const PasswordReset = lazy(() => import('./PasswordReset'))
 const ReadingRecords = lazy(() => import('./ReadingRecords'))
 
@@ -262,6 +263,7 @@ function AuthScreen() {
             <Routes key={userId}>
               <Route index element={<Library />} />
               <Route path="search" element={<BookSearch />} />
+              <Route path="catalog/:isbn13" element={<BookCatalog />} />
               <Route path="books/:userBookId" element={<BookDetail />} />
               <Route path="records" element={<ReadingRecords />} />
               <Route path="*" element={<Navigate to="/" replace />} />
