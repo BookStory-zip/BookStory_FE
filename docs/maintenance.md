@@ -16,6 +16,21 @@
 - Vite는 빌드할 때 환경변수를 넣으므로, 값을 바꾸면 다시 배포해야 반영됩니다.
 - 새 주소(포트·Preview 포함)를 쓰면 Render `CORS_ORIGINS`와 Supabase 두 설정에 함께 추가합니다. 주소 끝에 `/`나 와일드카드를 붙이지 않습니다.
 
+## 검증 환경 (2026-11-02 선정, 준비 전)
+
+현재 단계는 로컬 FE `http://localhost:5173`와 로컬 BE `http://127.0.0.1:8000`를 운영과 분리된 검증 DB·Supabase 인증 프로젝트에 연결합니다. 별도 FE/API 호스팅은 우선 만들지 않습니다. 운영 `.env.local`은 덮어쓰지 않습니다.
+
+- BE/Infra 담당: 운영과 분리된 검증 DB에 같은 마이그레이션 적용, 검증용 Supabase 인증 프로젝트와 계정 A·B 준비, BE의 `DATABASE_URL`·`SUPABASE_URL` 연결. 기존 개발 DB를 데이터 정리 대상으로 가정하지 않습니다.
+- FE에 전달할 값: 로컬 API 주소와 검증 프로젝트의 Supabase URL·publishable key만 필요합니다. DB 주소·비밀번호·secret/service_role·로그인 토큰은 FE에 전달하지 않습니다.
+- CORS는 `http://localhost:5173`을 허용하고, 검증 인증 프로젝트의 Site URL·Redirect URLs는 로컬 `/`와 `/reset-password/update`에 맞춥니다. 운영 프로젝트의 설정을 바꾸지 않습니다.
+- FE의 Git 제외 파일 `.env.validation.local`에 공개 설정 3개를 모두 검증용 값으로 채웁니다. `VITE_API_BASE_URL=http://127.0.0.1:8000`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`입니다. Vite는 공통 `.env.local`도 읽으므로 한 값이라도 비워 두거나 생략해 운영 설정이 섞이지 않도록 세 값을 모두 확인한 뒤 실행합니다. 파일은 실제 값을 전달받은 후 만들며 커밋하지 않습니다.
+
+```powershell
+npm.cmd run dev -- --mode validation --port 5173 --strictPort
+```
+
+검증 계정은 최소 2개이며 화면·데이터·세션 전환 검사 범위는 [plan.md](../plan.md)의 "다음 기능 제안·검증 준비"를 따릅니다. 미래 완독일은 검증 환경의 인증 API로 422와 기존 기록 보존을 확인합니다. KST 자정 경계의 BE 고정 시각 테스트·FE mock 검사와 실제 자정 수동 확인은 별도 결과로 기록하며, 이를 위해 운영 서버 시계를 바꾸지 않습니다. 운영 데이터 복제·운영 테스트 스위트·자동 정리는 수행하지 않습니다.
+
 ## 배포 절차 (Vercel CLI 수동)
 
 조직 비공개 저장소는 Vercel Hobby에서 Git 연동이 제한되어, CLI로 수동 배포합니다(2026-10-28 결정).

@@ -84,7 +84,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | --- | --- |
 | 401 | 다시 로그인 |
 | 404 | 서재에서 찾을 수 없음 |
-| 409·422 | 최상위 `code`별 한국어 안내(`invalid_transition`, `date_order`, `ambiguous_dates`, `invalid_date_fields`, `reading_check_not_allowed`, `date_range`, `blank_query`, `validation_error`). 코드가 없으면 상태별 기본 안내. 영어 `detail`은 노출하지 않음 |
+| 409·422 | 최상위 `code`별 한국어 안내(`invalid_transition`, `date_order`, `ambiguous_dates`, `invalid_date_fields`, `future_date`, `reading_check_not_allowed`, `date_range`, `blank_query`, `validation_error`, `review_memo_required`). 코드가 없으면 상태별 기본 안내. 영어 `detail`은 노출하지 않음 |
 | 422 `future_date` | "오늘 이후 날짜는 선택할 수 없어요." 표시, 선택한 날짜·상태·메모 유지. BE `1ffaa8a`·FE `aab40d0` 운영 반영 |
 | 502·504 | 책 정보 제공처 문제·응답 지연 |
 | 503 | 서버가 잠시 응답할 수 없음 |
@@ -105,7 +105,18 @@ FE 작업 중 확인한 BE 제약과 최소 변경 제안입니다. BE 반영·�
 | 5 | 검색 `isbn13` | FE가 `isbn`에서 ISBN13을 고름 | 항목별 `isbn13` | FE 정리 로직 삭제 |
 | 6 | 날짜만 받는 상태 변경 | FE가 KST 시각으로 변환해 전송 | `started_date`·`completed_date` | FE 시각 변환·자정 보정 삭제, 기기 시계 오차 해소 |
 | 7 | 허용 전환 제공 | FE가 전환 규칙을 복제 | 상세 `allowed_statuses` | FE 규칙 삭제 |
-| 후속 | 서재 순서 바꾸기 | 최신 등록순 고정 | 순서 필드·API | 드래그 정렬(MVP 이후) |
+| 후속 | 서재 순서 바꾸기 | 최신 등록순 고정·20개씩 조회 | 서버 순서 저장·단일 항목 이동 API(아래 제안, BE 합의 전) | 드래그·키보드로 순서 변경 |
 | 후속 | 실제 책등 이미지·판형 | 카카오는 앞표지만 제공 | 데이터 출처 조사 | 책등이 꽂힌 서재 |
 
 **진행 상황(2026-11-02):** 1~7번이 운영에 배포되었고(운영 OpenAPI 확인), FE가 검색 더 보기·201/200 안내·날짜 필드 전송·`allowed_statuses`·완독 라벨·오류 코드 안내로 전환했습니다. FE의 `pickIsbn13`·KST 시각 변환·전환 규칙 복제는 삭제했습니다.
+
+## 후속 제안: 서재 순서 변경 (미구현·BE 합의 전)
+
+FE의 다음 신규 기능 우선순위는 서재 순서 변경으로 정했습니다. 현재 목록은 20개씩 조회하므로, 전체 서재를 불러와 ID 배열을 저장하는 방식 대신 한 항목의 이동을 요청합니다. 아래 API는 BE와 합의하기 전 제안입니다.
+
+- 요청 제안: `PATCH /library/books/{user_book_id}/position`, 본문 `{ "after_user_book_id": "바로 앞에 둘 서재 항목 UUID" }`. `null`이면 서재 맨 앞으로 이동합니다. 경로와 본문의 ID는 모두 개인 `user_book_id`입니다.
+- BE는 요청 시점의 본인 서재 전체 순서에서 기준 항목 바로 뒤로 원자적으로 이동하고 순서를 저장합니다. 아직 조회하지 않은 페이지의 책은 유지합니다. 구체적인 순서 필드·저장 방식은 BE가 정하며 FE가 숫자 순위를 계산하지 않습니다.
+- 초기 순서는 기존 최신 등록순을 유지하고 새로 등록한 책은 맨 앞에 놓는 것을 제안합니다. `GET /library/books`는 저장된 순서로 기존 limit·offset 조회를 유지합니다.
+- 본인 소유의 이동 대상·기준 항목만 허용하고, 없는 항목과 다른 계정의 항목은 기존 404 원칙을 따릅니다. 자신을 기준으로 지정하는 요청은 FE에서 만들지 않으며 BE도 검증해야 합니다.
+- FE는 불러온 책 사이에서 드래그 또는 키보드 이동을 지원합니다. 성공 후 첫 페이지부터 다시 조회하고, 결과 불명확 시 쓰기를 자동 반복하지 않고 서버 목록을 재조회합니다. 다른 계정의 순서는 바뀌지 않아야 합니다.
+- API 경로·필드·응답·오류·동시 이동 처리 계약을 BE와 확정하고 배포한 뒤 FE 구현을 시작합니다. 이 제안을 현재 지원되는 API로 간주하지 않습니다.
