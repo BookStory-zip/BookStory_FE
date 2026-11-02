@@ -8,6 +8,7 @@ import {
   getMe,
   getReadingCompletions,
   getReadingLogs,
+  moveLibraryBook,
   searchBooks,
   updateLibraryRecord,
 } from './api'
@@ -15,6 +16,25 @@ import {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
+})
+
+test.each([null, 'anchor-user-book'])('순서 변경은 개인 id와 필수 기준 %j를 보내고 빈 204를 읽는다', async (anchor) => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(moveLibraryBook('test-token', 'moved-user-book', anchor)).resolves.toBeUndefined()
+  expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/library/books/moved-user-book/position', {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ after_user_book_id: anchor }),
+    signal: expect.any(AbortSignal),
+  })
+})
+
+test('순서 변경의 invalid_position 코드를 유지한다', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ code: 'invalid_position' }, { status: 422 })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(moveLibraryBook('test-token', 'book', 'book')).rejects.toMatchObject({ status: 422, code: 'invalid_position' })
 })
 
 test('토큰으로 /me를 요청하고 사용자 정보를 반환한다', async () => {

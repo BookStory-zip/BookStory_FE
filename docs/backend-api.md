@@ -5,7 +5,7 @@ FE가 사용하는 BookStory BE API 계약과 FE 반영 방식, BE 전달 사항
 BE가 FE용으로 정리한 계약은 BE 저장소 `docs/frontend-api.md`에 있습니다.
 
 - 운영 API: https://bookstory-api-w31a.onrender.com · [Swagger](https://bookstory-api-w31a.onrender.com/docs)
-- 기준: BE main `290da3e`(통계·공통 책 상세·공개 후기 포함). Render 배포 상태와 운영 조회 성공은 사용자가 2026-11-02 확인함. 아래 FE 연결의 브라우저 검증은 가짜 API 사용.
+- 기준: BE main `1ffaa8a`(PR #9, 미래 날짜·시각 거부 포함). Render Live와 운영 미래 시작일 422·기존 기록 보존은 사용자가 2026-11-02 확인함. FE 자동 브라우저 검증은 가짜 API를 사용하며 운영 수동 확인 범위는 plan.md에 기록함.
 
 ## 인증
 
@@ -27,7 +27,8 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `GET /books/{isbn13}/reviews?limit&offset` | Bearer 필수. 기본 20·최대 100. `id`, `author_name`, `memo`, nullable `rating`, `published_at`, `updated_at`, `is_mine` 배열 | 20개씩 더 보기, 오류 시 기존 페이지 보존. 내 후기만 수정 링크. 사용자 ID·이메일 없음 |
 | `GET /library/books/by-isbn/{isbn13}` | Bearer 필수. 내 상세와 같은 응답, 미등록은 404 | 404만 미등록으로 처리. 다른 오류에는 담기 버튼을 표시하지 않음 |
 | `POST /library/books` | `{isbn13}` → `{id, book_id, status}`. 새로 담으면 201, 이미 있으면 200과 기존 기록 | 201 "담았습니다", 200 "이미 서재에 있는 책(상태)". ISBN13 없는 결과는 담기 막음 |
-| `GET /library/books?limit&offset` | 배열, 기본 20·최대 100, 최신 등록순. 전체 건수 없음 | 20개씩 더 보기. 부분 목록으로 통계를 만들지 않음 |
+| `GET /library/books?limit&offset` | 배열, 기본 20·최대 100, 서버 순서. 전체 건수 없음. 순서 API 반영 후 저장된 순서, 초기값은 최신 등록순 | 20개씩 더 보기. 부분 목록으로 통계를 만들지 않음 |
+| `PATCH /library/books/{user_book_id}/position` | 필수 `{after_user_book_id: UUID 또는 null}`, 204·빈 본문. 현재 검증 환경 제공, 운영 미반영 | 개인 서재 ID로 드래그·앞/뒤 이동. 성공·결과 불명확 시 불러온 범위(최대 100개) 재조회 |
 | `GET /library/books/{id}` | 상세. 날짜·별점·메모 등 null 가능. `allowed_statuses`(현재 상태 재요청 포함) | 고를 수 있는 상태를 `allowed_statuses`로 결정. 없는 값을 채우지 않음. 404는 타인 항목과 구분하지 않음 |
 | `PATCH …/{id}/status` | `status` + 선택 `started_date`·`completed_date`(`YYYY-MM-DD`). 시각 필드도 받지만 같은 필드에 둘 다 보내면 422 | 고른 날짜만 날짜 필드로 전송. 아래 날짜 규칙 |
 | `PATCH …/{id}/record` | 선택 `rating`(1~5)·`memo`(1만 자)·`stop_reason`(1천 자)·`is_review_public`(불리언, null 불가) | 바뀐 필드만 전송. 빈 값은 null(삭제), 별점 0은 보내지 않음. 공개 설정 생략은 현재 값 유지 |
@@ -73,7 +74,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `abandoned` 포기 | 읽는 중·중단에서만 |
 
 - 사용자가 고른 날짜만 `started_date`·`completed_date`로 보냅니다. BE가 시작은 KST 00:00, 완독은 KST 23:59:59(오늘이면 서버 현재 시각)로 저장합니다.
-- 배포 예정 계약(BE PR #8 리뷰 중, 사용자 2026-11-02 안내): `started_date`·`completed_date`는 서버 KST 오늘 이후, `started_at`·`completed_at`은 서버 현재 시각 이후면 422 `future_date`로 거부하며 기존 기록은 바뀌지 않습니다. 허용 오차는 없고 오늘 완독·날짜 생략/null·날짜 순서·상태 전환 규칙은 유지합니다. FE는 날짜 필드만 보내며 `detail` 문자열 대신 `code`로 안내합니다. 날짜 선택기의 기기 기준 오늘 제한은 보조 수단이며 최종 판단은 서버가 합니다. 운영 배포 완료 안내 전에는 이 제한이 적용됐다고 가정하지 않습니다.
+- `started_date`·`completed_date`는 서버 KST 오늘 이후, `started_at`·`completed_at`은 서버 현재 시각 이후면 422 `future_date`로 거부하며 기존 기록은 바뀌지 않습니다. 허용 오차는 없고 오늘 완독·날짜 생략/null·날짜 순서·상태 전환 규칙은 유지합니다. FE는 날짜 필드만 보내며 `detail` 문자열 대신 `code`로 안내합니다. 날짜 선택기의 기기 기준 오늘 제한은 보조 수단이며 최종 판단은 서버가 합니다. BE main `1ffaa8a` 운영 반영·실제 미래 시작일 거부와 FE 운영 화면에서 오늘/어제 날짜 시작·완독 저장 후 새로고침 유지까지 사용자가 2026-11-02 확인했습니다. 미래 완독일·자정 경계의 실제 API 검증은 남아 있습니다.
 - 고를 수 있는 상태는 상세의 `allowed_statuses`를 따릅니다. 현재 상태는 읽는 중·완독일 때 날짜 고치기용으로만 고릅니다.
 - `read_date`·`published_date`는 문자열 그대로 다뤄 시간대 변환으로 하루가 밀리지 않게 합니다.
 - 중단 7일 경과 포기와 도서 정보 갱신은 BE 배치 몫이며 FE 타이머로 처리하지 않습니다.
@@ -84,8 +85,8 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | --- | --- |
 | 401 | 다시 로그인 |
 | 404 | 서재에서 찾을 수 없음 |
-| 409·422 | 최상위 `code`별 한국어 안내(`invalid_transition`, `date_order`, `ambiguous_dates`, `invalid_date_fields`, `reading_check_not_allowed`, `date_range`, `blank_query`, `validation_error`). 코드가 없으면 상태별 기본 안내. 영어 `detail`은 노출하지 않음 |
-| 422 `future_date` | "오늘 이후 날짜는 선택할 수 없어요." 표시, 선택한 날짜·상태·메모 유지. BE PR #8 운영 배포 전 계약이며 FE 대응은 develop에서 준비 |
+| 409·422 | 최상위 `code`별 한국어 안내(`invalid_transition`, `date_order`, `ambiguous_dates`, `invalid_date_fields`, `future_date`, `reading_check_not_allowed`, `date_range`, `blank_query`, `validation_error`, `review_memo_required`, `invalid_position`). 코드가 없으면 상태별 기본 안내. 영어 `detail`은 노출하지 않음 |
+| 422 `future_date` | "오늘 이후 날짜는 선택할 수 없어요." 표시, 선택한 날짜·상태·메모 유지. BE `1ffaa8a`·FE `aab40d0` 운영 반영 |
 | 502·504 | 책 정보 제공처 문제·응답 지연 |
 | 503 | 서버가 잠시 응답할 수 없음 |
 
@@ -105,7 +106,20 @@ FE 작업 중 확인한 BE 제약과 최소 변경 제안입니다. BE 반영·�
 | 5 | 검색 `isbn13` | FE가 `isbn`에서 ISBN13을 고름 | 항목별 `isbn13` | FE 정리 로직 삭제 |
 | 6 | 날짜만 받는 상태 변경 | FE가 KST 시각으로 변환해 전송 | `started_date`·`completed_date` | FE 시각 변환·자정 보정 삭제, 기기 시계 오차 해소 |
 | 7 | 허용 전환 제공 | FE가 전환 규칙을 복제 | 상세 `allowed_statuses` | FE 규칙 삭제 |
-| 후속 | 서재 순서 바꾸기 | 최신 등록순 고정 | 순서 필드·API | 드래그 정렬(MVP 이후) |
+| 후속 | 서재 순서 바꾸기 | FE `feat/library-order` 구현·검증 환경 통합 확인 | 서버 순서 저장·단일 항목 이동 API(아래 계약, BE 로컬 검증 환경 제공·운영 미반영) | 드래그·키보드로 순서 변경 |
 | 후속 | 실제 책등 이미지·판형 | 카카오는 앞표지만 제공 | 데이터 출처 조사 | 책등이 꽂힌 서재 |
 
 **진행 상황(2026-11-02):** 1~7번이 운영에 배포되었고(운영 OpenAPI 확인), FE가 검색 더 보기·201/200 안내·날짜 필드 전송·`allowed_statuses`·완독 라벨·오류 코드 안내로 전환했습니다. FE의 `pickIsbn13`·KST 시각 변환·전환 규칙 복제는 삭제했습니다.
+
+## 서재 순서 변경 계약 (FE 구현·검증 환경 확인, 운영 미반영)
+
+BE가 제시한 204 응답과 `invalid_position` 코드를 포함해 아래 계약을 FE에서 수용합니다(2026-11-02). 기존 공통 API는 204에서 JSON을 읽지 않습니다. BE `feat/library-order`의 `728f8e2`와 로컬 검증 API의 `/health`·`/ready` 200, OpenAPI의 필수 기준 필드·204 응답을 확인했습니다. FE는 검증 계정 A/B로 실제 로그인·이동·새로고침 유지·21권 페이지 경계·같은 브라우저 계정 전환을 확인했습니다. BE develop 병합·운영 배포는 확인하지 않았습니다.
+
+- `PATCH /library/books/{user_book_id}/position`, 본문 `{ "after_user_book_id": "바로 앞에 둘 서재 항목 UUID" }`. 필드는 필수이며 `null`이면 맨 앞으로 이동합니다. 생략은 422 `validation_error`입니다. 경로와 본문의 ID는 모두 개인 `user_book_id`입니다.
+- 성공은 본문 없는 204입니다. 이미 같은 위치인 요청도 204로 처리합니다.
+- 미인증은 401, 이동 대상·기준 항목이 없거나 다른 계정 소유면 404 `Library book not found`입니다. 기준 항목이 자기 자신이면 422 `invalid_position`입니다. FE에서는 자기 자신·동일 위치 이동 요청을 만들지 않고 해당 코드에 한국어 안내를 표시합니다. 404는 최신 목록을 다시 조회합니다.
+- BE는 본인 서재 전체 순서에서 기준 항목 바로 뒤로 이동해 순서를 저장하며, 조회하지 않은 페이지의 책을 보존합니다. `GET /library/books`는 저장된 순서로 기존 limit·offset을 유지하고 응답 필드를 추가하지 않습니다. FE가 숫자 순위를 계산하거나 전체 ID 배열을 보내지 않습니다.
+- 기존 책의 초기 순서는 최신 등록순 유지, 신규 등록은 맨 앞입니다. 기존 책 재등록(200)은 위치를 바꾸지 않습니다. 이동은 개인 상세 `updated_at`을 바꾸지 않고 상태·기록·독서 체크 변경은 순서에 영향을 주지 않습니다. 삭제 후 나머지 책의 순서는 유지합니다.
+- 같은 사용자의 이동·등록은 순서대로 처리합니다. 기준 항목의 위치는 실제 처리 시점 기준이며 나중에 처리된 이동 결과가 남습니다. 다른 계정의 순서는 바뀌지 않습니다.
+- FE는 불러온 책 사이에서 마우스·터치 손잡이 드래그와 앞/뒤 버튼(키보드 가능) 이동을 지원합니다. 드래그 중 화면 가장자리에 닿으면 자동 스크롤하고, Escape는 손잡이 포커스와 관계없이 드래그를 취소합니다. 이동마다 저장하며 성공 후 offset 0부터 불러온 개수(최대 100개)를 한 번에 다시 조회합니다. 저장·재조회 중 이동·더 보기를 잠그고 결과 불명확 시 쓰기를 자동 반복하지 않습니다. 재조회 실패 시 기존 목록을 유지하고 "최신 순서 다시 확인" 성공 전 추가 이동을 막습니다. 이동 후 해당 손잡이, 다시 불러온 범위 밖이면 편집 버튼, 재조회 실패 시 재확인 버튼으로 포커스를 복구합니다.
+- 반영 순서는 FE 검증 → BE PR·develop·main 반영 → 운영 DB migration `57f75310c7d5` → BE 운영 배포 → FE 운영 배포입니다. 검증 DB의 migration 적용은 BE 전달 사항이며 운영 DB 적용 완료로 해석하지 않습니다.

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import { StrictMode, type ReactElement } from 'react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
@@ -9,11 +9,13 @@ import Library, { PAGE_SIZE } from './Library'
 
 const mocks = vi.hoisted(() => ({
   getLibraryBooks: vi.fn(),
+  moveLibraryBook: vi.fn(),
 }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),
   getLibraryBooks: mocks.getLibraryBooks,
+  moveLibraryBook: mocks.moveLibraryBook,
 }))
 // 환경변수 없는 CI에서도 실제 Supabase 클라이언트를 만들지 않는다.
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
@@ -90,4 +92,173 @@ test('계정이 바뀐 뒤 도착한 이전 계정 응답은 표시하지 않는
 
   await waitFor(() => expect(screen.queryByText('A 책 0')).toBeNull())
   expect(screen.getAllByRole('listitem')).toHaveLength(1)
+})
+
+test('앞으로 이동은 새 선행 개인 id를 보내고 첫 페이지의 서버 순서를 표시한다', async () => {
+  const books = makeBooks(3, 'A')
+  mocks.getLibraryBooks.mockResolvedValueOnce(books).mockResolvedValueOnce([books[0], books[2], books[1]])
+  mocks.moveLibraryBook.mockResolvedValue(undefined)
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 2 앞으로' }))
+  await waitFor(() => expect(mocks.moveLibraryBook).toHaveBeenCalledWith('test-token', books[2].id, books[0].id))
+  await waitFor(() => expect(screen.getAllByRole('listitem').map((item) => item.querySelector('.book-title')?.textContent)).toEqual(['A 책 0', 'A 책 2', 'A 책 1']))
+  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0)
+})
+
+test('맨 앞으로 이동할 때 null을 보내고 저장과 재조회가 끝날 때까지 잠근다', async () => {
+  const books = makeBooks(2, 'A')
+  let finishMove!: () => void
+  let finishLoad!: (value: LibraryBookItem[]) => void
+  mocks.getLibraryBooks.mockResolvedValueOnce(books).mockReturnValueOnce(new Promise((resolve) => { finishLoad = resolve }))
+  mocks.moveLibraryBook.mockReturnValueOnce(new Promise<void>((resolve) => { finishMove = resolve }))
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  expect(mocks.moveLibraryBook).toHaveBeenCalledWith('test-token', books[1].id, null)
+  expect((screen.getByRole('button', { name: 'A 책 0 뒤로' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getByRole('status').textContent).toBe('순서를 저장하는 중…')
+  finishMove()
+  await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(2))
+  expect(screen.getByRole('status').textContent).toBe('최신 순서를 확인하는 중…')
+  expect((screen.getByRole('button', { name: '편집 마치기' }) as HTMLButtonElement).disabled).toBe(true)
+  finishLoad([books[1], books[0]])
+  await waitFor(() => expect((screen.getByRole('button', { name: '편집 마치기' }) as HTMLButtonElement).disabled).toBe(false))
+})
+
+test('불명확한 이동 후 재조회도 실패하면 목록을 보존하고 확인 성공 전에는 다시 쓰지 않는다', async () => {
+  const books = makeBooks(2, 'A')
+  mocks.getLibraryBooks.mockResolvedValueOnce(books).mockRejectedValueOnce(new ApiError(503)).mockResolvedValueOnce([books[1], books[0]])
+  mocks.moveLibraryBook.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  const retry = await screen.findByRole('button', { name: '최신 순서 다시 확인' })
+  await waitFor(() => expect(document.activeElement).toBe(retry))
+  expect(screen.getAllByRole('listitem')).toHaveLength(2)
+  expect((screen.getByRole('button', { name: 'A 책 0 뒤로' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(retry)
+  await waitFor(() => expect((screen.getByRole('button', { name: 'A 책 1 뒤로' }) as HTMLButtonElement).disabled).toBe(false))
+  expect(mocks.moveLibraryBook).toHaveBeenCalledTimes(1)
+})
+
+test('아래로 이동은 이동 대상을 뺀 뒤의 선행 id를 사용한다', async () => {
+  const books = makeBooks(3, 'A')
+  mocks.getLibraryBooks.mockResolvedValueOnce(books).mockResolvedValueOnce([books[1], books[0], books[2]])
+  mocks.moveLibraryBook.mockResolvedValue(undefined)
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
+  expect((screen.getByRole('button', { name: 'A 책 0 앞으로' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: 'A 책 2 뒤로' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 0 뒤로' }))
+  await waitFor(() => expect(mocks.moveLibraryBook).toHaveBeenCalledWith('test-token', books[0].id, books[1].id))
+  await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('A 책 0 이동 손잡이'))
+})
+
+test('추가 페이지에서 옮기면 불러온 범위를 한 번에 다시 읽고 옮긴 책에 포커스를 둔다', async () => {
+  const books = makeBooks(23, 'A')
+  const reordered = [...books.slice(0, 19), books[20], books[19], ...books.slice(21)]
+  mocks.getLibraryBooks.mockResolvedValueOnce(books.slice(0, 20)).mockResolvedValueOnce(books.slice(20))
+    .mockResolvedValueOnce(reordered)
+  mocks.moveLibraryBook.mockResolvedValue(undefined)
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '더 보기' }))
+  await screen.findByText('A 책 22')
+  fireEvent.click(screen.getByRole('button', { name: '순서 편집' }))
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 19 뒤로' }))
+  await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('A 책 19 이동 손잡이'))
+  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', 23, 0)
+  expect(screen.getAllByRole('listitem').map((item) => item.querySelector('.book-title')?.textContent)[20]).toBe('A 책 19')
+  // 마지막 페이지까지 받은 상태였으므로 꽉 찬 재조회 뒤에도 더 보기를 다시 띄우지 않는다.
+  expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
+})
+
+test.each([100, 101, 123])('%i권을 끝까지 불러온 뒤 이동해도 재조회 범위 밖의 책을 이어 볼 수 있다', async (count) => {
+  let books = makeBooks(count, 'A')
+  mocks.getLibraryBooks.mockImplementation((_token: string, limit: number, offset: number) =>
+    Promise.resolve(books.slice(offset, offset + limit)))
+  mocks.moveLibraryBook.mockImplementation(() => {
+    books = [books[1], books[0], ...books.slice(2)]
+    return Promise.resolve()
+  })
+  renderInRouter(<Library />)
+  await screen.findByText('A 책 0')
+  for (let offset = PAGE_SIZE; offset < count; offset += PAGE_SIZE) {
+    fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(Math.min(offset + PAGE_SIZE, count)))
+  }
+  if (count % PAGE_SIZE === 0) fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull())
+
+  fireEvent.click(screen.getByRole('button', { name: '순서 편집' }))
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 0 뒤로' }))
+  await waitFor(() => expect((screen.getByRole('button', { name: '편집 마치기' }) as HTMLButtonElement).disabled).toBe(false))
+  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', 100, 0)
+  expect(screen.getAllByRole('listitem')).toHaveLength(100)
+  for (let offset = 100; offset < count; offset += PAGE_SIZE) {
+    const more = screen.queryByRole('button', { name: '더 보기' })
+    expect(more).not.toBeNull()
+    fireEvent.click(more!)
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(Math.min(offset + PAGE_SIZE, count)))
+    expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, offset)
+  }
+  expect(screen.getAllByRole('listitem').map((item) => item.querySelector('.book-title')?.textContent)).toEqual(books.map((book) => book.title))
+  expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
+})
+
+test.each([new TypeError('network'), new DOMException('timeout', 'TimeoutError'), new ApiError(504)])('불명확한 실패 %s는 한 번만 쓰고 서버 순서로 복구한다', async (error) => {
+  const books = makeBooks(2, 'A')
+  mocks.getLibraryBooks.mockResolvedValueOnce(books).mockResolvedValueOnce([books[1], books[0]])
+  mocks.moveLibraryBook.mockRejectedValueOnce(error)
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  await screen.findByText('최신 서재 순서를 불러왔습니다. 이동 결과를 확인해주세요.')
+  expect(mocks.moveLibraryBook).toHaveBeenCalledTimes(1)
+  expect(screen.getAllByRole('listitem')[0].textContent).toContain('A 책 1')
+})
+
+test('invalid_position은 한국어로 안내하고 기존 목록을 보존한다', async () => {
+  mocks.getLibraryBooks.mockResolvedValueOnce(makeBooks(2, 'A'))
+  mocks.moveLibraryBook.mockRejectedValueOnce(new ApiError(422, 'English detail', 'invalid_position'))
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  expect((await screen.findByRole('alert')).textContent).toContain('책을 자기 자신 뒤로 옮길 수 없습니다')
+  expect(screen.getAllByRole('listitem')[0].textContent).toContain('A 책 0')
+  expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(1)
+})
+
+test('404는 삭제된 책을 추정하지 않고 최신 목록으로 다시 확인한다', async () => {
+  const books = makeBooks(2, 'A')
+  mocks.getLibraryBooks.mockResolvedValueOnce(books).mockResolvedValueOnce([books[0]])
+  mocks.moveLibraryBook.mockRejectedValueOnce(new ApiError(404))
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  await screen.findByText('최신 서재 순서를 불러왔습니다. 이동 결과를 확인해주세요.')
+  expect(screen.queryByText('A 책 1')).toBeNull()
+})
+
+test('계정 전환 뒤 이전 이동 응답은 재조회나 새 계정 목록을 변경하지 않는다', async () => {
+  let resolveMove!: () => void
+  mocks.getLibraryBooks.mockResolvedValueOnce(makeBooks(2, 'A')).mockResolvedValueOnce(makeBooks(2, 'B'))
+  mocks.moveLibraryBook.mockReturnValueOnce(new Promise<void>((resolve) => { resolveMove = resolve }))
+  const { rerender } = renderInRouter(<Library key="A" />)
+  fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  rerender(<MemoryRouter><Library key="B" /></MemoryRouter>)
+  await screen.findByText('B 책 0')
+  resolveMove()
+  await waitFor(() => expect(screen.queryByText('A 책 1')).toBeNull())
+  expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(2)
+})
+
+test('StrictMode 재마운트에서는 첫 조회의 늦은 응답을 무시한다', async () => {
+  let resolveFirst!: (books: LibraryBookItem[]) => void
+  mocks.getLibraryBooks.mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve })).mockResolvedValueOnce(makeBooks(2, 'new'))
+  render(<StrictMode><MemoryRouter><Library /></MemoryRouter></StrictMode>)
+  await screen.findByText('new 책 0')
+  resolveFirst(makeBooks(2, 'old'))
+  await waitFor(() => expect(screen.queryByText('old 책 0')).toBeNull())
 })

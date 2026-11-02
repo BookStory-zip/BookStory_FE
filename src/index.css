@@ -1310,6 +1310,73 @@ button.compact {
   text-decoration: none;
 }
 
+.library-order {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.library-order p {
+  flex: 1 1 16rem;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.library-order-status:empty {
+  display: none;
+}
+
+.library-order-status {
+  margin-bottom: var(--space-3);
+  color: var(--color-muted);
+}
+
+.shelf-editing > li {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shelf-editing .book {
+  height: auto;
+  flex: 1;
+}
+
+.book-order {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+
+.book-order button {
+  min-height: 44px;
+  padding: var(--space-1);
+  font-size: 0.875rem;
+}
+
+.order-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+}
+
+.book-order .order-handle {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.order-handle:active {
+  cursor: grabbing;
+}
+
+.order-target {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: 2px;
+}
+
 .book:hover .book-title {
   text-decoration: underline;
   text-underline-offset: 0.2em;
