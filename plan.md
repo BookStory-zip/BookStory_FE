@@ -21,12 +21,15 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 | --- | --- | --- | --- |
 | 2026-10-28 | main `e3999b0` (PR #1, CI run 40610539527 통과) | https://bookstory-fe.vercel.app · `dpl_76PbqgQdBjZqLd9448dpAP7bdMV5` · Vercel CLI `64.0.2` 수동 배포 | Render 운영 배포 커밋 확인 필요(로컬 대조 기준 `185e11b`). `CORS_ORIGINS`에 운영 주소 추가 후 재배포 |
 | 2026-11-02 | main `cdcbff7` ([PR #2](https://github.com/BookStory-zip/BookStory_FE/pull/2), [main CI 41381439179](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41381439179) 통과) | https://bookstory-fe.vercel.app · `dpl_En5qb68qkXZhcDrSjm1sPwBzwwmx` · [배포 URL](https://bookstory-cabqsyvt6-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포 | 기준 `290da3e`, migration `c4d8e2a76f10`(사용자 2026-11-02 확인). 이번 배포 확인은 운영 health·CORS 조회이며 BE 배포 SHA를 새로 검증한 것은 아님 |
+| 2026-11-02 14:33 KST | main `aab40d0` ([PR #3](https://github.com/BookStory-zip/BookStory_FE/pull/3), [main CI 41394235068](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41394235068) 통과) | https://bookstory-fe.vercel.app · `dpl_4nbsYowenZBjF61WCTbbz5HKgAdm` · [배포 URL](https://bookstory-p77qwywj9-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포 | main `1ffaa8a`(PR #9) Render Live와 실제 미래 시작일 422·기존 기록 보존 확인(사용자, 2026-11-02). 이번 BE 변경의 스키마·마이그레이션 변경 없음 |
 
 배포 후 확인: 모든 SPA 경로 200, 공개 환경변수 3개 번들 반영, 운영·로컬 origin CORS 허용(에이전트). 운영 주소에서 로그인부터 기록까지 통합 동작(사용자, 2026-10-28). 배포 방법은 [docs/maintenance.md](./docs/maintenance.md)를 따른다.
 
 2026-11-02 배포 확인: Vercel production Ready·운영 별칭 연결, `/`·`/search`·`/catalog/9788936433598`·`/books/abc`·`/records`·비밀번호 재설정 두 경로의 동일 SPA 응답 200, 보안 헤더 5개, 운영 origin의 Authorization CORS 사전 요청·BE health 200 확인. 운영 JS·CSS 11개가 검증한 로컬 빌드와 일치함. 브라우저 제어는 현재 URL 확인 실패로 중단되어 실제 로그인·공개/수정/비공개·계정 전환은 이번에 검증하지 않음.
 
 이후 안내한 운영 화면 수동 점검에 대해 사용자가 “다 작동하는듯”으로 정상 동작을 알림(2026-11-02). 에이전트 직접 검증과 구분하며, 두 계정 전환 등 개별 확인 범위가 명시되지 않은 항목은 완료 처리하지 않음.
+
+2026-11-02 14:33 배포 확인: Vercel production Ready·운영 별칭, 위 SPA 7개 경로·보안 헤더 5개·운영 CORS·BE `/health`·`/ready` 200, 운영 JS·CSS 11개의 로컬 검증 빌드 일치와 `future_date` 한국어 문구 포함 확인(에이전트). 실제 날짜 저장 확인은 인증 연결이 없어 미수행이며 사용자가 직접 확인 후 결과 전달 예정. 자정 경계는 미검증.
 
 ## 미확인·보류
 
@@ -35,7 +38,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 - [ ] 서로 다른 두 계정의 실제 브라우저 전환(현재 mock 검증)
 - [ ] 운영 SMTP 발송 제한 확인. 공개 가입 전에 해결
 - [ ] 테스트 환경과 검증용 계정·데이터 구분. 지금까지 실제 확인은 운영 DB의 개인 계정으로 진행했다. 운영 DB에 테스트 스위트·자동 정리를 실행하지 않는다
-- [ ] 미래 날짜·시각 제한 운영 반영 대기. A안과 `future_date` 코드 합의. BE PR #8 리뷰 중·운영 배포 전이며 PR #9로 main 배포 예정(사용자 2026-11-02 안내). 계약·FE 대응은 아래 항목과 docs/backend-api.md 참고
+- [x] 미래 날짜·시각 제한 BE main `1ffaa8a` 운영 반영(사용자 2026-11-02 확인), FE `future_date` 안내 main `aab40d0` 운영 반영. 실제 날짜 저장·자정 경계의 남은 검증은 아래 항목 참고
 - [ ] BE 예약 배치 실행 결과는 운영 담당 확인 사항(FE 대체 구현 대상 아님)
 
 ## 백엔드 전달 사항
@@ -92,7 +95,11 @@ BE 전달 사항, 2026-10-28 BE 계약 수신 상태, 재독 규칙, BE 배포 �
 - [x] `future_date` 코드 확정. "오늘 이후 날짜는 선택할 수 없어요." 안내를 기존 공통 오류 처리에 추가하고 날짜 필드 전송 유지
 - [x] 서버가 시작일·완독일을 미래로 거부하면 날짜·선택 상태·메모가 유지되고 재조회·자동 재전송 없이 다시 수정할 수 있는 회귀 사례 2개 검증. 기기에서는 과거로 보이는 날짜도 BE 오류를 기준으로 안내
 - [x] 로컬 lint·Vitest 164개·타입 검사/빌드 통과. 가짜 API 기반 Playwright 핵심 흐름 5개는 설치된 Chrome 임시 설정으로 통과(`test-results/.last-run.json` passed 확인). 임시 설정은 제거하고 CI 기본 Chromium 설정은 유지
-- [ ] BE 운영 배포 완료 후 실제 API·KST 자정 직후 오늘 날짜 시작/완독 저장 확인. FE main 반영·운영 배포는 별도 요청 시 진행
+- [x] develop `a5412b7` [CI 41393012032](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41393012032)·독립 리뷰·[PR CI 41393892921](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41393892921) 통과 후 PR #3 merge commit 병합. main `aab40d0` CI 통과·Vercel 수동 운영 배포 완료
+- [x] BE main `1ffaa8a` 운영 배포, 미래 시작일(`2026-11-03`) 422 `future_date`와 상태·시작/완독 시각·중단 시각 보존 확인(사용자 전달). 오늘·과거 날짜 허용·미래 완독일·자정 경계는 BE 자동 테스트만 검증됨
+- [ ] 운영 화면에서 오늘·과거 날짜 시작/완독 저장 확인(사용자가 직접 확인 후 결과 전달 예정)
+- [ ] 실제 API에서 미래 완독일 거부·기존 기록 보존 확인. 날짜 선택기는 기기 기준 내일을 막으므로 별도 인증 API 검증 필요
+- [ ] KST 자정 직후 오늘 날짜 시작/완독 저장 확인
 
 ## 매 작업 단위의 종료 기준
 
