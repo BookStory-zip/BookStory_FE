@@ -73,6 +73,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `abandoned` 포기 | 읽는 중·중단에서만 |
 
 - 사용자가 고른 날짜만 `started_date`·`completed_date`로 보냅니다. BE가 시작은 KST 00:00, 완독은 KST 23:59:59(오늘이면 서버 현재 시각)로 저장합니다.
+- 배포 예정 계약(BE PR #8 리뷰 중, 사용자 2026-11-02 안내): `started_date`·`completed_date`는 서버 KST 오늘 이후, `started_at`·`completed_at`은 서버 현재 시각 이후면 422 `future_date`로 거부하며 기존 기록은 바뀌지 않습니다. 허용 오차는 없고 오늘 완독·날짜 생략/null·날짜 순서·상태 전환 규칙은 유지합니다. FE는 날짜 필드만 보내며 `detail` 문자열 대신 `code`로 안내합니다. 날짜 선택기의 기기 기준 오늘 제한은 보조 수단이며 최종 판단은 서버가 합니다. 운영 배포 완료 안내 전에는 이 제한이 적용됐다고 가정하지 않습니다.
 - 고를 수 있는 상태는 상세의 `allowed_statuses`를 따릅니다. 현재 상태는 읽는 중·완독일 때 날짜 고치기용으로만 고릅니다.
 - `read_date`·`published_date`는 문자열 그대로 다뤄 시간대 변환으로 하루가 밀리지 않게 합니다.
 - 중단 7일 경과 포기와 도서 정보 갱신은 BE 배치 몫이며 FE 타이머로 처리하지 않습니다.
@@ -84,6 +85,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | 401 | 다시 로그인 |
 | 404 | 서재에서 찾을 수 없음 |
 | 409·422 | 최상위 `code`별 한국어 안내(`invalid_transition`, `date_order`, `ambiguous_dates`, `invalid_date_fields`, `reading_check_not_allowed`, `date_range`, `blank_query`, `validation_error`). 코드가 없으면 상태별 기본 안내. 영어 `detail`은 노출하지 않음 |
+| 422 `future_date` | "오늘 이후 날짜는 선택할 수 없어요." 표시, 선택한 날짜·상태·메모 유지. BE PR #8 운영 배포 전 계약이며 FE 대응은 develop에서 준비 |
 | 502·504 | 책 정보 제공처 문제·응답 지연 |
 | 503 | 서버가 잠시 응답할 수 없음 |
 

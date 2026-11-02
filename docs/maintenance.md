@@ -35,7 +35,7 @@
    npx vercel@64.0.2 deploy --prod --yes
    ```
 5. 배포 확인
-   - `/`, `/books/abc`, `/records`, `/reset-password/update`가 200(SPA 새로고침)
+   - `/`, `/search`, `/catalog/9788936433598`, `/books/abc`, `/records`, `/reset-password`, `/reset-password/update`가 200(SPA 새로고침)
    - 응답 헤더에 보안 헤더 포함
    - 운영 origin의 CORS 사전 요청 허용
    - 운영 주소에서 로그인 → 서재 → 상세 → 기록 → 로그아웃
