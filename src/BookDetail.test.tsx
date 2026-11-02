@@ -213,6 +213,32 @@ test('완독일을 바꾸면 그 한국 날짜로 보내고 시작일은 그대�
   })
 })
 
+test.each([
+  ['started_date', '시작일'],
+  ['completed_date', '완독일'],
+])('서버가 %s를 미래로 거부하면 한국어로 안내하고 날짜·메모를 보존한다', async (field, label) => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.updateLibraryStatus.mockRejectedValue(new ApiError(422, `${field} must not be in the future`, 'future_date'))
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^완독/ }))
+  fireEvent.change(screen.getByLabelText('메모'), { target: { value: '저장 전 메모' } })
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}`) }))
+  // 기기에서는 과거로 보여도 서버 오늘보다 미래일 수 있다.
+  fireEvent.click(screen.getByRole('button', { name: '2026년 10월 20일' }))
+  fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
+
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('오늘 이후 날짜는 선택할 수 없어요'))
+  expect(screen.getByRole('status').textContent).not.toContain('must not be in the future')
+  expect(screen.getByRole('button', { name: `${label} (선택) 2026년 10월 20일` })).toBeTruthy()
+  expect(screen.getByRole('radio', { name: /^완독/ })).toHaveProperty('checked', true)
+  expect(screen.getByLabelText('메모')).toHaveProperty('value', '저장 전 메모')
+  expect(screen.getByRole('button', { name: '상태 바꾸기' })).toHaveProperty('disabled', false)
+  expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1)
+  expect(mocks.updateLibraryStatus).toHaveBeenCalledWith('test-token', 'user-book-1', { status: 'completed', [field]: '2026-10-20' })
+  expect(mocks.getLibraryBook).toHaveBeenCalledTimes(1)
+})
+
 test('읽고 싶음에서 바로 완독하면 완독일을 채우지 않는다', async () => {
   mocks.getLibraryBook.mockResolvedValue(detail({ status: 'want_to_read', started_at: null }))
   renderDetail()
