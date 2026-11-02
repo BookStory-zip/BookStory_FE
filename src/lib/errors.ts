@@ -36,6 +36,7 @@ const CODE_MESSAGES: Record<string, string> = {
   blank_query: '검색어를 입력해주세요.',
   validation_error: '입력값을 확인해주세요.',
   review_memo_required: '공개 후기를 남기려면 메모를 입력해주세요.',
+  invalid_position: '책을 자기 자신 뒤로 옮길 수 없습니다. 순서를 다시 확인해주세요.',
 }
 
 export function codeMessage(error: unknown): string | undefined {
