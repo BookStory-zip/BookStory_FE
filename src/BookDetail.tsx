@@ -15,12 +15,10 @@ import {
 } from './lib/api'
 import type { LibraryBookDetail, ReadingStatus, StatusChange } from './lib/api'
 import { withAccessToken } from './lib/auth'
-import { commonErrorMessage, isAuthFailure, isUnclearWrite, RELOGIN_MESSAGE } from './lib/errors'
+import { codeMessage, commonErrorMessage, isAuthFailure, isUnclearWrite, RELOGIN_MESSAGE } from './lib/errors'
 import {
   buildRecordPatch,
   formatKstDate,
-  kstCompletionIso,
-  kstStartIso,
   kstDateOf,
   recordFormFrom,
 } from './lib/record'
@@ -31,8 +29,9 @@ import DatePicker from './DatePicker'
 import { spokenDate } from './lib/dates'
 import { useKstToday } from './useKstToday'
 
-type Pending = 'status' | 'record' | 'delete' | 'check' | null
-type WriteResult = 'ok' | 'failed' | 'unclear'
+type Pending = 'status' | 'record' | 'delete' | 'check' | 'refresh' | null
+// conflict: 409. 화면이 오래된 상태라 서버 기준으로 다시 불러와야 한다.
+type WriteResult = 'ok' | 'failed' | 'unclear' | 'conflict'
 
 function loadErrorMessage(error: unknown) {
   // 타인 기록과 없는 기록은 같은 404이므로 구분하지 않는다.
@@ -45,6 +44,8 @@ function saveErrorMessage(error: unknown) {
   if (isUnclearWrite(error)) {
     return '저장 결과를 확인하지 못했습니다. 최신 상태를 다시 불러오고 있으니 확인 후 다시 시도해주세요.'
   }
+  const byCode = codeMessage(error)
+  if (byCode) return byCode
   if (error instanceof ApiError) {
     if (error.status === 409) {
       return '지금 상태에서는 바꿀 수 없거나 날짜가 기존 기록과 맞지 않습니다.'
@@ -59,17 +60,8 @@ function saveErrorMessage(error: unknown) {
   return commonErrorMessage(error, '저장하지 못했습니다')
 }
 
-// BE 전환 규칙: 중단은 읽는 중에서만, 포기는 읽는 중·중단에서만 새로 가능하다.
-function blockedReason(current: ReadingStatus, next: ReadingStatus): string | null {
-  if (next === 'paused' && current !== 'reading') return '읽는 중일 때만 중단할 수 있습니다.'
-  if (next === 'abandoned' && current !== 'reading' && current !== 'paused') {
-    return '읽는 중이거나 중단한 책만 포기할 수 있습니다.'
-  }
-  return null
-}
-
 const sameForm = (a: RecordForm, b: RecordForm) =>
-  a.rating === b.rating && a.memo === b.memo && a.stopReason === b.stopReason
+  a.rating === b.rating && a.memo === b.memo && a.stopReason === b.stopReason && a.isReviewPublic === b.isReviewPublic
 
 // 다른 책으로 이동하면 새로 마운트해 이전 책의 늦은 응답과 입력을 버린다.
 export default function BookDetailPage() {
@@ -81,7 +73,8 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   const navigate = useNavigate()
   const [book, setBook] = useState<LibraryBookDetail | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [form, setForm] = useState<RecordForm>({ rating: null, memo: '', stopReason: '' })
+  const [needsRefresh, setNeedsRefresh] = useState(false)
+  const [form, setForm] = useState<RecordForm>({ rating: null, memo: '', stopReason: '', isReviewPublic: false })
   const [nextStatus, setNextStatus] = useState<ReadingStatus | null>(null)
   const [startedDate, setStartedDate] = useState('')
   const [completedDate, setCompletedDate] = useState('')
@@ -89,7 +82,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   const [prefilled, setPrefilled] = useState({ started: '', completed: '', completedIsToday: false })
   const [pending, setPending] = useState<Pending>(null)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-  const [confirming, setConfirming] = useState<'reset' | 'delete' | null>(null)
+  const [confirming, setConfirming] = useState<'reset' | 'delete' | 'catalog' | null>(null)
   const [todayLog, setTodayLog] = useState<'unknown' | 'checked' | 'unchecked' | 'error'>('unknown')
   const today = useKstToday()
   const todayRef = useRef(today)
@@ -105,6 +98,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     bookRef.current = fresh
     setBook(fresh)
     setLoadError(null)
+    setNeedsRefresh(false)
     setForm((current) =>
       baseline === null || sameForm(current, baseline) ? recordFormFrom(fresh) : current,
     )
@@ -113,15 +107,33 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   function applyLoadError(error: unknown) {
     if (!active.current) return
     if (bookRef.current === null) setLoadError(loadErrorMessage(error))
-    else setNotice({ kind: 'error', text: loadErrorMessage(error) })
+    else {
+      setNeedsRefresh(true)
+      setNotice({ kind: 'error', text: loadErrorMessage(error) })
+    }
   }
 
   // 저장 후에는 작은 응답 대신 상세 전체를 다시 조회한다.
-  function reload(cleanForm?: RecordForm) {
-    return withAccessToken((token) => getLibraryBook(token, userBookId)).then(
-      (fresh) => applyFresh(fresh, cleanForm),
-      applyLoadError,
-    )
+  async function reload(cleanForm?: RecordForm) {
+    try {
+      applyFresh(await withAccessToken((token) => getLibraryBook(token, userBookId)), cleanForm)
+      return true
+    } catch (error) {
+      applyLoadError(error)
+      return false
+    }
+  }
+
+  async function retryDetails() {
+    if (pendingRef.current) return
+    pendingRef.current = 'refresh'
+    setPending('refresh')
+    try {
+      if (await reload() && active.current) setNotice(null)
+    } finally {
+      pendingRef.current = null
+      if (active.current) setPending(null)
+    }
   }
 
   useEffect(() => {
@@ -160,44 +172,63 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       'check',
       (token) => (cancel ? cancelReadingToday(token, book.id) : checkReadingToday(token, book.id)),
       cancel ? '오늘 체크를 취소했습니다.' : '오늘 읽은 날로 남겼습니다.',
-      '읽는 중인 책만 오늘 체크할 수 있습니다. 상태를 다시 불러왔습니다.',
+      {
+        conflict: '읽는 중인 책만 오늘 체크할 수 있습니다. 상태를 다시 불러왔습니다.',
+        refresh: async () => {
+          await Promise.all([loadTodayLog(todayRef.current), reload()])
+        },
+      },
     )
-    // 결과와 관계없이 다시 보내지 않고 서버 기준(오늘 기록·최근 체크·상태)으로 다시 확인한다.
-    void loadTodayLog(todayRef.current)
-    await reload()
   }
 
+  // 저장하지 않은 기록이 있으면 새로고침·창 닫기 전에 브라우저 확인을 띄워 입력을 지킨다.
+  const recordDirty = book !== null && !sameForm(form, recordFormFrom(book))
+  useEffect(() => {
+    if (!recordDirty) return
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [recordDirty])
+
   async function run(
-    kind: Exclude<Pending, null>,
+    kind: Exclude<Pending, null | 'refresh'>,
     write: (token: string) => Promise<unknown>,
     done: string,
-    conflict?: string,
+    options: { conflict?: string; refresh?: (result: WriteResult) => Promise<void> } = {},
   ): Promise<WriteResult> {
-    if (pendingRef.current) return 'failed'
+    if (pendingRef.current || needsRefresh) return 'failed'
     pendingRef.current = kind
     setPending(kind)
     setNotice(null)
     try {
-      await withAccessToken(write)
-      if (active.current) setNotice({ kind: 'ok', text: done })
-      return 'ok'
-    } catch (error) {
-      const message =
-        conflict && error instanceof ApiError && error.status === 409
-          ? conflict
-          : saveErrorMessage(error)
-      if (active.current) setNotice({ kind: 'error', text: message })
-      return isUnclearWrite(error) ? 'unclear' : 'failed'
+      let result: WriteResult
+      try {
+        await withAccessToken(write)
+        if (active.current) setNotice({ kind: 'ok', text: done })
+        result = 'ok'
+      } catch (error) {
+        const isConflict = error instanceof ApiError && error.status === 409
+        const message = options.conflict && isConflict ? options.conflict : saveErrorMessage(error)
+        if (active.current) setNotice({ kind: 'error', text: message })
+        result = isConflict ? 'conflict' : isUnclearWrite(error) ? 'unclear' : 'failed'
+      }
+      // 재조회까지 한 작업으로 잠가 오래된 기준으로 다음 PATCH를 계산하지 않는다.
+      await options.refresh?.(result)
+      return result
     } finally {
       pendingRef.current = null
       if (active.current) setPending(null)
     }
   }
 
-  // 기존 시작일을, 읽는 중·중단에서 완독하면 오늘(서버도 지금 시각을 씀)을 미리 채운다.
+  // 재독 규칙(2026-10-28 확정): 읽고 싶음·완독·포기 → 읽는 중은 새 독서라 시작일을 채우지 않고,
+  // 빈칸이면 서버가 오늘로 시작한다. 중단 후 재개·읽는 중 날짜 고치기·완독 전환은 기존 시작일을 채운다.
+  // 읽는 중·중단에서 완독하면 완독일은 오늘(서버도 지금 시각을 씀)을 채운다.
   function chooseStatus(status: ReadingStatus) {
     if (!book) return
-    const started = book.started_at ? kstDateOf(book.started_at) : ''
+    const newReading =
+      status === 'reading' && book.status !== 'reading' && book.status !== 'paused'
+    const started = book.started_at && !newReading ? kstDateOf(book.started_at) : ''
     // 이미 완독한 책의 날짜 고치기는 기존 완독일을 채운다.
     const completed =
       status !== 'completed'
@@ -232,16 +263,13 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     setConfirming(null)
     if (!book || !nextStatus) return
     const change: StatusChange = { status: nextStatus }
-    // BE는 완독 전환, 중단 후 재개, 읽는 중 날짜 고치기에서만 생략한 시작일을 유지한다.
-    // 완독·포기·읽고 싶음에서 다시 읽는 중으로 갈 때는 생략하면 현재 시각으로 덮으므로 미리 채운 날짜도 보낸다.
-    const keepsStart =
-      nextStatus === 'completed' || book.status === 'paused' || book.status === 'reading'
+    // 미리 채운 시작일을 그대로 두면 보내지 않아 기존 시작일(또는 새 독서면 오늘)을 서버가 정한다.
     if (
       (nextStatus === 'reading' || nextStatus === 'completed') &&
       startedDate &&
-      (startedDate !== prefilled.started || !keepsStart)
+      startedDate !== prefilled.started
     ) {
-      change.started_at = kstStartIso(startedDate)
+      change.started_date = startedDate
     }
     // 오늘로 채운 완독일을 연 채 한국 자정을 넘기면 화면에 보인 날짜를 그대로 보낸다.
     const staleToday = prefilled.completedIsToday && completedDate === prefilled.completed && completedDate !== today
@@ -250,12 +278,12 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       completedDate &&
       (completedDate !== prefilled.completed || staleToday)
     ) {
-      change.completed_at = kstCompletionIso(completedDate)
+      change.completed_date = completedDate
     }
 
     // 같은 상태로 보내면 BE가 날짜만 고친다. 바꾼 날짜가 없으면 보내지 않는다.
     const editingDates = nextStatus === book.status
-    if (editingDates && !change.started_at && !change.completed_at) {
+    if (editingDates && !change.started_date && !change.completed_date) {
       setNotice({ kind: 'ok', text: '바뀐 날짜가 없습니다.' })
       return
     }
@@ -264,14 +292,13 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       'status',
       (token) => updateLibraryStatus(token, book.id, change),
       editingDates ? '날짜를 고쳤습니다.' : `상태를 ${statusLabels[nextStatus]}(으)로 바꿨습니다.`,
+      { refresh: async (result) => { if (result !== 'failed') await reload() } },
     )
     if (result === 'ok') {
       setNextStatus(null)
       setStartedDate('')
       setCompletedDate('')
     }
-    // 결과가 불명확하면 다시 보내지 않고 서버 상태를 확인한다.
-    if (result !== 'failed') await reload()
   }
 
   // 숨겨진 중단 사유는 저장 대상에서 빼서 보이지 않는 값을 보내지 않는다.
@@ -281,7 +308,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
 
   async function handleRecord(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!book) return
+    if (!book || pendingRef.current || needsRefresh) return
     const submitted = form
     const patch = buildRecordPatch(
       book,
@@ -291,13 +318,15 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       setNotice({ kind: 'ok', text: '바뀐 내용이 없습니다.' })
       return
     }
-    const result = await run(
+    await run(
       'record',
       (token) => updateLibraryRecord(token, book.id, patch),
       '기록을 저장했습니다.',
+      { refresh: async (result) => {
+        if (result === 'ok') await reload(submitted)
+        else if (result === 'unclear') await reload()
+      } },
     )
-    if (result === 'ok') await reload(submitted)
-    else if (result === 'unclear') await reload()
   }
 
   async function submitDelete() {
@@ -309,7 +338,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       '서재에서 뺐습니다.',
     )
     // 삭제 결과가 불명확하면 다시 보내지 않고 서재 목록에서 확인하게 한다.
-    if (result !== 'failed') navigate('/', { replace: true })
+    if (result === 'ok' || result === 'unclear') navigate('/', { replace: true })
   }
 
   if (loadError) {
@@ -318,7 +347,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         <Link to="/" className="back-link">← 서재로</Link>
         <div className="library-note" role="alert">
           <p>{loadError}</p>
-          <button type="button" className="secondary" onClick={() => void reload()}>
+          <button type="button" className="secondary" disabled={pending !== null} onClick={() => void retryDetails()}>
             다시 시도
           </button>
         </div>
@@ -337,7 +366,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     )
   }
 
-  const busy = pending !== null
+  const busy = pending !== null || needsRefresh
   // BE는 읽는 중·완독 상태에 같은 상태로 날짜를 보내면 날짜만 고친다.
   const canEditDates = book.status === 'reading' || book.status === 'completed'
 
@@ -347,7 +376,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
 
       <div className="detail-head">
         {book.thumbnail_url ? (
-          <img className="detail-cover" src={book.thumbnail_url} alt="" referrerPolicy="no-referrer" />
+          <img className="detail-cover" src={book.thumbnail_url} alt="" width={120} height={174} fetchPriority="high" referrerPolicy="no-referrer" />
         ) : (
           <div className="detail-cover cover-empty" aria-hidden="true">{book.title.slice(0, 1)}</div>
         )}
@@ -362,12 +391,21 @@ function BookDetail({ userBookId }: { userBookId: string }) {
           {book.has_completed && book.status !== 'completed' && (
             <p className="result-note">완독한 적이 있는 책입니다.</p>
           )}
+          <Link to={`/catalog/${book.isbn13}`} onClick={(event) => {
+            if (recordDirty) { event.preventDefault(); setConfirming('catalog') }
+          }}>책 정보·공개 후기 보기</Link>
         </div>
       </div>
 
       <p className={`detail-notice ${notice?.kind === 'error' ? 'is-error' : ''}`} role="status">
         {notice?.text}
       </p>
+      {needsRefresh && <div className="library-note">
+        <p>최신 상태를 확인해야 다시 변경할 수 있습니다. 입력한 내용은 유지됩니다.</p>
+        <button type="button" className="secondary" disabled={pending !== null} onClick={() => void retryDetails()}>
+          {pending === 'refresh' ? '확인하는 중…' : '최신 상태 다시 확인'}
+        </button>
+      </div>}
 
       <dl className="detail-dates">
         <div><dt>시작일</dt><dd>{formatKstDate(book.started_at)}</dd></div>
@@ -411,7 +449,8 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         <fieldset className="status-options" disabled={busy}>
           <legend className="visually-hidden">바꿀 상태</legend>
           {readingStatuses.map((status) => {
-            const blocked = status === book.status ? null : blockedReason(book.status, status)
+            // 고를 수 있는 상태는 서버가 준 allowed_statuses를 따른다. 현재 상태는 날짜 고치기용으로만 고른다.
+            const blocked = status !== book.status && !book.allowed_statuses.includes(status)
             return (
               <label key={status} className="status-option">
                 <input
@@ -419,12 +458,12 @@ function BookDetail({ userBookId }: { userBookId: string }) {
                   name="status"
                   value={status}
                   checked={nextStatus === status}
-                  disabled={(status === book.status && !canEditDates) || blocked !== null}
+                  disabled={(status === book.status && !canEditDates) || blocked}
                   onChange={() => chooseStatus(status)}
                 />
                 <span>{statusLabels[status]}</span>
                 {status === book.status && <small>{canEditDates ? '현재 · 날짜 고치기' : '현재'}</small>}
-                {blocked && <small>{blocked}</small>}
+                {blocked && <small>지금 상태에서는 고를 수 없습니다.</small>}
               </label>
             )
           })}
@@ -452,7 +491,9 @@ function BookDetail({ userBookId }: { userBookId: string }) {
           <p className="result-note">
             {nextStatus === book.status
               ? '바꾼 날짜만 고칩니다. 비워도 기존 날짜는 지워지지 않습니다. 날짜는 한국 시간 기준입니다.'
-              : '그대로 두면 기존 날짜를 유지하고, 비우면 서버 규칙에 따라 비워 두거나 현재 시각으로 기록합니다. 날짜는 한국 시간 기준입니다.'}
+              : nextStatus === 'reading' && book.status !== 'paused'
+                ? '새로 읽기 시작합니다. 시작일을 비워 두면 오늘부터 시작하고, 이전 완독일은 유지됩니다. 날짜는 한국 시간 기준입니다.'
+                : '그대로 두면 기존 날짜를 유지하고, 비우면 서버 규칙에 따라 비워 두거나 현재 시각으로 기록합니다. 날짜는 한국 시간 기준입니다.'}
           </p>
         )}
 
@@ -502,10 +543,20 @@ function BookDetail({ userBookId }: { userBookId: string }) {
             rows={6}
             maxLength={10000}
             value={form.memo}
-            onChange={(event) => setForm({ ...form, memo: event.target.value })}
+            onChange={(event) => setForm({ ...form, memo: event.target.value, isReviewPublic: form.isReviewPublic && event.target.value.trim().length > 0 })}
             disabled={busy}
           />
           <small className="counter">{form.memo.length} / 10000</small>
+        </div>
+
+        <div className="review-disclosure">
+          <label className="review-toggle">
+            <input type="checkbox" checked={form.isReviewPublic} disabled={busy || !form.memo.trim()}
+              onChange={(event) => setForm({ ...form, isReviewPublic: event.target.checked })} aria-describedby="review-help" />
+            <span>메모와 별점 공개</span>
+          </label>
+          <p id="review-help" className="result-note">공개를 선택해 저장하면 다른 독서가에게 메모와 별점이 보입니다. 수정 내용도 반영되며, 메모를 비우면 비공개로 바뀝니다.</p>
+          <p className="result-note">저장된 상태: {book.is_review_public ? '공개' : '비공개'}{book.review_updated_at && ` · ${formatKstDate(book.review_updated_at)} 수정`}</p>
         </div>
 
         {showStopReason && (
@@ -530,7 +581,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
 
       <div className="detail-card danger">
         <h2>서재에서 빼기</h2>
-        <p className="result-note">이 책과 연결된 독서 체크 기록도 함께 삭제됩니다.</p>
+        <p className="result-note">이 책과 연결된 독서 체크 기록과 공개 후기도 함께 삭제됩니다.</p>
         <button type="button" className="secondary" onClick={() => setConfirming('delete')} disabled={busy}>
           {pending === 'delete' ? '빼는 중…' : '서재에서 빼기'}
         </button>
@@ -541,8 +592,8 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         title="읽고 싶음으로 되돌릴까요?"
         message={
           book.has_completed
-            ? '시작일·중단일·중단 사유가 초기화됩니다. 완독 경험이 있어 완독일·별점·메모는 유지됩니다.'
-            : '시작일·중단일·중단 사유와 함께 완독일·별점·메모도 초기화됩니다.'
+            ? '시작일·중단일·중단 사유가 초기화됩니다. 완독 경험이 있어 완독일·별점·메모와 공개 상태는 유지됩니다.'
+            : '시작일·중단일·중단 사유와 함께 완독일·별점·메모와 공개 후기도 초기화됩니다.'
         }
         confirmLabel="되돌리기"
         onConfirm={() => void submitStatus()}
@@ -551,10 +602,18 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       <ConfirmDialog
         open={confirming === 'delete'}
         title={`'${book.title}'을(를) 서재에서 뺄까요?`}
-        message="이 책에 남긴 독서 체크 기록도 함께 삭제되며 되돌릴 수 없습니다."
+        message="이 책에 남긴 독서 체크 기록과 공개 후기도 함께 삭제되며 되돌릴 수 없습니다."
         confirmLabel="서재에서 빼기"
         danger
         onConfirm={() => void submitDelete()}
+        onCancel={() => setConfirming(null)}
+      />
+      <ConfirmDialog
+        open={confirming === 'catalog'}
+        title="저장하지 않은 기록이 있습니다"
+        message="수정한 메모·별점·공개 설정을 저장하지 않고 책 정보로 이동할까요?"
+        confirmLabel="저장하지 않고 이동"
+        onConfirm={() => navigate(`/catalog/${book.isbn13}`)}
         onCancel={() => setConfirming(null)}
       />
     </section>

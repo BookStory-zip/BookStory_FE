@@ -27,12 +27,23 @@ export function calendarDays(month: string): string[] {
   return Array.from({ length: 42 }, (_, index) => addDays(start, index))
 }
 
+// 날짜 문자열을 UTC 자정으로 읽고 UTC로 표기해 시간대와 관계없이 같은 날을 보여 준다.
+const spokenDateFormat = new Intl.DateTimeFormat('ko-KR', {
+  timeZone: 'UTC',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+})
+const spokenMonthFormat = new Intl.DateTimeFormat('ko-KR', {
+  timeZone: 'UTC',
+  year: 'numeric',
+  month: 'long',
+})
+
 export function spokenDate(date: string): string {
-  const [y, m, d] = date.split('-').map(Number)
-  return `${y}년 ${m}월 ${d}일`
+  return spokenDateFormat.format(toUtc(date))
 }
 
 export function spokenMonth(month: string): string {
-  const [y, m] = month.split('-').map(Number)
-  return `${y}년 ${m}월`
+  return spokenMonthFormat.format(toUtc(`${month}-01`))
 }

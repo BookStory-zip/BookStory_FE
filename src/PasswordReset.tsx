@@ -187,7 +187,7 @@ export default function PasswordReset({ recovery = false }: { recovery?: boolean
         <form ref={formRef} aria-label="재설정 메일 요청" onSubmit={handleSubmit}>
           <div>
             <label htmlFor="reset-email">이메일</label>
-            <input id="reset-email" name="email" type="email" autoComplete="username" disabled={busy} required />
+            <input id="reset-email" name="email" type="email" autoComplete="username" spellCheck={false} disabled={busy} required />
           </div>
           <button type="submit" disabled={busy}>{busy ? '요청 중…' : '재설정 메일 보내기'}</button>
         </form>

@@ -115,6 +115,7 @@ main {
 h1,
 h2 {
   margin: 0;
+  text-wrap: balance;
   font-family: var(--font-display);
   font-weight: 700;
   font-style: normal;
@@ -182,6 +183,12 @@ input {
 
 input:disabled {
   background-color: var(--color-paper-2);
+}
+
+a,
+button {
+  /* 누름 표시는 :active·포커스 스타일이 맡는다 */
+  -webkit-tap-highlight-color: transparent;
 }
 
 button {
@@ -387,6 +394,7 @@ main.app {
 
 .result-cover {
   width: 100%;
+  height: auto;
   aspect-ratio: 2 / 3;
   border-radius: 2px 4px 4px 2px;
   object-fit: cover;
@@ -459,6 +467,7 @@ main.app {
 
 .detail-cover {
   width: 100%;
+  height: auto;
   aspect-ratio: 2 / 3;
   border-radius: 2px 4px 4px 2px;
   object-fit: cover;
@@ -529,6 +538,25 @@ main.app {
 .detail-card h2 {
   margin-bottom: var(--space-2);
 }
+
+.catalog-nav, .review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.catalog .detail-head { margin-bottom: var(--space-6); }
+.catalog-eyebrow, .review-visibility { color: var(--color-muted); font-size: .8125rem; }
+.catalog-eyebrow { margin: 0; }
+.review-summary { color: var(--color-accent); font-variant-numeric: tabular-nums; }
+.review-memo { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; }
+.public-reviews { list-style: none; padding: 0; margin: 0; }
+.public-reviews > li { padding-block: var(--space-4); border-top: 1px solid var(--color-rule); }
+.review-disclosure { border-top: 1px solid var(--color-rule); padding-top: var(--space-4); }
+.review-toggle { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; }
+.review-toggle input { width: 1.125rem; height: 1.125rem; margin: 0; accent-color: var(--color-accent); }
 
 fieldset {
   margin: 0;
@@ -674,6 +702,28 @@ button.link-button:hover:not(:disabled) {
   gap: var(--space-3);
 }
 
+/* 키보드 사용자를 위한 본문 바로가기: 포커스를 받을 때만 보인다 */
+.skip-link {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 10;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: none;
+}
+
+/* 바로가기로 옮겨 간 본문 묶음 자체는 조작 대상이 아니라 테두리를 그리지 않는다 */
+#content:focus {
+  outline: none;
+}
+
 /* 오늘의 독서 */
 .today-card {
   display: grid;
@@ -728,6 +778,98 @@ button.link-button:hover:not(:disabled) {
 .records-summary {
   margin-bottom: var(--space-4);
   color: var(--color-muted);
+}
+
+.records-switch {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.records-switch button {
+  flex: 1;
+  border-color: var(--color-rule-strong);
+  background-color: transparent;
+  color: var(--color-muted);
+}
+
+.records-switch button[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.statistics-period {
+  width: min(100%, 15rem);
+  margin-inline: auto;
+}
+
+.statistics-activity {
+  padding: var(--space-6) 0;
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.statistics-days {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.statistics-days strong {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 10vw, 4rem);
+  line-height: 1.1;
+}
+
+.statistics-library {
+  margin-top: var(--space-6);
+}
+
+.statistics-library h3 {
+  margin-bottom: var(--space-2);
+}
+
+.statistics-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: var(--space-6) 0;
+}
+
+.statistics-totals dt,
+.statistics-statuses dt {
+  color: var(--color-muted);
+}
+
+.statistics-totals dd {
+  margin: var(--space-2) 0 0;
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.statistics-totals dd span {
+  margin-left: var(--space-1);
+  font-size: 1rem;
+}
+
+.statistics-statuses {
+  margin-bottom: var(--space-4);
+}
+
+.statistics-statuses > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-rule);
+}
+
+.statistics-statuses dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .records-calendar {
@@ -799,6 +941,19 @@ button.records-day:hover:not(:disabled) {
   font-size: 0.75rem;
   font-weight: 700;
   line-height: 1;
+}
+
+.records-done {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 1px 0;
+  background-color: var(--color-lamp);
+  color: var(--color-on-accent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .records-num {
@@ -934,6 +1089,14 @@ button.calendar-nav:hover:not(:disabled) {
   text-align: center;
 }
 
+button.calendar-day,
+.records-num,
+.records-count,
+.counter,
+.detail-dates dd {
+  font-variant-numeric: tabular-nums;
+}
+
 button.calendar-day {
   min-height: 2.75rem;
   padding: 0;
@@ -976,6 +1139,7 @@ button.calendar-day:disabled {
 /* 확인창: 브라우저 기본 dialog에 숲 테마 적용 */
 .confirm-dialog {
   width: min(24rem, calc(100% - 2rem));
+  overscroll-behavior: contain;
   padding: var(--space-6);
   border: 1px solid var(--color-rule-strong);
   border-radius: var(--radius);
@@ -1175,6 +1339,7 @@ button.compact {
 
 .cover {
   display: block;
+  height: auto;
   width: 84%;
   justify-self: center;
   aspect-ratio: 2 / 3;

@@ -27,7 +27,16 @@ vi.mock('./lib/auth', async (importOriginal) => ({
   withAccessToken: (request: (token: string) => Promise<unknown>) => request('test-token'),
 }))
 
+// BE 규칙: 중단은 읽는 중·중단에서, 포기는 읽는 중·중단·포기에서, 나머지는 언제나 요청할 수 있다.
+function allowedFor(status: LibraryBookDetail['status']): LibraryBookDetail['allowed_statuses'] {
+  const base: LibraryBookDetail['allowed_statuses'] = ['want_to_read', 'reading', 'completed']
+  if (status === 'reading' || status === 'paused') return [...base, 'paused', 'abandoned']
+  if (status === 'abandoned') return [...base, 'abandoned']
+  return base
+}
+
 function detail(overrides: Partial<LibraryBookDetail> = {}): LibraryBookDetail {
+  const status = overrides.status ?? 'reading'
   return {
     id: 'user-book-1',
     book_id: 'book-1',
@@ -48,8 +57,12 @@ function detail(overrides: Partial<LibraryBookDetail> = {}): LibraryBookDetail {
     stop_reason: null,
     rating: null,
     memo: '첫 메모',
+    is_review_public: false,
+    review_published_at: null,
+    review_updated_at: null,
     has_completed: false,
     updated_at: '2026-10-01T00:00:00Z',
+    allowed_statuses: allowedFor(status),
     ...overrides,
   }
 }
@@ -64,6 +77,52 @@ function renderDetail() {
     </MemoryRouter>,
   )
 }
+
+test('메모는 기본 비공개이며 직접 선택해 저장해야 공개한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  renderDetail()
+  const checkbox = await screen.findByRole('checkbox', { name: '메모와 별점 공개' })
+  expect((checkbox as HTMLInputElement).checked).toBe(false)
+  fireEvent.click(checkbox)
+  fireEvent.click(screen.getByRole('button', { name: '기록 저장' }))
+  await waitFor(() => expect(mocks.updateLibraryRecord).toHaveBeenCalledWith('test-token', 'user-book-1', { is_review_public: true }))
+})
+
+test('공개된 메모를 비우면 공개 선택을 끄고, 다시 입력해도 자동 공개하지 않는다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ is_review_public: true, review_published_at: '2026-11-02T00:00:00Z', review_updated_at: '2026-11-02T00:00:00Z' }))
+  renderDetail()
+  const memo = await screen.findByLabelText('메모')
+  fireEvent.change(memo, { target: { value: '   ' } })
+  const checkbox = screen.getByRole('checkbox', { name: '메모와 별점 공개' }) as HTMLInputElement
+  expect(checkbox.checked).toBe(false)
+  expect(checkbox.disabled).toBe(true)
+  fireEvent.change(memo, { target: { value: '새 메모' } })
+  expect(checkbox.checked).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: '기록 저장' }))
+  await waitFor(() => expect(mocks.updateLibraryRecord).toHaveBeenCalledWith('test-token', 'user-book-1', { memo: '새 메모', is_review_public: false }))
+})
+
+test('공개 전환 저장 실패 시 공개 선택과 메모 입력을 보존한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.updateLibraryRecord.mockRejectedValue(new ApiError(503))
+  renderDetail()
+  fireEvent.click(await screen.findByRole('checkbox', { name: '메모와 별점 공개' }))
+  fireEvent.click(screen.getByRole('button', { name: '기록 저장' }))
+  await screen.findByText(/입력은 그대로 두었으니/)
+  expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
+  expect((screen.getByLabelText('메모') as HTMLTextAreaElement).value).toBe('첫 메모')
+})
+
+test('공개 설정만 수정해도 책 정보로 이동하기 전에 미저장 경고를 보여준다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  renderDetail()
+  fireEvent.click(await screen.findByRole('checkbox', { name: '메모와 별점 공개' }))
+  fireEvent.click(screen.getByRole('link', { name: '책 정보·공개 후기 보기' }))
+  const dialog = screen.getByRole('dialog', { name: '저장하지 않은 기록이 있습니다' })
+  fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+  expect(mocks.updateLibraryRecord).not.toHaveBeenCalled()
+  expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
+})
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -150,7 +209,7 @@ test('완독일을 바꾸면 그 한국 날짜로 보내고 시작일은 그대�
   await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
   expect(mocks.updateLibraryStatus).toHaveBeenCalledWith('test-token', 'user-book-1', {
     status: 'completed',
-    completed_at: '2026-10-20T23:59:59+09:00',
+    completed_date: '2026-10-20',
   })
 })
 
@@ -176,6 +235,54 @@ test('저장 성공 뒤 다시 조회가 실패해도 화면과 입력을 유지
   await waitFor(() => expect(screen.getByRole('status').textContent).toContain('잠시 응답할 수 없습니다'))
   expect(screen.getByRole('heading', { name: '소년이 온다' })).toBeTruthy()
   expect((screen.getByLabelText('메모') as HTMLTextAreaElement).value).toBe('새 메모')
+})
+
+test('공개 저장 후 상세 재조회가 끝날 때까지 잠그고, 이후 해제는 false를 전송한다', async () => {
+  let finish!: (value: LibraryBookDetail) => void
+  const published = detail({ is_review_public: true, review_published_at: '2026-10-28T03:00:00Z', review_updated_at: '2026-10-28T03:00:00Z' })
+  mocks.getLibraryBook.mockResolvedValueOnce(detail())
+    .mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    .mockResolvedValueOnce(detail())
+  mocks.updateLibraryRecord.mockResolvedValue(undefined)
+  renderDetail()
+  const checkbox = await screen.findByRole('checkbox', { name: '메모와 별점 공개' }) as HTMLInputElement
+  fireEvent.click(checkbox)
+  fireEvent.click(screen.getByRole('button', { name: '기록 저장' }))
+  await waitFor(() => expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2))
+  expect(checkbox.disabled).toBe(true)
+  expect((screen.getByRole('button', { name: '저장하는 중…' }) as HTMLButtonElement).disabled).toBe(true)
+  await act(async () => finish(published))
+  expect(checkbox.disabled).toBe(false)
+  fireEvent.click(checkbox)
+  fireEvent.click(screen.getByRole('button', { name: '기록 저장' }))
+  await waitFor(() => expect(mocks.updateLibraryRecord).toHaveBeenCalledTimes(2))
+  expect(mocks.updateLibraryRecord).toHaveBeenLastCalledWith('test-token', 'user-book-1', { is_review_public: false })
+})
+
+test.each(['success', 'timeout'])('저장 후 재조회 실패는 재저장을 막고 재확인 뒤 공개 해제를 보낸다: %s', async (result) => {
+  const published = detail({ is_review_public: true, review_published_at: '2026-10-28T03:00:00Z', review_updated_at: '2026-10-28T03:00:00Z' })
+  mocks.getLibraryBook.mockResolvedValueOnce(detail())
+    .mockRejectedValueOnce(new ApiError(503))
+    .mockResolvedValueOnce(published)
+    .mockResolvedValueOnce(detail())
+  if (result === 'timeout') mocks.updateLibraryRecord.mockRejectedValueOnce(new ApiError(504)).mockResolvedValue(undefined)
+  else mocks.updateLibraryRecord.mockResolvedValue(undefined)
+  renderDetail()
+  const checkbox = await screen.findByRole('checkbox', { name: '메모와 별점 공개' }) as HTMLInputElement
+  fireEvent.click(checkbox)
+  fireEvent.click(screen.getByRole('button', { name: '기록 저장' }))
+  await screen.findByText(/잠시 응답할 수 없습니다/)
+  expect((screen.getByRole('button', { name: '기록 저장' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(checkbox.checked).toBe(true)
+  expect((screen.getByLabelText('메모') as HTMLTextAreaElement).value).toBe('첫 메모')
+  expect(mocks.updateLibraryRecord).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: '최신 상태 다시 확인' }))
+  await waitFor(() => expect(checkbox.disabled).toBe(false))
+  expect(screen.queryByText(/잠시 응답할 수 없습니다/)).toBeNull()
+  fireEvent.click(checkbox)
+  fireEvent.click(screen.getByRole('button', { name: '기록 저장' }))
+  await waitFor(() => expect(mocks.updateLibraryRecord).toHaveBeenCalledTimes(2))
+  expect(mocks.updateLibraryRecord).toHaveBeenLastCalledWith('test-token', 'user-book-1', { is_review_public: false })
 })
 
 test('504 저장은 다시 보내지 않고 서버 상태를 다시 조회한다', async () => {
@@ -211,12 +318,12 @@ test('읽고 싶음 전환과 삭제는 확인창에서 취소하면 요청하�
   fireEvent.click(await screen.findByRole('radio', { name: /^읽고 싶음/ }))
   fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
   const reset = screen.getByRole('dialog', { name: '읽고 싶음으로 되돌릴까요?' })
-  expect(reset.textContent).toContain('완독일·별점·메모도 초기화')
+  expect(reset.textContent).toContain('완독일·별점·메모와 공개 후기도 초기화')
   fireEvent.click(within(reset).getByRole('button', { name: '취소' }))
 
   fireEvent.click(screen.getByRole('button', { name: '서재에서 빼기' }))
   const remove = screen.getByRole('dialog', { name: /서재에서 뺄까요/ })
-  expect(remove.textContent).toContain('독서 체크 기록도 함께 삭제')
+  expect(remove.textContent).toContain('독서 체크 기록과 공개 후기도 함께 삭제')
   fireEvent.click(within(remove).getByRole('button', { name: '취소' }))
 
   expect(mocks.updateLibraryStatus).not.toHaveBeenCalled()
@@ -308,7 +415,7 @@ test('읽는 중인 책은 상태를 그대로 두고 바꾼 시작일만 보낸
   await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
   expect(mocks.updateLibraryStatus).toHaveBeenCalledWith('test-token', 'user-book-1', {
     status: 'reading',
-    started_at: '2026-10-02T00:00:00+09:00',
+    started_date: '2026-10-02',
   })
 })
 
@@ -340,7 +447,7 @@ test('중단·포기 상태는 현재 상태로 날짜를 고칠 수 없다', as
   expect(await screen.findByRole('radio', { name: /^중단/ })).toHaveProperty('disabled', true)
 })
 
-test('완독한 책을 다시 읽는 중으로 바꾸면 미리 채운 시작일도 보내 덮어쓰기를 막는다', async () => {
+test('완독한 책을 다시 읽으면 새 독서로 보고 시작일을 비워 오늘부터 시작한다', async () => {
   mocks.getLibraryBook.mockResolvedValue(
     detail({ status: 'completed', completed_at: '2026-10-10T05:00:00Z', has_completed: true }),
   )
@@ -348,12 +455,28 @@ test('완독한 책을 다시 읽는 중으로 바꾸면 미리 채운 시작일
   renderDetail()
 
   fireEvent.click(await screen.findByRole('radio', { name: /^읽는 중/ }))
+  expect(screen.getByRole('button', { name: '시작일 (선택) 날짜 선택' })).toBeTruthy()
+  expect(screen.getByText(/오늘부터 시작하고, 이전 완독일은 유지됩니다/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
+
+  await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
+  expect(mocks.updateLibraryStatus.mock.calls[0][2]).toEqual({ status: 'reading' })
+})
+
+test('다시 읽을 때 시작일을 직접 고르면 그 날짜를 보낸다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ status: 'abandoned' }))
+  mocks.updateLibraryStatus.mockResolvedValue(undefined)
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^읽는 중/ }))
+  fireEvent.click(screen.getByRole('button', { name: '시작일 (선택) 날짜 선택' }))
+  fireEvent.click(screen.getByRole('button', { name: '2026년 10월 20일' }))
   fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
 
   await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
   expect(mocks.updateLibraryStatus.mock.calls[0][2]).toEqual({
     status: 'reading',
-    started_at: '2026-10-01T00:00:00+09:00',
+    started_date: '2026-10-20',
   })
 })
 
@@ -383,6 +506,44 @@ test('오늘로 채운 완독일을 연 채 한국 자정을 넘기면 화면의
   await waitFor(() => expect(mocks.updateLibraryStatus).toHaveBeenCalledTimes(1))
   expect(mocks.updateLibraryStatus.mock.calls[0][2]).toEqual({
     status: 'completed',
-    completed_at: '2026-10-28T23:59:59+09:00',
+    completed_date: '2026-10-28',
   })
+})
+
+test('저장하지 않은 기록이 있을 때만 새로고침 전에 경고한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  renderDetail()
+
+  const memo = await screen.findByLabelText('메모')
+  const before = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(before)
+  expect(before.defaultPrevented).toBe(false)
+
+  fireEvent.change(memo, { target: { value: '아직 저장 안 한 메모' } })
+  const dirty = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(dirty)
+  expect(dirty.defaultPrevented).toBe(true)
+})
+
+test('고를 수 있는 상태는 서버의 allowed_statuses를 따른다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ allowed_statuses: ['want_to_read', 'completed'] }))
+  renderDetail()
+
+  expect(await screen.findByRole('radio', { name: /^완독/ })).toHaveProperty('disabled', false)
+  expect(screen.getByRole('radio', { name: /^중단/ })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('radio', { name: /^포기/ })).toHaveProperty('disabled', true)
+})
+
+test('오류 code가 있으면 원인별 한국어로 안내한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.updateLibraryStatus.mockRejectedValue(new ApiError(409, 'Final reading start must not be after completion', 'date_order'))
+  renderDetail()
+
+  fireEvent.click(await screen.findByRole('radio', { name: /^완독/ }))
+  fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
+
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('날짜 순서가 올바르지 않습니다'))
+  expect(screen.getByRole('status').textContent).not.toContain('Final reading')
+  // 409는 화면이 오래된 상태라는 뜻이므로 서버 기준으로 다시 불러온다.
+  await waitFor(() => expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2))
 })

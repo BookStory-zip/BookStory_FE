@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import { addLibraryBook } from './api'
 import {
   getPasswordResetUser,
   requestPasswordReset,
@@ -7,6 +8,8 @@ import {
   signUp,
   subscribeAuthState,
   updatePassword,
+  withAccessToken,
+  SessionMissingError,
 } from './auth'
 
 const { auth } = vi.hoisted(() => ({
@@ -153,6 +156,36 @@ test('503은 인증 확인 오류로 전달하고 로그아웃하지 않는다',
     retry: expect.any(Function),
   })
   expect(auth.refreshSession).not.toHaveBeenCalled()
+  expect(auth.signOut).not.toHaveBeenCalled()
+})
+
+test.each([sessionB, null])('401 응답 전에 계정 전환·로그아웃되면 등록을 재전송하지 않는다: %j', async (nextSession) => {
+  currentSession = sessionA
+  const pending = deferredResponse()
+  fetchMock.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(Response.json({ id: 'new-book', status: 'want_to_read' }, { status: 201 }))
+  auth.refreshSession.mockResolvedValue({ data: { session: nextSession ?? sessionB }, error: null })
+  const request = withAccessToken((token) => addLibraryBook(token, '9788936433598'))
+  const rejected = expect(request).rejects.toBeInstanceOf(SessionMissingError)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  currentSession = nextSession
+  pending.resolve(new Response(null, { status: 401 }))
+  await rejected
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(auth.refreshSession).not.toHaveBeenCalled()
+  expect(auth.signOut).not.toHaveBeenCalled()
+})
+
+test('토큰 갱신 중 계정이 바뀌어도 새 계정으로 등록을 재시도하지 않는다', async () => {
+  currentSession = sessionA
+  fetchMock.mockResolvedValueOnce(new Response(null, { status: 401 }))
+    .mockResolvedValueOnce(Response.json({ id: 'new-book', status: 'want_to_read' }, { status: 201 }))
+  auth.refreshSession.mockImplementation(async () => {
+    currentSession = sessionB
+    return { data: { session: sessionB }, error: null }
+  })
+  await expect(withAccessToken((token) => addLibraryBook(token, '9788936433598'))).rejects.toBeInstanceOf(SessionMissingError)
+  expect(fetchMock).toHaveBeenCalledTimes(1)
   expect(auth.signOut).not.toHaveBeenCalled()
 })
 

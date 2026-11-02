@@ -1,27 +1,41 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { isAuthError } from '@supabase/supabase-js'
 import { Navigate, NavLink, Route, Routes } from 'react-router'
-import BookDetail from './BookDetail'
-import BookSearch from './BookSearch'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
 import { commonErrorMessage, isAuthFailure } from './lib/errors'
 import CabinIcon from './CabinIcon'
 import Library from './Library'
-import PasswordReset from './PasswordReset'
-import ReadingRecords from './ReadingRecords'
+
+// 첫 화면(로그인·서재)에 필요 없는 화면은 들어갈 때 받아 모바일 첫 로딩을 줄인다.
+const BookDetail = lazy(() => import('./BookDetail'))
+const BookSearch = lazy(() => import('./BookSearch'))
+const BookCatalog = lazy(() => import('./BookCatalog'))
+const PasswordReset = lazy(() => import('./PasswordReset'))
+const ReadingRecords = lazy(() => import('./ReadingRecords'))
+
+function PageLoading() {
+  return (
+    <div className="cabin-loading">
+      <CabinIcon className="cabin-icon" />
+      <p>화면을 여는 중…</p>
+    </div>
+  )
+}
 
 function App() {
   return (
-    <Routes>
-      <Route path="/reset-password" element={<PasswordReset key="request" />} />
-      <Route
-        path="/reset-password/update"
-        element={<PasswordReset key="update" recovery />}
-      />
-      {/* 그 밖의 경로는 인증 화면이 받고, /me 확인 뒤에만 개인 화면 경로를 연다 */}
-      <Route path="*" element={<AuthScreen />} />
-    </Routes>
+    <Suspense fallback={<main><PageLoading /></main>}>
+      <Routes>
+        <Route path="/reset-password" element={<PasswordReset key="request" />} />
+        <Route
+          path="/reset-password/update"
+          element={<PasswordReset key="update" recovery />}
+        />
+        {/* 그 밖의 경로는 인증 화면이 받고, /me 확인 뒤에만 개인 화면 경로를 연다 */}
+        <Route path="*" element={<AuthScreen />} />
+      </Routes>
+    </Suspense>
   )
 }
 
@@ -222,8 +236,9 @@ function AuthScreen() {
   if (userId !== null) {
     return (
       <main className="app">
+        <a href="#content" className="skip-link">본문으로 바로가기</a>
         <header className="app-header">
-          <p className="wordmark">
+          <p className="wordmark" translate="no">
             <CabinIcon className="wordmark-icon" />
             BookStory
           </p>
@@ -243,13 +258,18 @@ function AuthScreen() {
         </header>
         <p role="status">{message}</p>
         {/* 계정이 바뀌면 개인 화면을 새로 마운트해 이전 계정의 목록·늦은 응답을 버린다 */}
-        <Routes key={userId}>
-          <Route index element={<Library />} />
-          <Route path="search" element={<BookSearch />} />
-          <Route path="books/:userBookId" element={<BookDetail />} />
-          <Route path="records" element={<ReadingRecords />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <div id="content" tabIndex={-1}>
+          <Suspense fallback={<PageLoading />}>
+            <Routes key={userId}>
+              <Route index element={<Library />} />
+              <Route path="search" element={<BookSearch />} />
+              <Route path="catalog/:isbn13" element={<BookCatalog />} />
+              <Route path="books/:userBookId" element={<BookDetail />} />
+              <Route path="records" element={<ReadingRecords />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </div>
       </main>
     )
   }
@@ -257,7 +277,7 @@ function AuthScreen() {
   if (retryCheck) {
     return (
       <main>
-        <h1>BookStory</h1>
+        <h1 translate="no">BookStory</h1>
         <p className="tagline">읽은 날을 한 권씩 꽂아 두는 서재</p>
         <p role="status">{message}</p>
         <div className="retry-actions">
@@ -272,7 +292,7 @@ function AuthScreen() {
 
   return (
     <main>
-      <h1>BookStory</h1>
+      <h1 translate="no">BookStory</h1>
       <p className="tagline">읽은 날을 한 권씩 꽂아 두는 서재</p>
       <p role="status">{message}</p>
 
@@ -289,6 +309,7 @@ function AuthScreen() {
             id="email"
             name="email"
             type="email"
+            spellCheck={false}
             autoComplete="username"
             disabled={isCheckingSession || isSubmitting}
             required
