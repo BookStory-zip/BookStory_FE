@@ -15,13 +15,15 @@ React·TypeScript·Vite SPA이며, 인증은 Supabase, 개인 데이터는 BookS
 | --- | --- |
 | `/` (미인증) | 회원가입·이메일 인증 안내·로그인 |
 | `/reset-password`, `/reset-password/update` | 재설정 메일 요청, 새 비밀번호 저장 |
-| `/` (인증) | 서재(숲속 오두막 책장), 20개씩 더 보기 |
+| `/` (인증) | 서재(숲속 오두막 책장), 20개씩 더 보기, 순서 편집(드래그·앞/뒤 버튼) |
 | `/search` | 책 검색, ISBN13이 있는 책만 담기 |
 | `/catalog/{isbn13}` | 공통 책 정보·소개, 내 기록 확인, 공개 후기·평점·더 보기 |
 | `/books/{user_book_id}` | 상태·날짜·별점·메모·중단 사유, 메모·별점 공개 선택, 오늘 체크, 서재에서 빼기 |
 | `/records` | 달력·통계 전환. 월별 표지 달력, 연간·월간 읽은 날짜 수와 현재 서재 현황 |
 
 책별 공개 후기는 사용자가 직접 공개를 선택한 메모·별점만 표시합니다. 기존 메모는 비공개이며, 수정하면 후기에도 반영되고 메모를 비우면 비공개가 됩니다.
+
+서재 순서 편집은 `feat/library-order`에서 구현·로컬 검증했으며 운영에는 아직 반영하지 않았습니다. 불러온 책 사이에서 이동할 때마다 저장하고 첫 페이지부터 다시 확인합니다. BE 순서 API·운영 migration 배포 후 FE를 배포해야 합니다.
 
 제외: 공개 서재·피드·팔로우·추천·회독별 기록·페이지 수·푸시·복잡한 통계·서재 꾸미기·PWA·오프라인.
 
@@ -51,9 +53,9 @@ VITE_SUPABASE_PUBLISHABLE_KEY=
 | 명령 | 내용 |
 | --- | --- |
 | `npm run lint` | ESLint |
-| `npm test` | Vitest 테스트 164개(jsdom, Supabase SDK·fetch 대체) |
+| `npm test` | Vitest 테스트 179개(jsdom, Supabase SDK·fetch 대체) |
 | `npm run build` | 타입 검사 후 프로덕션 빌드 |
-| `npm run test:e2e` | Playwright 모바일 Chromium 핵심 흐름 5개(가짜 API). 처음 한 번 `npx playwright install chromium` |
+| `npm run test:e2e` | Playwright 모바일 Chromium 핵심 흐름 7개(가짜 API). 처음 한 번 `npx playwright install chromium` |
 
 테스트는 운영 API·DB를 호출하지 않습니다.
 CI(`.github/workflows/ci.yml`)가 develop·main push와 두 브랜치 대상 PR에서 위 네 가지를 실행합니다.

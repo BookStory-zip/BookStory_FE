@@ -295,6 +295,17 @@ function isLibraryBookDetail(value: unknown): value is LibraryBookDetail {
 const libraryBookPath = (userBookId: string) =>
   `/library/books/${encodeURIComponent(userBookId)}`
 
+export async function moveLibraryBook(
+  accessToken: string,
+  userBookId: string,
+  afterUserBookId: string | null,
+): Promise<void> {
+  await apiRequest(`${libraryBookPath(userBookId)}/position`, accessToken, {
+    method: 'PATCH',
+    body: { after_user_book_id: afterUserBookId },
+  })
+}
+
 export async function getLibraryBook(
   accessToken: string,
   userBookId: string,
