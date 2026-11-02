@@ -26,7 +26,8 @@ export const RELOGIN_MESSAGE = '로그인 정보를 확인할 수 없습니다. 
 // BE가 409·422에 붙이는 원인 코드별 안내. 영어 detail은 보여 주지 않는다.
 const CODE_MESSAGES: Record<string, string> = {
   invalid_transition: '지금 상태에서는 이 상태로 바꿀 수 없습니다. 최신 상태를 확인해주세요.',
-  date_order: '시작일은 완독일보다 늦을 수 없습니다. 날짜를 확인해주세요.',
+  // 상태 날짜와 달력·통계 조회 범위가 같은 코드를 쓴다.
+  date_order: '날짜 순서가 올바르지 않습니다. 날짜를 확인해주세요.',
   ambiguous_dates: '날짜 입력이 겹쳤습니다. 다시 시도해주세요.',
   invalid_date_fields: '이 상태에서는 고른 날짜를 저장할 수 없습니다.',
   reading_check_not_allowed: '읽는 중인 책만 오늘 체크할 수 있습니다.',

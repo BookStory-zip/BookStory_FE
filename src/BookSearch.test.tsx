@@ -134,3 +134,24 @@ test('더 보기 실패는 이미 받은 결과를 지우지 않는다', async (
   expect(screen.getByText('1쪽 책')).toBeTruthy()
   expect(screen.getByRole('button', { name: '결과 더 보기' })).toBeTruthy()
 })
+
+test('새 검색 응답 전에는 이전 검색어로 더 보기를 보내지 않는다', async () => {
+  mocks.searchBooks
+    .mockResolvedValueOnce({ books: [book('첫 검색 1쪽', '9788936433598')], isEnd: false })
+    .mockReturnValueOnce(new Promise(() => {}))
+  search('첫 검색')
+  const more = await screen.findByRole('button', { name: '결과 더 보기' })
+
+  search('두 번째 검색')
+  fireEvent.click(more)
+
+  expect(more).toHaveProperty('disabled', true)
+  expect(mocks.searchBooks).toHaveBeenCalledTimes(2)
+})
+
+test('서버 오류 code가 있는 422는 code별 안내를 보여 준다', async () => {
+  mocks.searchBooks.mockRejectedValueOnce(new ApiError(422, 'Search query must not be blank', 'blank_query'))
+  search('책')
+
+  expect((await screen.findByRole('alert')).textContent).toContain('검색어를 입력해주세요.')
+})

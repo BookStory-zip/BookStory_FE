@@ -445,6 +445,8 @@ test('오류 code가 있으면 원인별 한국어로 안내한다', async () =>
   fireEvent.click(await screen.findByRole('radio', { name: /^완독/ }))
   fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
 
-  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('시작일은 완독일보다 늦을 수 없습니다'))
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('날짜 순서가 올바르지 않습니다'))
   expect(screen.getByRole('status').textContent).not.toContain('Final reading')
+  // 409는 화면이 오래된 상태라는 뜻이므로 서버 기준으로 다시 불러온다.
+  await waitFor(() => expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2))
 })

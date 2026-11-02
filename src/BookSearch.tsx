@@ -4,13 +4,13 @@ import { Link } from 'react-router'
 import { addLibraryBook, ApiError, SEARCH_LAST_PAGE, searchBooks, statusLabels } from './lib/api'
 import type { SearchBook } from './lib/api'
 import { withAccessToken } from './lib/auth'
-import { commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
+import { codeMessage, commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
 
 type SaveState = { phase: 'saving' | 'saved' | 'error'; message: string }
 
 function searchErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
-    if (error.status === 422) return '검색어를 확인해주세요. (1~200자)'
+    if (error.status === 422 && !codeMessage(error)) return '검색어를 확인해주세요. (1~200자)'
     if (error.status === 502) return '책 정보 제공처에서 오류가 발생했습니다. 잠시 후 다시 검색해주세요.'
     if (error.status === 504) return '책 정보 제공처의 응답이 늦습니다. 잠시 후 다시 검색해주세요.'
   }
@@ -78,7 +78,8 @@ export default function BookSearch() {
   }
 
   async function handleMore() {
-    if (!paging || loadingMore) return
+    // 새 검색 응답 전에는 paging이 이전 검색어라 더 보기를 막는다.
+    if (!paging || searching || loadingMore) return
     const version = searchVersion.current
     const nextPage = paging.page + 1
     setLoadingMore(true)
@@ -218,7 +219,7 @@ export default function BookSearch() {
       {moreError && <p className="library-note" role="alert">{moreError}</p>}
 
       {results !== null && results.length > 0 && paging && !paging.isEnd && paging.page < SEARCH_LAST_PAGE && (
-        <button type="button" className="secondary more" onClick={() => void handleMore()} disabled={loadingMore}>
+        <button type="button" className="secondary more" onClick={() => void handleMore()} disabled={loadingMore || searching}>
           {loadingMore ? '불러오는 중…' : '결과 더 보기'}
         </button>
       )}

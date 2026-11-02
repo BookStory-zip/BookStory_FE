@@ -30,7 +30,8 @@ import { spokenDate } from './lib/dates'
 import { useKstToday } from './useKstToday'
 
 type Pending = 'status' | 'record' | 'delete' | 'check' | null
-type WriteResult = 'ok' | 'failed' | 'unclear'
+// conflict: 409. 화면이 오래된 상태라 서버 기준으로 다시 불러와야 한다.
+type WriteResult = 'ok' | 'failed' | 'unclear' | 'conflict'
 
 function loadErrorMessage(error: unknown) {
   // 타인 기록과 없는 기록은 같은 404이므로 구분하지 않는다.
@@ -182,11 +183,10 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       if (active.current) setNotice({ kind: 'ok', text: done })
       return 'ok'
     } catch (error) {
-      const message =
-        conflict && error instanceof ApiError && error.status === 409
-          ? conflict
-          : saveErrorMessage(error)
+      const isConflict = error instanceof ApiError && error.status === 409
+      const message = conflict && isConflict ? conflict : saveErrorMessage(error)
       if (active.current) setNotice({ kind: 'error', text: message })
+      if (isConflict) return 'conflict'
       return isUnclearWrite(error) ? 'unclear' : 'failed'
     } finally {
       pendingRef.current = null
@@ -271,7 +271,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       setStartedDate('')
       setCompletedDate('')
     }
-    // 결과가 불명확하면 다시 보내지 않고 서버 상태를 확인한다.
+    // 결과가 불명확하거나 409(다른 곳에서 상태가 바뀜)면 다시 보내지 않고 서버 상태를 확인한다.
     if (result !== 'failed') await reload()
   }
 
@@ -310,7 +310,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       '서재에서 뺐습니다.',
     )
     // 삭제 결과가 불명확하면 다시 보내지 않고 서재 목록에서 확인하게 한다.
-    if (result !== 'failed') navigate('/', { replace: true })
+    if (result === 'ok' || result === 'unclear') navigate('/', { replace: true })
   }
 
   if (loadError) {
