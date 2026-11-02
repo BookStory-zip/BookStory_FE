@@ -20,8 +20,11 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 | 날짜 | FE | 배포 | BE |
 | --- | --- | --- | --- |
 | 2026-10-28 | main `e3999b0` (PR #1, CI run 40610539527 통과) | https://bookstory-fe.vercel.app · `dpl_76PbqgQdBjZqLd9448dpAP7bdMV5` · Vercel CLI `64.0.2` 수동 배포 | Render 운영 배포 커밋 확인 필요(로컬 대조 기준 `185e11b`). `CORS_ORIGINS`에 운영 주소 추가 후 재배포 |
+| 2026-11-02 | main `cdcbff7` ([PR #2](https://github.com/BookStory-zip/BookStory_FE/pull/2), [main CI 41381439179](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41381439179) 통과) | https://bookstory-fe.vercel.app · `dpl_En5qb68qkXZhcDrSjm1sPwBzwwmx` · [배포 URL](https://bookstory-cabqsyvt6-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포 | 기준 `290da3e`, migration `c4d8e2a76f10`(사용자 2026-11-02 확인). 이번 배포 확인은 운영 health·CORS 조회이며 BE 배포 SHA를 새로 검증한 것은 아님 |
 
 배포 후 확인: 모든 SPA 경로 200, 공개 환경변수 3개 번들 반영, 운영·로컬 origin CORS 허용(에이전트). 운영 주소에서 로그인부터 기록까지 통합 동작(사용자, 2026-10-28). 배포 방법은 [docs/maintenance.md](./docs/maintenance.md)를 따른다.
+
+2026-11-02 배포 확인: Vercel production Ready·운영 별칭 연결, `/`·`/search`·`/catalog/9788936433598`·`/books/abc`·`/records`·비밀번호 재설정 두 경로의 동일 SPA 응답 200, 보안 헤더 5개, 운영 origin의 Authorization CORS 사전 요청·BE health 200 확인. 운영 JS·CSS 11개가 검증한 로컬 빌드와 일치함. 브라우저 제어는 현재 URL 확인 실패로 중단되어 실제 로그인·공개/수정/비공개·계정 전환은 이번에 검증하지 않음.
 
 ## 미확인·보류
 
@@ -61,7 +64,7 @@ BE 전달 사항, 2026-10-28 BE 계약 수신 상태, 재독 규칙, BE 배포 �
 - [x] 연간 이동으로 공유 월이 미래가 되는 버그 수정. `moveMonth`에서 현재 KST 월을 상한으로 제한하고, 2025년 12월 → 다음 해 → 월간/달력 복귀 시 2026년 10월을 사용하는 회귀 테스트 추가.
 - [x] lint·전체 단위 테스트 123개·타입 검사/빌드 통과. Playwright 4개는 설치된 Chrome을 사용하는 임시 설정으로 통과했고 모바일/태블릿/데스크톱 화면을 확인함. 기본 Chromium 실행 파일은 로컬에 미설치이며 CI 설정은 변경하지 않음. API·세션은 가짜 응답으로 검증함.
 - [x] BE main `290da3e` Render 배포 및 연간·월간 통계 API 200 확인(사용자, 2026-11-02). FE 운영 화면 연결 확인은 남음
-- [ ] main 반영과 Vercel 운영 배포는 별도 요청 시 진행
+- [x] main `cdcbff7` 반영·Vercel 운영 배포(2026-11-02). 실제 로그인 후 통계 화면 확인은 남음
 
 ## 책 상세·공개 후기 연결 (2026-11-02)
 
@@ -71,14 +74,16 @@ BE 전달 사항, 2026-10-28 BE 계약 수신 상태, 재독 규칙, BE 배포 �
 - [x] 404와 개인 조회 실패 구분, 더 보기 실패 재시도, 늦은 페이지·다른 책 응답 차단, 새 응답의 공개 필드 검증
 - [x] Vitest 156개와 Playwright 핵심 흐름 5개 통과. Playwright는 설치된 Chrome 임시 설정으로 가짜 API·세션을 사용했고 390·768·1440px 스크린샷을 확인함. CI Chromium 설정은 유지
 - [x] develop `b08134c` 원격 반영 확인(2026-11-02). [Frontend CI 41377397397](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41377397397)의 check(lint·단위 테스트·타입 검사·빌드)·e2e 모두 통과
-- [ ] FE main 반영·Vercel 배포 및 실제 운영 브라우저에서 공개·수정·비공개 전환 확인. 운영 데이터 쓰기는 자동 검증에 포함하지 않음
+- [x] FE main `cdcbff7` 반영·Vercel 운영 배포, `/catalog` SPA 응답·최신 기능 번들 확인(2026-11-02)
+- [ ] 실제 운영 브라우저에서 공개·수정·비공개 전환 확인. 운영 데이터 쓰기는 자동 검증에 포함하지 않음
 
 ## FE·BE 연동 리뷰 수정 (2026-11-02)
 
 - [x] 401 대기·토큰 갱신 중 계정 전환/로그아웃 시 이전 등록 요청 재전송 차단
 - [x] 개인 기록 저장 후 재조회까지 변경 잠금 유지. 재조회 실패 시 입력 보존·추가 변경 차단·최신 상태 재확인으로 복구
 - [x] 회귀 사례 6개 추가. Vitest 162개·lint·타입 검사/빌드, 가짜 API 기반 Playwright 핵심 흐름 5개 검증
-- [ ] 수정 커밋 푸시 후 CI 확인. main 반영·배포는 별도 요청
+- [x] 수정 `28e8277` develop 푸시와 [CI 41380869454](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41380869454) check·e2e 통과 확인
+- [x] `e3999b0..28e8277` 전체 변경·연결 코드·BE 계약 독립 리뷰에서 병합 차단 사항 없음. [PR CI 41381107929](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41381107929) 통과 후 PR #2 merge commit 병합·main CI 통과·수동 운영 배포. 로컬 lint·162개 테스트·타입 검사/빌드도 재확인함. 로컬 기본 Chromium 미설치로 e2e는 원격 CI 성공 결과로 확인
 
 ## 매 작업 단위의 종료 기준
 
