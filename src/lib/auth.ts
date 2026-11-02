@@ -25,11 +25,16 @@ export async function withAccessToken<T>(
     }
   }
 
+  // 대기 중 계정이 바뀌었으면 이전 동작을 새 계정으로 이어서 보내지 않는다.
+  const { data: current, error: sessionError } = await supabase.auth.getSession()
+  if (sessionError) throw sessionError
+  if (current.session?.user.id !== data.session.user.id) throw new SessionMissingError()
+
   const { data: refreshed, error: refreshError } =
     await supabase.auth.refreshSession()
 
   if (refreshError) throw refreshError
-  if (!refreshed.session) throw new SessionMissingError()
+  if (refreshed.session?.user.id !== data.session.user.id) throw new SessionMissingError()
 
   return request(refreshed.session.access_token)
 }

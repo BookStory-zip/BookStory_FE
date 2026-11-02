@@ -29,7 +29,7 @@ import DatePicker from './DatePicker'
 import { spokenDate } from './lib/dates'
 import { useKstToday } from './useKstToday'
 
-type Pending = 'status' | 'record' | 'delete' | 'check' | null
+type Pending = 'status' | 'record' | 'delete' | 'check' | 'refresh' | null
 // conflict: 409. 화면이 오래된 상태라 서버 기준으로 다시 불러와야 한다.
 type WriteResult = 'ok' | 'failed' | 'unclear' | 'conflict'
 
@@ -73,6 +73,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   const navigate = useNavigate()
   const [book, setBook] = useState<LibraryBookDetail | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [needsRefresh, setNeedsRefresh] = useState(false)
   const [form, setForm] = useState<RecordForm>({ rating: null, memo: '', stopReason: '', isReviewPublic: false })
   const [nextStatus, setNextStatus] = useState<ReadingStatus | null>(null)
   const [startedDate, setStartedDate] = useState('')
@@ -97,6 +98,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     bookRef.current = fresh
     setBook(fresh)
     setLoadError(null)
+    setNeedsRefresh(false)
     setForm((current) =>
       baseline === null || sameForm(current, baseline) ? recordFormFrom(fresh) : current,
     )
@@ -105,15 +107,33 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   function applyLoadError(error: unknown) {
     if (!active.current) return
     if (bookRef.current === null) setLoadError(loadErrorMessage(error))
-    else setNotice({ kind: 'error', text: loadErrorMessage(error) })
+    else {
+      setNeedsRefresh(true)
+      setNotice({ kind: 'error', text: loadErrorMessage(error) })
+    }
   }
 
   // 저장 후에는 작은 응답 대신 상세 전체를 다시 조회한다.
-  function reload(cleanForm?: RecordForm) {
-    return withAccessToken((token) => getLibraryBook(token, userBookId)).then(
-      (fresh) => applyFresh(fresh, cleanForm),
-      applyLoadError,
-    )
+  async function reload(cleanForm?: RecordForm) {
+    try {
+      applyFresh(await withAccessToken((token) => getLibraryBook(token, userBookId)), cleanForm)
+      return true
+    } catch (error) {
+      applyLoadError(error)
+      return false
+    }
+  }
+
+  async function retryDetails() {
+    if (pendingRef.current) return
+    pendingRef.current = 'refresh'
+    setPending('refresh')
+    try {
+      if (await reload() && active.current) setNotice(null)
+    } finally {
+      pendingRef.current = null
+      if (active.current) setPending(null)
+    }
   }
 
   useEffect(() => {
@@ -152,11 +172,13 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       'check',
       (token) => (cancel ? cancelReadingToday(token, book.id) : checkReadingToday(token, book.id)),
       cancel ? '오늘 체크를 취소했습니다.' : '오늘 읽은 날로 남겼습니다.',
-      '읽는 중인 책만 오늘 체크할 수 있습니다. 상태를 다시 불러왔습니다.',
+      {
+        conflict: '읽는 중인 책만 오늘 체크할 수 있습니다. 상태를 다시 불러왔습니다.',
+        refresh: async () => {
+          await Promise.all([loadTodayLog(todayRef.current), reload()])
+        },
+      },
     )
-    // 결과와 관계없이 다시 보내지 않고 서버 기준(오늘 기록·최근 체크·상태)으로 다시 확인한다.
-    void loadTodayLog(todayRef.current)
-    await reload()
   }
 
   // 저장하지 않은 기록이 있으면 새로고침·창 닫기 전에 브라우저 확인을 띄워 입력을 지킨다.
@@ -169,25 +191,30 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   }, [recordDirty])
 
   async function run(
-    kind: Exclude<Pending, null>,
+    kind: Exclude<Pending, null | 'refresh'>,
     write: (token: string) => Promise<unknown>,
     done: string,
-    conflict?: string,
+    options: { conflict?: string; refresh?: (result: WriteResult) => Promise<void> } = {},
   ): Promise<WriteResult> {
-    if (pendingRef.current) return 'failed'
+    if (pendingRef.current || needsRefresh) return 'failed'
     pendingRef.current = kind
     setPending(kind)
     setNotice(null)
     try {
-      await withAccessToken(write)
-      if (active.current) setNotice({ kind: 'ok', text: done })
-      return 'ok'
-    } catch (error) {
-      const isConflict = error instanceof ApiError && error.status === 409
-      const message = conflict && isConflict ? conflict : saveErrorMessage(error)
-      if (active.current) setNotice({ kind: 'error', text: message })
-      if (isConflict) return 'conflict'
-      return isUnclearWrite(error) ? 'unclear' : 'failed'
+      let result: WriteResult
+      try {
+        await withAccessToken(write)
+        if (active.current) setNotice({ kind: 'ok', text: done })
+        result = 'ok'
+      } catch (error) {
+        const isConflict = error instanceof ApiError && error.status === 409
+        const message = options.conflict && isConflict ? options.conflict : saveErrorMessage(error)
+        if (active.current) setNotice({ kind: 'error', text: message })
+        result = isConflict ? 'conflict' : isUnclearWrite(error) ? 'unclear' : 'failed'
+      }
+      // 재조회까지 한 작업으로 잠가 오래된 기준으로 다음 PATCH를 계산하지 않는다.
+      await options.refresh?.(result)
+      return result
     } finally {
       pendingRef.current = null
       if (active.current) setPending(null)
@@ -265,14 +292,13 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       'status',
       (token) => updateLibraryStatus(token, book.id, change),
       editingDates ? '날짜를 고쳤습니다.' : `상태를 ${statusLabels[nextStatus]}(으)로 바꿨습니다.`,
+      { refresh: async (result) => { if (result !== 'failed') await reload() } },
     )
     if (result === 'ok') {
       setNextStatus(null)
       setStartedDate('')
       setCompletedDate('')
     }
-    // 결과가 불명확하거나 409(다른 곳에서 상태가 바뀜)면 다시 보내지 않고 서버 상태를 확인한다.
-    if (result !== 'failed') await reload()
   }
 
   // 숨겨진 중단 사유는 저장 대상에서 빼서 보이지 않는 값을 보내지 않는다.
@@ -282,7 +308,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
 
   async function handleRecord(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!book) return
+    if (!book || pendingRef.current || needsRefresh) return
     const submitted = form
     const patch = buildRecordPatch(
       book,
@@ -292,13 +318,15 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       setNotice({ kind: 'ok', text: '바뀐 내용이 없습니다.' })
       return
     }
-    const result = await run(
+    await run(
       'record',
       (token) => updateLibraryRecord(token, book.id, patch),
       '기록을 저장했습니다.',
+      { refresh: async (result) => {
+        if (result === 'ok') await reload(submitted)
+        else if (result === 'unclear') await reload()
+      } },
     )
-    if (result === 'ok') await reload(submitted)
-    else if (result === 'unclear') await reload()
   }
 
   async function submitDelete() {
@@ -319,7 +347,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         <Link to="/" className="back-link">← 서재로</Link>
         <div className="library-note" role="alert">
           <p>{loadError}</p>
-          <button type="button" className="secondary" onClick={() => void reload()}>
+          <button type="button" className="secondary" disabled={pending !== null} onClick={() => void retryDetails()}>
             다시 시도
           </button>
         </div>
@@ -338,7 +366,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     )
   }
 
-  const busy = pending !== null
+  const busy = pending !== null || needsRefresh
   // BE는 읽는 중·완독 상태에 같은 상태로 날짜를 보내면 날짜만 고친다.
   const canEditDates = book.status === 'reading' || book.status === 'completed'
 
@@ -372,6 +400,12 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       <p className={`detail-notice ${notice?.kind === 'error' ? 'is-error' : ''}`} role="status">
         {notice?.text}
       </p>
+      {needsRefresh && <div className="library-note">
+        <p>최신 상태를 확인해야 다시 변경할 수 있습니다. 입력한 내용은 유지됩니다.</p>
+        <button type="button" className="secondary" disabled={pending !== null} onClick={() => void retryDetails()}>
+          {pending === 'refresh' ? '확인하는 중…' : '최신 상태 다시 확인'}
+        </button>
+      </div>}
 
       <dl className="detail-dates">
         <div><dt>시작일</dt><dd>{formatKstDate(book.started_at)}</dd></div>

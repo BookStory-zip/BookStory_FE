@@ -51,7 +51,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=
 | 명령 | 내용 |
 | --- | --- |
 | `npm run lint` | ESLint |
-| `npm test` | Vitest 테스트 156개(jsdom, Supabase SDK·fetch 대체) |
+| `npm test` | Vitest 테스트 162개(jsdom, Supabase SDK·fetch 대체) |
 | `npm run build` | 타입 검사 후 프로덕션 빌드 |
 | `npm run test:e2e` | Playwright 모바일 Chromium 핵심 흐름 5개(가짜 API). 처음 한 번 `npx playwright install chromium` |
 
