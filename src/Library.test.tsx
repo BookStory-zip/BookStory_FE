@@ -117,8 +117,10 @@ test('맨 앞으로 이동할 때 null을 보내고 저장과 재조회가 끝�
   fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
   expect(mocks.moveLibraryBook).toHaveBeenCalledWith('test-token', books[1].id, null)
   expect((screen.getByRole('button', { name: 'A 책 0 뒤로' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getByRole('status').textContent).toBe('순서를 저장하는 중…')
   finishMove()
   await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(2))
+  expect(screen.getByRole('status').textContent).toBe('최신 순서를 확인하는 중…')
   expect((screen.getByRole('button', { name: '편집 마치기' }) as HTMLButtonElement).disabled).toBe(true)
   finishLoad([books[1], books[0]])
   await waitFor(() => expect((screen.getByRole('button', { name: '편집 마치기' }) as HTMLButtonElement).disabled).toBe(false))
@@ -153,23 +155,22 @@ test('아래로 이동은 이동 대상을 뺀 뒤의 선행 id를 사용한다'
   await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('A 책 0 이동 손잡이'))
 })
 
-test('추가 페이지에서 옮기면 첫 페이지로 되돌리고 더 보기 offset과 포커스를 복구한다', async () => {
+test('추가 페이지에서 옮기면 불러온 범위를 한 번에 다시 읽고 옮긴 책에 포커스를 둔다', async () => {
   const books = makeBooks(23, 'A')
   const reordered = [...books.slice(0, 19), books[20], books[19], ...books.slice(21)]
   mocks.getLibraryBooks.mockResolvedValueOnce(books.slice(0, 20)).mockResolvedValueOnce(books.slice(20))
-    .mockResolvedValueOnce(reordered.slice(0, 20)).mockResolvedValueOnce(reordered.slice(20))
+    .mockResolvedValueOnce(reordered)
   mocks.moveLibraryBook.mockResolvedValue(undefined)
   renderInRouter(<Library />)
   fireEvent.click(await screen.findByRole('button', { name: '더 보기' }))
   await screen.findByText('A 책 22')
   fireEvent.click(screen.getByRole('button', { name: '순서 편집' }))
   fireEvent.click(screen.getByRole('button', { name: 'A 책 19 뒤로' }))
-  await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(20))
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: '편집 마치기' })))
-  fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
-  await screen.findByText('A 책 22')
-  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 20)
-  expect(new Set(screen.getAllByRole('listitem').map((item) => item.textContent)).size).toBe(23)
+  await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('A 책 19 이동 손잡이'))
+  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', 23, 0)
+  expect(screen.getAllByRole('listitem').map((item) => item.querySelector('.book-title')?.textContent)[20]).toBe('A 책 19')
+  // 마지막 페이지까지 받은 상태였으므로 꽉 찬 재조회 뒤에도 더 보기를 다시 띄우지 않는다.
+  expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
 })
 
 test.each([new TypeError('network'), new DOMException('timeout', 'TimeoutError'), new ApiError(504)])('불명확한 실패 %s는 한 번만 쓰고 서버 순서로 복구한다', async (error) => {
