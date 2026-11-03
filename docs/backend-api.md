@@ -34,6 +34,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `PATCH …/{id}/record` | 선택 `rating`(1~5)·`memo`(1만 자)·`stop_reason`(1천 자)·`is_review_public`(불리언, null 불가) | 바뀐 필드만 전송. 빈 값은 null(삭제), 별점 0은 보내지 않음. 공개 설정 생략은 현재 값 유지 |
 | `DELETE …/{id}` | 204. 연결된 독서 체크도 삭제 | 확인창 후 삭제 |
 | `PUT·DELETE …/{id}/reading-logs/today` | 체크는 읽는 중만, 취소는 상태 무관·기록 없어도 204. 날짜는 서버 KST | 오늘 체크 여부는 오늘 기록의 `user_book_id`로 판단 |
+| `PUT·DELETE …/{id}/reading-logs/{read_date}` | `YYYY-MM-DD`, 서버 KST 오늘 포함 최근 7일. PUT 200·DELETE 204. 검증 환경 제공, 운영 배포 전 | 달력 날짜별 체크·취소. 아래 계약 참고 |
 | `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩. 항목의 `completed_at`·`status`·`has_completed`는 현재 기록(체크 당시 아님) | 마지막 페이지까지 전부 조회. 체크한 날 표시에만 사용 |
 | `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
 | `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`) | 기록 화면 통계 탭에서만 요청. 아래 통계 참고 |
@@ -79,13 +80,26 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 - `read_date`·`published_date`는 문자열 그대로 다뤄 시간대 변환으로 하루가 밀리지 않게 합니다.
 - 중단 7일 경과 포기와 도서 정보 갱신은 BE 배치 몫이며 FE 타이머로 처리하지 않습니다.
 
+## 지난 날짜 독서 체크 (검증 환경 제공)
+
+BE `feat/past-reading-check` `26903f5` 제공 안내와 로컬 코드·`docs/frontend-api.md`를 대조했습니다(2026-11-03). 운영 제공 여부와 실제 연동 결과는 plan.md에 별도로 기록합니다. 스키마 변경·DB migration은 없습니다.
+
+- 날짜는 서버 KST 오늘부터 6일 전까지 포함합니다. PUT은 현재 읽는 중인 책만 가능하며 현재 시작일 이전 날짜면 409 `date_order`입니다. 이미 체크한 날짜는 시작일이 뒤로 바뀌어도 기존 기록을 200으로 돌려주지만, 현재 읽는 중이 아니면 기존 체크에도 PUT은 409입니다.
+- DELETE는 같은 날짜 범위에서 상태와 무관하게 가능하고 기록이 없어도 204입니다. 범위 검사는 상태보다 먼저 하며 미래는 422 `future_date`, 7일 전부터는 422 `date_too_old`, 형식 오류는 422 `validation_error`입니다. 실패는 기존 체크·상태·완독일을 바꾸지 않습니다.
+- `created_at`은 실제 체크 요청 시각이고 활동 날짜는 `read_date`입니다. 개인 상세 두 경로의 필수 nullable `last_read_date`는 가장 최근 읽은 날짜입니다. 최근 날짜의 체크를 취소하면 남은 최신 날짜 또는 null이 됩니다. FE는 누락을 `last_read_at`으로 보정하지 않습니다.
+- FE는 선택한 날짜의 실제 로그와 모든 서재 페이지를 조회합니다. 체크된 책에는 상태와 무관하게 취소 버튼, 미체크인 읽는 중 책에는 체크 버튼을 보여 줍니다. 시작일 검사를 FE에 복제하지 않습니다. 완료 기록만 있는 책은 체크된 것으로 간주하지 않습니다.
+- 저장·재조회 중 중복 변경을 잠그고 성공·409·404·결과 불명확 시 날짜별 목록과 월 달력을 다시 조회합니다. 재조회 실패 시 이전 결과를 유지하고 최신 체크 확인 전 쓰기를 막습니다. 통계는 탭을 열 때 새로 조회합니다.
+- FE 검증 → BE 병합·운영 배포 → FE 배포 순서입니다. 기존 `/today`는 유지하지만 날짜 경로·`last_read_date`를 쓰는 FE를 BE보다 먼저 배포하지 않습니다.
+
 ## 오류 처리
 
 | 상태 | FE 안내 |
 | --- | --- |
 | 401 | 다시 로그인 |
 | 404 | 서재에서 찾을 수 없음 |
-| 409·422 | 최상위 `code`별 한국어 안내(`invalid_transition`, `date_order`, `ambiguous_dates`, `invalid_date_fields`, `future_date`, `reading_check_not_allowed`, `date_range`, `blank_query`, `validation_error`, `review_memo_required`, `invalid_position`). 코드가 없으면 상태별 기본 안내. 영어 `detail`은 노출하지 않음 |
+| 409·422 | 최상위 `code`별 한국어 안내(`invalid_transition`, `date_order`, `ambiguous_dates`, `invalid_date_fields`, `future_date`, `date_too_old`, `reading_check_not_allowed`, `date_range`, `blank_query`, `validation_error`, `review_memo_required`, `invalid_position`). 코드가 없으면 상태별 기본 안내. 영어 `detail`은 노출하지 않음 |
+| 422 `date_too_old` | "오늘을 포함한 최근 7일만 체크하거나 취소할 수 있어요." |
+| 409 `date_order` (독서 체크) | "현재 독서 시작일보다 이전 날짜에는 체크할 수 없어요.". 상태 변경의 같은 코드와 문구를 구분 |
 | 422 `future_date` | "오늘 이후 날짜는 선택할 수 없어요." 표시, 선택한 날짜·상태·메모 유지. BE `1ffaa8a`·FE `aab40d0` 운영 반영 |
 | 502·504 | 책 정보 제공처 문제·응답 지연 |
 | 503 | 서버가 잠시 응답할 수 없음 |
