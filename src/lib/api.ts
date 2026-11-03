@@ -148,11 +148,14 @@ export async function getLibraryBooks(
   accessToken: string,
   limit: number,
   offset: number,
+  status?: ReadingStatus,
 ): Promise<LibraryBookItem[]> {
   const query = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   })
+  // 필터를 모르는 서버는 전체를 돌려줄 수 있으므로 호출하는 쪽에서도 상태를 거른다.
+  if (status) query.set('status', status)
   const data = await apiRequest(`/library/books?${query}`, accessToken)
 
   if (!Array.isArray(data) || !data.every(isLibraryBookItem)) {
@@ -580,4 +583,25 @@ export async function getReadingStatistics(
     throw new Error('통계 응답 형식이 올바르지 않습니다.')
   }
   return data
+}
+
+// 발송 키가 설정되지 않은 서버는 503을 돌려준다.
+export async function getPushPublicKey(): Promise<string> {
+  const data = await apiRequest('/push/public-key', null)
+  if (typeof data !== 'object' || data === null || !('public_key' in data) || typeof data.public_key !== 'string' || !data.public_key) {
+    throw new Error('알림 키 응답 형식이 올바르지 않습니다.')
+  }
+  return data.public_key
+}
+
+export type PushSubscriptionBody = { endpoint: string; keys: { p256dh: string; auth: string } }
+
+// 같은 endpoint를 다시 보내면 키만 갱신되므로 반복 등록해도 안전하다.
+export async function savePushSubscription(accessToken: string, body: PushSubscriptionBody): Promise<void> {
+  await apiRequest('/me/push-subscriptions', accessToken, { method: 'PUT', body })
+}
+
+// 본인 구독이 아니거나 이미 없어도 204다.
+export async function deletePushSubscription(accessToken: string, endpoint: string): Promise<void> {
+  await apiRequest('/me/push-subscriptions', accessToken, { method: 'DELETE', body: { endpoint } })
 }

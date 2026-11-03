@@ -4,6 +4,7 @@ import { isAuthError } from '@supabase/supabase-js'
 import { Navigate, NavLink, Route, Routes } from 'react-router'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
 import { commonErrorMessage, isAuthFailure } from './lib/errors'
+import { releaseReminder, syncReminder } from './lib/push'
 import CabinIcon from './CabinIcon'
 import Library from './Library'
 
@@ -108,6 +109,16 @@ function AuthScreen() {
       unsubscribe()
     }
   }, [])
+
+  // 확인된 계정으로 열 때 알림 구독을 서버와 맞춘다. 실패해도 화면을 막지 않고 다음 시작 때 다시 맞춘다.
+  useEffect(() => {
+    if (userId === null) return
+    let active = true
+    void syncReminder(() => active).catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [userId])
 
   async function handleAuthSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -214,6 +225,8 @@ function AuthScreen() {
     setMessage('로그아웃 중입니다.')
 
     try {
+      // 다음에 로그인하는 계정이 이 기기의 알림을 이어받지 않게 먼저 끊는다.
+      await releaseReminder()
       await signOut()
 
       if (currentAction === actionVersion.current) {

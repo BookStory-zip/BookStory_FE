@@ -764,6 +764,24 @@ button.link-button:hover:not(:disabled) {
   text-shadow: none;
 }
 
+.records-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.records-reminder .result-note {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+.records-reminder [role='alert'] {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .records-month {
   display: flex;
   align-items: center;
@@ -1000,17 +1018,23 @@ button.records-day:disabled {
   margin-block: var(--space-4);
 }
 
+/* 기록 목록의 책 카드 안에 체크 버튼을 함께 둔다 */
 .reading-day-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-3);
-  padding-block: var(--space-2);
-  border-bottom: 1px solid var(--color-rule);
+  padding: var(--space-3);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background-color: var(--color-veil-bottom);
 }
 
-.reading-day-row > span {
+.reading-day-row .records-book {
+  flex: 1;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   overflow-wrap: anywhere;
 }
 
