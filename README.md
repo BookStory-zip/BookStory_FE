@@ -53,7 +53,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=
 | 명령 | 내용 |
 | --- | --- |
 | `npm run lint` | ESLint |
-| `npm test` | Vitest 테스트 182개(jsdom, Supabase SDK·fetch 대체) |
+| `npm test` | Vitest 테스트 204개(화면·API와 읽기 전용 배포 확인 스크립트) |
 | `npm run build` | 타입 검사 후 프로덕션 빌드 |
 | `npm run test:e2e` | Playwright 모바일 Chromium 핵심 흐름 8개(가짜 API). 처음 한 번 `npx playwright install chromium` |
 
@@ -63,8 +63,8 @@ CI(`.github/workflows/ci.yml`)가 develop·main push와 두 브랜치 대상 PR�
 ## 배포 기준
 
 - 브랜치: develop에서 분기한 작업 브랜치에서 개발합니다. 로컬 커밋을 쌓고 브랜치 작업·검증이 모두 끝나면 push·develop 대상 PR을 진행합니다. PR 병합·main 반영·배포는 별도 요청으로 진행하며, 배포는 CI를 통과한 main을 사용합니다.
-- 방식: 조직 비공개 저장소라 Git 연동 대신 Vercel CLI로 수동 배포합니다. 절차는 [docs/maintenance.md](./docs/maintenance.md)를 따릅니다.
-- 기록: 배포마다 FE·BE 커밋과 배포 ID를 plan.md에 남깁니다.
+- 방식: 현재 Vercel CLI 수동 배포입니다. 무료 자동 배포를 위해 FE 공개 전환 점검과 main CI 성공 후 CLI 배포 코드를 준비 중이며, 공개 최종 확인·인증 설정·첫 실행 검증 전에는 전환 완료로 보지 않습니다. 절차는 [docs/maintenance.md](./docs/maintenance.md)를 따릅니다.
+- 기록: 운영 반영 시 FE·BE 커밋과 배포 ID를 plan.md에 모아 기록합니다. 자동 배포 전환 후 개별 실행의 커밋·배포 ID/URL·검증 결과는 Actions Summary에 남기며 자동 Git 커밋은 만들지 않습니다.
 - API 변경: 새 필드 추가 → BE 배포 → FE 전환 → 기존 필드 제거 순서로 호환성을 유지합니다.
 
 ## 참고
