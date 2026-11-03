@@ -8,11 +8,13 @@ import {
   deleteLibraryBook,
   getLibraryBooks,
   getMe,
+  getProfile,
   getReadingCompletions,
   getReadingLogs,
   moveLibraryBook,
   searchBooks,
   updateLibraryRecord,
+  updateNickname,
 } from './api'
 
 afterEach(() => {
@@ -50,6 +52,39 @@ test.each([null, 'anchor-user-book'])('순서 변경은 개인 id와 필수 기�
     body: JSON.stringify({ after_user_book_id: anchor }),
     signal: expect.any(AbortSignal),
   })
+})
+
+test.each([
+  ['42', 42],
+  [null, undefined],
+  ['', undefined],
+  ['soon', undefined],
+])('429의 Retry-After %j를 초 단위 %j로 읽고 rate_limited 코드를 유지한다', async (header, seconds) => {
+  const headers: Record<string, string> = header === null ? {} : { 'Retry-After': header }
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ detail: 'Too many requests', code: 'rate_limited' }, { status: 429, headers })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  const error = await moveLibraryBook('test-token', 'book', null).catch((failure: unknown) => failure)
+  expect(error).toMatchObject({ status: 429, code: 'rate_limited', retryAfter: seconds })
+})
+
+test('닉네임은 null(삭제)을 그대로 보내고 서버가 정규화한 값을 돌려준다', async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(Response.json({ nickname: null }))
+    .mockResolvedValueOnce(Response.json({ nickname: '책벌레' }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(updateNickname('test-token', null)).resolves.toBeNull()
+  await expect(getProfile('test-token')).resolves.toBe('책벌레')
+  expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    ['https://api.example.test/me/profile', 'PATCH', JSON.stringify({ nickname: null })],
+    ['https://api.example.test/me/profile', undefined, undefined],
+  ])
+})
+
+test.each([{}, { nickname: 3 }, null])('닉네임 응답 %j는 형식 오류로 처리한다', async (body) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(body)))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getProfile('test-token')).rejects.toThrow('프로필 응답 형식')
 })
 
 test('순서 변경의 invalid_position 코드를 유지한다', async () => {

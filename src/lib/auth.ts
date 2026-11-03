@@ -1,4 +1,5 @@
-import { ApiError, getMe } from './api'
+import { isAuthApiError } from '@supabase/supabase-js'
+import { ApiError, deleteMe, getMe } from './api'
 import { supabase } from './supabase'
 
 export class SessionMissingError extends Error {
@@ -60,6 +61,26 @@ export async function signIn(
   if (error) throw error
 }
 
+
+// 탈퇴는 최근 비밀번호 인증을 요구하므로 같은 계정으로 다시 로그인한 새 토큰으로 바로 요청한다.
+export async function deleteAccount(password: string): Promise<void> {
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
+  const user = data.session?.user
+  if (!user?.email) throw new SessionMissingError()
+
+  const { data: signed, error: signInError } = await supabase.auth.signInWithPassword({ email: user.email, password })
+  if (signInError) throw signInError
+  if (signed.session?.user.id !== user.id) throw new SessionMissingError()
+
+  await deleteMe(signed.session.access_token)
+}
+
+// 탈퇴 결과가 불명확했을 때 로그인 계정이 이미 지워졌는지 Supabase에 묻는다. 확인하지 못하면 false.
+export async function isAccountDeleted(): Promise<boolean> {
+  const { error } = await supabase.auth.getUser()
+  return isAuthApiError(error) && error.code === 'user_not_found'
+}
 
 export async function signOut(): Promise<void> {
   const { error } = await supabase.auth.signOut({

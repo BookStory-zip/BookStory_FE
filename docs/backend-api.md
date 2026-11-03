@@ -38,6 +38,8 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩. 항목의 `completed_at`·`status`·`has_completed`는 현재 기록(체크 당시 아님) | 마지막 페이지까지 전부 조회. 체크한 날 표시에만 사용 |
 | `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
 | `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`) | 기록 화면 통계 탭에서만 요청. 아래 통계 참고 |
+| `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 검증 환경 확인·운영 배포 전 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
+| `DELETE /me` | 204. 비밀번호 인증 5분 이내 토큰만, 아니면 403 `recent_login_required`, 로그인 계정 삭제 실패 503 `account_deletion_failed`(재시도 가능) | 계정 화면 탈퇴. 비밀번호 재로그인 후 요청 |
 | `GET /push/public-key` | 공개. `{public_key}`(base64url), 발송 키 미설정이면 503. 검증 환경 제공 예정, 운영 배포 전 | 구독의 `applicationServerKey`. 아래 독서 알림 참고 |
 | `PUT·DELETE /me/push-subscriptions` | PUT `{endpoint, keys: {p256dh, auth}}`, DELETE `{endpoint}`, 모두 204. endpoint는 https 푸시 서비스만, 형식 오류 422 | 알림 켜기·끄기·앱 시작 재등록·로그아웃 해제 |
 
@@ -106,6 +108,19 @@ BE `feat/reading-reminder` `affb334` 계약을 2026-11-03 확정했습니다. DB
 - 계정 보호: 켠 계정을 브라우저 저장소에 기록합니다. 앱 시작 시 다른 계정·주인 불명·권한 회수 구독은 이 계정으로 PUT하지 않고 해제합니다. 같은 계정이면 다시 PUT하고, 구독 키가 `/push/public-key`와 다르면 예전 endpoint를 DELETE한 뒤 다시 구독해 PUT합니다. 다른 계정은 직접 알림을 켜야 합니다.
 - 503은 "지금은 알림을 사용할 수 없어요"로 안내하고 로그아웃하지 않습니다. 지원하지 않는 브라우저는 버튼 대신 iOS 16.4 이상 홈 화면 추가 안내를 보여 줍니다. endpoint는 로그·화면에 출력하지 않습니다.
 - 서비스 워커는 요청을 가로채거나 캐시하지 않습니다. `/sw.js`는 `Cache-Control: no-cache`로 배포하고, manifest는 홈 화면 추가용 최소 구성입니다.
+
+## 계정·안정성 (공개 가입 전, 검증 완료·운영 배포 전)
+
+BE와 2026-11-03 확정했습니다. BE 2차 배포(알림·상태 필터와 함께)에 포함되며 FE는 그 뒤 배포합니다.
+
+- 탈퇴 `DELETE /me`: 서재·개인 기록·공개 후기·독서 체크·알림 구독/발송 기록·Supabase 로그인 계정을 바로 삭제하고 공통 책 정보는 남깁니다. 유예 기간은 없습니다. BE는 JWT `amr`의 password 인증 시각이 5분 이내인지 보며, 토큰 갱신으로는 바뀌지 않습니다. 서비스 데이터를 먼저 지우고 로그인 계정을 지우며, 같은 요청을 다시 보내면 이어서 처리합니다(여러 번 보내도 안전). 503 뒤 재시도하지 않고 다시 로그인하면 빈 계정으로 보입니다.
+  - FE: `/settings` 탈퇴 → 영향 범위 안내·확인창 → 비밀번호 재입력 → 현재 계정 이메일로 `signInWithPassword` → 같은 계정인지 확인한 새 토큰으로 `DELETE /me`. 204면 알림 해제·로컬 로그아웃 후 로그인 화면에 완료 안내. 로그아웃이 늦거나 실패해도 계정 화면에 완료를 남기고 다시 보내지 않습니다. 403·503·비밀번호 오류는 로그아웃하지 않고 안내하며, 결과가 불명확하면 자동 재전송하지 않고 사용자가 다시 시도하게 합니다. 결과가 불명확했거나 재시도의 재로그인이 비밀번호 오류면 Supabase `getUser`의 `user_not_found`로 로그인 계정이 이미 지워졌는지 확인해 완료로 처리합니다.
+- 닉네임 `GET·PATCH /me/profile`: 앞뒤 공백 제거·NFC 정규화 뒤 2~20 코드 포인트, 완성형 한글·영문·숫자·`_`·`-`와 한 칸 공백만(자모·연속 공백 불가). 중복 허용, 빈 문자열은 422. 공개 후기 `author_name`에 바로 반영되며 FE 표시 수정은 없습니다.
+  - FE: 같은 규칙으로 먼저 검사하고 정규화한 값을 보냅니다. 입력을 비우면 null을 보냅니다. 서버 응답 값으로 화면을 갱신하고, 결과가 불명확하면 입력을 둔 채 확인을 안내합니다.
+- 요청 수 제한: `GET /books/search` 분당 30회(IP), `GET /books/{isbn13}` 60회(IP), `POST /library/books` 30회(사용자). 429 `rate_limited`와 `Retry-After`(초). 운영 IP는 Render 프록시 단계 수(`TRUSTED_PROXY_HOPS`)로 판별합니다.
+  - FE: 검색·더 보기 429는 `Retry-After`(없거나 비어 있으면 60초) 동안 검색 버튼과 더 보기를 막고, 받은 시점의 대기 초를 안내합니다(카운트다운 없음). 차단은 검색 화면을 나갔다 와도 이어지고, 끝나면 안내를 지웁니다. 담기 429는 "요청이 많아 서재에 담지 못했습니다"로 저장되지 않았음을 알립니다. 자동 재시도는 하지 않습니다.
+- 처리되지 않은 오류는 500 `internal_error`로 통일하고 모든 응답에 `X-Request-ID`를 붙입니다. CORS가 가장 바깥에서 동작해 429·500에도 CORS 헤더가 붙고, `Retry-After`·`X-Request-ID`는 `expose_headers`로 읽을 수 있습니다. FE는 X-Request-ID를 이번에는 표시하지 않습니다.
+- `last_read_at`은 응답에 그대로 남습니다(가장 최근 체크 시각으로 계산, 없으면 null). FE는 필수 필드로 검사만 하고 화면에는 쓰지 않습니다.
 
 ## 오류 처리
 

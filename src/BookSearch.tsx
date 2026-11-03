@@ -1,15 +1,31 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { SubmitEvent } from 'react'
 import { Link } from 'react-router'
 import { addLibraryBook, ApiError, SEARCH_LAST_PAGE, searchBooks, statusLabels } from './lib/api'
 import type { SearchBook } from './lib/api'
 import { withAccessToken } from './lib/auth'
-import { codeMessage, commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
+import { ADD_RATE_LIMITED, codeMessage, commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
 
 type SaveState = { phase: 'saving' | 'saved' | 'error'; message: string }
 
+// 429는 Retry-After(없으면 60초) 동안 검색·더 보기를 막는다. 자동으로 다시 보내지 않는다.
+const retrySeconds = (error: ApiError) => Math.max(1, Math.ceil(error.retryAfter ?? 60))
+// 화면을 나갔다 돌아와도 차단이 이어지도록 모듈 범위에 둔다(한도는 접속 IP 기준이라 계정과 무관).
+let searchBlockedUntil = 0
+const searchBlockListeners = new Set<() => void>()
+const getSearchBlockedUntil = () => searchBlockedUntil
+function subscribeSearchBlock(listener: () => void) {
+  searchBlockListeners.add(listener)
+  return () => { searchBlockListeners.delete(listener) }
+}
+function setSearchBlockedUntil(until: number) {
+  searchBlockedUntil = until
+  searchBlockListeners.forEach((listener) => listener())
+}
+
 function searchErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
+    if (error.status === 429) return `검색 요청이 많습니다. ${retrySeconds(error)}초 뒤에 다시 시도해주세요.`
     if (error.status === 422 && !codeMessage(error)) return '검색어를 확인해주세요. (1~200자)'
     if (error.status === 502) return '책 정보 제공처에서 오류가 발생했습니다. 잠시 후 다시 검색해주세요.'
     if (error.status === 504) return '책 정보 제공처의 응답이 늦습니다. 잠시 후 다시 검색해주세요.'
@@ -24,6 +40,7 @@ function saveErrorMessage(error: unknown) {
     return '저장 결과를 확인하지 못했습니다. 서재에서 담겼는지 확인해주세요.'
   }
   if (error instanceof ApiError) {
+    if (error.status === 429) return ADD_RATE_LIMITED
     if (error.status === 404) return '책 정보를 찾지 못해 담지 못했습니다.'
     if (error.status === 422) return 'ISBN 형식이 올바르지 않아 담지 못했습니다.'
     if (error.status === 502 || error.status === 504) {
@@ -42,7 +59,26 @@ export default function BookSearch() {
   const [paging, setPaging] = useState<{ query: string; page: number; isEnd: boolean } | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [moreError, setMoreError] = useState<string | null>(null)
+  const blockedUntil = useSyncExternalStore(subscribeSearchBlock, getSearchBlockedUntil)
+  const coolingDown = blockedUntil > 0
   const searchVersion = useRef(0)
+
+  // 차단이 끝나면 429 안내도 지운다. 차단 중에는 다른 검색 오류가 생기지 않는다.
+  useEffect(() => {
+    if (!blockedUntil) return
+    const timer = setTimeout(() => {
+      if (searchBlockedUntil !== blockedUntil) return
+      setSearchBlockedUntil(0)
+      setError(null)
+      setMoreError(null)
+    }, Math.max(0, blockedUntil - Date.now()))
+    return () => clearTimeout(timer)
+  }, [blockedUntil])
+
+  function startCooldown(error: unknown) {
+    if (!(error instanceof ApiError) || error.status !== 429) return
+    setSearchBlockedUntil(Date.now() + retrySeconds(error) * 1000)
+  }
 
   async function handleSearch(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -57,6 +93,7 @@ export default function BookSearch() {
       return
     }
 
+    if (coolingDown) return
     // 새 검색을 보내면 이전 검색·더 보기의 늦은 응답은 버린다.
     const version = ++searchVersion.current
     setSearching(true)
@@ -72,6 +109,7 @@ export default function BookSearch() {
       if (version !== searchVersion.current) return
       setResults(null)
       setError(searchErrorMessage(searchError))
+      startCooldown(searchError)
     } finally {
       if (version === searchVersion.current) setSearching(false)
     }
@@ -79,7 +117,7 @@ export default function BookSearch() {
 
   async function handleMore() {
     // 새 검색 응답 전에는 paging이 이전 검색어라 더 보기를 막는다.
-    if (!paging || searching || loadingMore) return
+    if (!paging || searching || loadingMore || coolingDown) return
     const version = searchVersion.current
     const nextPage = paging.page + 1
     setLoadingMore(true)
@@ -93,6 +131,7 @@ export default function BookSearch() {
       if (version !== searchVersion.current) return
       // 이미 보이는 결과는 그대로 두고 더 보기만 다시 시도하게 한다.
       setMoreError(searchErrorMessage(moreLoadError))
+      startCooldown(moreLoadError)
     } finally {
       if (version === searchVersion.current) setLoadingMore(false)
     }
@@ -137,13 +176,16 @@ export default function BookSearch() {
           enterKeyHint="search"
           autoComplete="off"
         />
-        <button type="submit" disabled={searching}>
+        <button type="submit" disabled={searching || coolingDown}>
           {searching ? '찾는 중…' : '검색'}
         </button>
       </form>
 
       {error && (
         <p className="library-note" role="alert">{error}</p>
+      )}
+      {coolingDown && !error && !moreError && (
+        <p className="library-note" role="status">검색 요청이 많아 잠시 뒤에 다시 검색할 수 있어요.</p>
       )}
 
       {results !== null && results.length === 0 && (
@@ -221,7 +263,7 @@ export default function BookSearch() {
       {moreError && <p className="library-note" role="alert">{moreError}</p>}
 
       {results !== null && results.length > 0 && paging && !paging.isEnd && paging.page < SEARCH_LAST_PAGE && (
-        <button type="button" className="secondary more" onClick={() => void handleMore()} disabled={loadingMore || searching}>
+        <button type="button" className="secondary more" onClick={() => void handleMore()} disabled={loadingMore || searching || coolingDown}>
           {loadingMore ? '불러오는 중…' : '결과 더 보기'}
         </button>
       )}

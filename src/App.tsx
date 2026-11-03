@@ -14,6 +14,7 @@ const BookSearch = lazy(() => import('./BookSearch'))
 const BookCatalog = lazy(() => import('./BookCatalog'))
 const PasswordReset = lazy(() => import('./PasswordReset'))
 const ReadingRecords = lazy(() => import('./ReadingRecords'))
+const AccountSettings = lazy(() => import('./AccountSettings'))
 
 function PageLoading() {
   return (
@@ -216,7 +217,8 @@ function AuthScreen() {
     )
   }
 
-  async function handleLogout() {
+  // 탈퇴 완료 뒤에도 같은 정리(알림 해제·로그아웃)를 하고 안내만 바꾼다.
+  async function handleLogout(doneMessage = '로그아웃되었습니다. 다시 로그인해주세요.') {
     if (isCheckingSession || pendingAction.current !== null) return
 
     const currentAction = ++actionVersion.current
@@ -230,7 +232,7 @@ function AuthScreen() {
       await signOut()
 
       if (currentAction === actionVersion.current) {
-        setMessage('로그아웃되었습니다. 다시 로그인해주세요.')
+        setMessage(doneMessage)
       }
     } catch {
       if (currentAction === actionVersion.current) {
@@ -259,11 +261,12 @@ function AuthScreen() {
             <NavLink to="/" end>서재</NavLink>
             <NavLink to="/search">책 찾기</NavLink>
             <NavLink to="/records">기록</NavLink>
+            <NavLink to="/settings">계정</NavLink>
           </nav>
           <button
             type="button"
             className="secondary compact"
-            onClick={handleLogout}
+            onClick={() => void handleLogout()}
             disabled={isSubmitting}
           >
             {isSubmitting ? '처리 중…' : '로그아웃'}
@@ -279,6 +282,7 @@ function AuthScreen() {
               <Route path="catalog/:isbn13" element={<BookCatalog />} />
               <Route path="books/:userBookId" element={<BookDetail />} />
               <Route path="records" element={<ReadingRecords />} />
+              <Route path="settings" element={<AccountSettings onDeleted={() => handleLogout('탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.')} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
@@ -295,7 +299,7 @@ function AuthScreen() {
         <p role="status">{message}</p>
         <div className="retry-actions">
           <button type="button" onClick={retryCheck}>다시 시도</button>
-          <button type="button" className="secondary" onClick={handleLogout} disabled={isSubmitting}>
+          <button type="button" className="secondary" onClick={() => void handleLogout()} disabled={isSubmitting}>
             {isSubmitting ? '처리 중…' : '로그아웃'}
           </button>
         </div>
