@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { isAuthError } from '@supabase/supabase-js'
 import { getProfile, updateNickname } from './lib/api'
-import { deleteAccount, withAccessToken } from './lib/auth'
+import { deleteAccount, isAccountDeleted, withAccessToken } from './lib/auth'
 import { commonErrorMessage, isUnclearWrite, NICKNAME_RULE } from './lib/errors'
 import CabinIcon from './CabinIcon'
 import ConfirmDialog from './ConfirmDialog'
@@ -29,6 +29,7 @@ export default function AccountSettings({ onDeleted }: Props) {
   const [nicknameNote, setNicknameNote] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [deleted, setDeleted] = useState(false)
   const [deleteNote, setDeleteNote] = useState('')
   const passwordRef = useRef<HTMLInputElement>(null)
   const active = useRef(true)
@@ -89,7 +90,7 @@ export default function AccountSettings({ onDeleted }: Props) {
 
   function requestDelete(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (deleting) return
+    if (deleting || deleted) return
     if (!passwordRef.current?.value) {
       setDeleteNote('탈퇴하려면 비밀번호를 입력해주세요.')
       return
@@ -100,18 +101,29 @@ export default function AccountSettings({ onDeleted }: Props) {
   async function submitDelete() {
     setConfirming(false)
     const password = passwordRef.current?.value ?? ''
-    if (deleting || !password) return
+    if (deleting || deleted || !password) return
     setDeleting(true)
     setDeleteNote('탈퇴 처리 중입니다. 서버 응답이 늦을 수 있습니다.')
+    let done: boolean
     try {
       await deleteAccount(password)
-      // 성공하면 알림 해제·로그아웃으로 이 화면이 사라진다.
-      await onDeleted()
+      done = true
     } catch (error) {
-      if (active.current) setDeleteNote(deleteErrorMessage(error))
-    } finally {
-      if (active.current) setDeleting(false)
+      // 앞선 요청이 로그인 계정까지 지웠다면 재시도의 재로그인이 비밀번호 오류로 실패한다. 계정이 없어졌는지 먼저 확인한다.
+      const maybeDeleted = isUnclearWrite(error) || (isAuthError(error) && error.code === 'invalid_credentials')
+      done = maybeDeleted && await isAccountDeleted().catch(() => false)
+      if (!done && active.current) {
+        setDeleteNote(deleteErrorMessage(error))
+        setDeleting(false)
+      }
     }
+    if (!done) return
+    // 로그아웃이 늦거나 실패해도 탈퇴가 끝났다는 사실은 이 화면에 남기고 다시 보내지 않는다.
+    if (active.current) {
+      setDeleted(true)
+      setDeleteNote('탈퇴가 완료되었습니다. 로그아웃하는 중입니다.')
+    }
+    await onDeleted()
   }
 
   return (
@@ -134,12 +146,13 @@ export default function AccountSettings({ onDeleted }: Props) {
         ) : (
           <>
             <label htmlFor="nickname">닉네임</label>
+            {/* 정규화 전 길이로 자르지 않도록 넉넉히 받고, 2~20자 검사는 정규화한 뒤에 한다 */}
             <input
               id="nickname"
               name="nickname"
               value={nickname}
               onChange={(event) => setNickname(event.target.value)}
-              maxLength={40}
+              maxLength={100}
               autoComplete="nickname"
               spellCheck={false}
               placeholder="독서가"
@@ -155,8 +168,8 @@ export default function AccountSettings({ onDeleted }: Props) {
         <h2 id="delete-title">계정 탈퇴</h2>
         <p className="result-note">서재·메모·별점·날짜·독서 체크·공개 후기·알림 설정이 모두 바로 삭제되며 되돌릴 수 없습니다. 공통 책 정보는 남습니다.</p>
         <label htmlFor="delete-password">비밀번호 확인</label>
-        <input id="delete-password" ref={passwordRef} type="password" autoComplete="current-password" disabled={deleting} />
-        <button type="submit" className="secondary" disabled={deleting}>{deleting ? '탈퇴하는 중…' : '탈퇴하기'}</button>
+        <input id="delete-password" ref={passwordRef} type="password" autoComplete="current-password" disabled={deleting || deleted} />
+        <button type="submit" className="secondary" disabled={deleting || deleted}>{deleting && !deleted ? '탈퇴하는 중…' : '탈퇴하기'}</button>
         <p role="status">{deleteNote}</p>
       </form>
 

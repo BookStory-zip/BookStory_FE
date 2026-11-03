@@ -77,7 +77,9 @@ export async function apiRequestWithStatus(
       typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string'
         ? body.code
         : undefined
-    const retryAfter = Number(response.headers.get('Retry-After') ?? NaN)
+    // 비어 있는 헤더를 0초로 읽지 않는다.
+    const retryHeader = response.headers.get('Retry-After')?.trim()
+    const retryAfter = retryHeader ? Number(retryHeader) : NaN
     throw new ApiError(response.status, readDetail(body), code, Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : undefined)
   }
 

@@ -776,10 +776,6 @@ button.link-button:hover:not(:disabled) {
   width: auto;
 }
 
-.settings [role='status']:empty {
-  display: none;
-}
-
 .records-reminder {
   display: flex;
   flex-wrap: wrap;

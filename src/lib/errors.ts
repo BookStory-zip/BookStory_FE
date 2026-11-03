@@ -23,6 +23,9 @@ export const isUnclearWrite = (error: unknown) =>
 
 export const RELOGIN_MESSAGE = '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'
 
+// 담기 429는 서버가 저장하지 않은 상태다. 다시 보내도 되는지 분명히 알린다.
+export const ADD_RATE_LIMITED = '요청이 많아 서재에 담지 못했습니다. 잠시 후 다시 시도해주세요.'
+
 export const NICKNAME_RULE = '닉네임은 2~20자의 한글·영문·숫자와 공백(한 칸)·_·-만 쓸 수 있어요.'
 
 // BE가 409·422에 붙이는 원인 코드별 안내. 영어 detail은 보여 주지 않는다.

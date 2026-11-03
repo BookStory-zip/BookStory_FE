@@ -57,6 +57,7 @@ test.each([null, 'anchor-user-book'])('순서 변경은 개인 id와 필수 기�
 test.each([
   ['42', 42],
   [null, undefined],
+  ['', undefined],
   ['soon', undefined],
 ])('429의 Retry-After %j를 초 단위 %j로 읽고 rate_limited 코드를 유지한다', async (header, seconds) => {
   const headers: Record<string, string> = header === null ? {} : { 'Retry-After': header }

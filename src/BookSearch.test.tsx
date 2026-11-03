@@ -46,8 +46,22 @@ test('검색 429는 Retry-After 동안 다시 검색·더 보기를 막고 자�
   expect(button).toHaveProperty('disabled', true)
   search('소년이 온다')
   expect(mocks.searchBooks).toHaveBeenCalledTimes(1)
-  await waitFor(() => expect(button).toHaveProperty('disabled', false), { timeout: 2000 })
+  // 화면을 떠났다 돌아와도 남은 시간 동안 막는다.
+  cleanup()
+  render(<MemoryRouter><BookSearch /></MemoryRouter>)
+  expect(screen.getByRole('button', { name: '검색' })).toHaveProperty('disabled', true)
+  expect(screen.getByText('검색 요청이 많아 잠시 뒤에 다시 검색할 수 있어요.')).toBeTruthy()
+  await waitFor(() => expect(screen.getByRole('button', { name: '검색' })).toHaveProperty('disabled', false), { timeout: 2000 })
+  expect(screen.queryByText(/검색 요청이 많/)).toBeNull()
   expect(mocks.searchBooks).toHaveBeenCalledTimes(1)
+})
+
+test('담기 429는 저장되지 않았다고 안내한다', async () => {
+  mocks.searchBooks.mockResolvedValue({ books: [book('소년이 온다', '9788936434120')], isEnd: true })
+  mocks.addLibraryBook.mockRejectedValue(new ApiError(429, 'Too many requests', 'rate_limited', 30))
+  search('소년이 온다')
+  fireEvent.click(await screen.findByRole('button', { name: '서재에 담기' }))
+  expect(await screen.findByText('요청이 많아 서재에 담지 못했습니다. 잠시 후 다시 시도해주세요.')).toBeTruthy()
 })
 
 test('공백만 입력하면 요청하지 않는다', () => {

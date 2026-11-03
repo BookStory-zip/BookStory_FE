@@ -1,3 +1,4 @@
+import { isAuthApiError } from '@supabase/supabase-js'
 import { ApiError, deleteMe, getMe } from './api'
 import { supabase } from './supabase'
 
@@ -73,6 +74,12 @@ export async function deleteAccount(password: string): Promise<void> {
   if (signed.session?.user.id !== user.id) throw new SessionMissingError()
 
   await deleteMe(signed.session.access_token)
+}
+
+// 탈퇴 결과가 불명확했을 때 로그인 계정이 이미 지워졌는지 Supabase에 묻는다. 확인하지 못하면 false.
+export async function isAccountDeleted(): Promise<boolean> {
+  const { error } = await supabase.auth.getUser()
+  return isAuthApiError(error) && error.code === 'user_not_found'
 }
 
 export async function signOut(): Promise<void> {

@@ -5,7 +5,7 @@ import type { LibraryBookDetail } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { getCatalogBook, getPublicReviews } from './lib/catalog'
 import type { CatalogBook, PublicReview } from './lib/catalog'
-import { commonErrorMessage, isUnclearWrite } from './lib/errors'
+import { ADD_RATE_LIMITED, commonErrorMessage, isUnclearWrite } from './lib/errors'
 import { formatKstDate } from './lib/record'
 
 const PAGE_SIZE = 20
@@ -97,7 +97,8 @@ function BookCatalog({ isbn13 }: { isbn13: string }) {
       if (isUnclearWrite(error)) {
         setNotice('등록 결과를 확인하지 못했습니다. 내 서재 상태를 다시 확인하니 확인 후 다시 시도해주세요.')
         refresh()
-      } else setNotice(commonErrorMessage(error, '서재에 담지 못했습니다'))
+      } else if (error instanceof ApiError && error.status === 429) setNotice(ADD_RATE_LIMITED)
+      else setNotice(commonErrorMessage(error, '서재에 담지 못했습니다'))
     } finally {
       addPending.current = false; setAdding(false)
     }

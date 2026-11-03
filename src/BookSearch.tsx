@@ -4,12 +4,14 @@ import { Link } from 'react-router'
 import { addLibraryBook, ApiError, SEARCH_LAST_PAGE, searchBooks, statusLabels } from './lib/api'
 import type { SearchBook } from './lib/api'
 import { withAccessToken } from './lib/auth'
-import { codeMessage, commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
+import { ADD_RATE_LIMITED, codeMessage, commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
 
 type SaveState = { phase: 'saving' | 'saved' | 'error'; message: string }
 
 // 429는 Retry-After(없으면 60초) 동안 검색·더 보기를 막는다. 자동으로 다시 보내지 않는다.
 const retrySeconds = (error: ApiError) => Math.max(1, Math.ceil(error.retryAfter ?? 60))
+// 화면을 나갔다 돌아와도 차단이 이어지도록 모듈 범위에 둔다(한도는 접속 IP 기준이라 계정과 무관).
+let searchBlockedUntil = 0
 
 function searchErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
@@ -28,6 +30,7 @@ function saveErrorMessage(error: unknown) {
     return '저장 결과를 확인하지 못했습니다. 서재에서 담겼는지 확인해주세요.'
   }
   if (error instanceof ApiError) {
+    if (error.status === 429) return ADD_RATE_LIMITED
     if (error.status === 404) return '책 정보를 찾지 못해 담지 못했습니다.'
     if (error.status === 422) return 'ISBN 형식이 올바르지 않아 담지 못했습니다.'
     if (error.status === 502 || error.status === 504) {
@@ -46,17 +49,24 @@ export default function BookSearch() {
   const [paging, setPaging] = useState<{ query: string; page: number; isEnd: boolean } | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [moreError, setMoreError] = useState<string | null>(null)
-  const [coolingDown, setCoolingDown] = useState(false)
+  const [coolingDown, setCoolingDown] = useState(() => Date.now() < searchBlockedUntil)
   const searchVersion = useRef(0)
-  const cooldownTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  useEffect(() => () => clearTimeout(cooldownTimer.current), [])
+  // 차단이 끝나면 429 안내도 지운다. 차단 중에는 다른 검색 오류가 생기지 않는다.
+  useEffect(() => {
+    if (!coolingDown) return
+    const timer = setTimeout(() => {
+      setCoolingDown(false)
+      setError(null)
+      setMoreError(null)
+    }, Math.max(0, searchBlockedUntil - Date.now()))
+    return () => clearTimeout(timer)
+  }, [coolingDown])
 
   function startCooldown(error: unknown) {
     if (!(error instanceof ApiError) || error.status !== 429) return
-    clearTimeout(cooldownTimer.current)
+    searchBlockedUntil = Date.now() + retrySeconds(error) * 1000
     setCoolingDown(true)
-    cooldownTimer.current = setTimeout(() => setCoolingDown(false), retrySeconds(error) * 1000)
   }
 
   async function handleSearch(event: SubmitEvent<HTMLFormElement>) {
@@ -162,6 +172,9 @@ export default function BookSearch() {
 
       {error && (
         <p className="library-note" role="alert">{error}</p>
+      )}
+      {coolingDown && !error && !moreError && (
+        <p className="library-note" role="status">검색 요청이 많아 잠시 뒤에 다시 검색할 수 있어요.</p>
       )}
 
       {results !== null && results.length === 0 && (

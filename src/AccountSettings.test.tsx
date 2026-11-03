@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { ApiError } from './lib/api'
 import AccountSettings from './AccountSettings'
 
-const mocks = vi.hoisted(() => ({ getProfile: vi.fn(), updateNickname: vi.fn(), deleteAccount: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getProfile: vi.fn(), updateNickname: vi.fn(), deleteAccount: vi.fn(), isAccountDeleted: vi.fn() }))
 vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),
   getProfile: mocks.getProfile,
@@ -17,6 +17,7 @@ vi.mock('./lib/auth', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/auth')>(),
   withAccessToken: (request: (token: string) => Promise<unknown>) => request('test-token'),
   deleteAccount: mocks.deleteAccount,
+  isAccountDeleted: mocks.isAccountDeleted,
 }))
 
 const onDeleted = vi.fn()
@@ -24,6 +25,7 @@ const onDeleted = vi.fn()
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.getProfile.mockResolvedValue(null)
+  mocks.isAccountDeleted.mockResolvedValue(false)
   onDeleted.mockResolvedValue(undefined)
 })
 afterEach(cleanup)
@@ -97,5 +99,29 @@ test.each([
   fireEvent.click(screen.getAllByRole('button', { name: '탈퇴하기', hidden: true }).at(-1)!)
   expect(await screen.findByText(message)).toBeTruthy()
   expect(onDeleted).not.toHaveBeenCalled()
+  expect(mocks.deleteAccount).toHaveBeenCalledTimes(1)
+})
+
+test.each([
+  ['결과가 불명확했는데', new DOMException('timeout', 'TimeoutError')],
+  ['재시도의 재로그인이 비밀번호 오류였는데', new AuthApiError('Invalid login credentials', 400, 'invalid_credentials')],
+])('%s 로그인 계정이 이미 지워졌으면 탈퇴 완료로 처리한다', async (_label, error) => {
+  mocks.deleteAccount.mockRejectedValue(error)
+  mocks.isAccountDeleted.mockResolvedValue(true)
+  await renderSettings()
+  requestDelete('password')
+  fireEvent.click(screen.getAllByRole('button', { name: '탈퇴하기', hidden: true }).at(-1)!)
+  await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1))
+  expect(screen.queryByText('비밀번호가 맞지 않습니다.')).toBeNull()
+})
+
+test('탈퇴 뒤 로그아웃이 화면을 닫지 못해도 완료 안내를 남기고 다시 보내지 않는다', async () => {
+  mocks.deleteAccount.mockResolvedValue(undefined)
+  await renderSettings()
+  requestDelete('password')
+  fireEvent.click(screen.getAllByRole('button', { name: '탈퇴하기', hidden: true }).at(-1)!)
+  expect(await screen.findByText('탈퇴가 완료되었습니다. 로그아웃하는 중입니다.')).toBeTruthy()
+  expect(screen.getByLabelText('비밀번호 확인')).toHaveProperty('disabled', true)
+  requestDelete('password')
   expect(mocks.deleteAccount).toHaveBeenCalledTimes(1)
 })

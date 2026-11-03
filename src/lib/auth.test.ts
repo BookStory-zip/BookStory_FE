@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { AuthApiError } from '@supabase/supabase-js'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { addLibraryBook } from './api'
 import {
   deleteAccount,
   getPasswordResetUser,
+  isAccountDeleted,
   requestPasswordReset,
   signIn,
   signUp,
@@ -416,6 +418,15 @@ test.each([
   arrange()
   await expect(deleteAccount('password')).rejects.toThrow()
   expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test.each([
+  [new AuthApiError('User from sub claim in JWT does not exist', 403, 'user_not_found'), true],
+  [new AuthApiError('JWT expired', 401, 'bad_jwt'), false],
+  [null, false],
+])('로그인 계정 삭제 여부는 Supabase의 user_not_found만 삭제로 본다 (%s)', async (error, deleted) => {
+  auth.getUser.mockResolvedValue({ data: { user: error ? null : sessionA.user }, error })
+  await expect(isAccountDeleted()).resolves.toBe(deleted)
 })
 
 test('탈퇴 전 최근 로그인 확인 실패(403)를 코드와 함께 돌려준다', async () => {
