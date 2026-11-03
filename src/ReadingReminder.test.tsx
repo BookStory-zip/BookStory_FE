@@ -6,6 +6,8 @@ import ReadingReminder from './ReadingReminder'
 
 const push = vi.hoisted(() => ({ getReminderState: vi.fn(), enableReminder: vi.fn(), disableReminder: vi.fn() }))
 vi.mock('./lib/push', () => push)
+// 환경변수 없는 CI에서도 실제 Supabase 클라이언트를 만들지 않는다.
+vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
 
 afterEach(() => {
   cleanup()
