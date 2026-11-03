@@ -129,7 +129,7 @@ test('서재 목록은 limit·offset을 보내고 표지 null을 허용한다', 
     status: 'want_to_read',
     created_at: '2026-10-27T00:00:00Z',
   }
-  const fetchMock = vi.fn().mockResolvedValue(Response.json([item]))
+  const fetchMock = vi.fn().mockImplementation(async () => Response.json([item]))
   vi.stubGlobal('fetch', fetchMock)
   vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
 
@@ -137,6 +137,8 @@ test('서재 목록은 limit·offset을 보내고 표지 null을 허용한다', 
   expect(fetchMock.mock.calls[0][0]).toBe(
     'https://api.example.test/library/books?limit=20&offset=40',
   )
+  await getLibraryBooks('test-access-token', 100, 0, 'reading')
+  expect(fetchMock.mock.calls[1][0]).toBe('https://api.example.test/library/books?limit=100&offset=0&status=reading')
 })
 
 test.each([{ total: 1 }, [{ id: 'x', title: '제목' }], [{ status: 'unknown' }]])(

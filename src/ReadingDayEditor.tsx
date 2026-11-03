@@ -25,7 +25,7 @@ export default function ReadingDayEditor({ date, today, onChanged, onBusyChange 
       const booksRequest = async () => {
         const books: LibraryBookItem[] = []
         for (let offset = 0; ; offset += 100) {
-          const page = await getLibraryBooks(token, 100, offset)
+          const page = await getLibraryBooks(token, 100, offset, 'reading')
           books.push(...page)
           if (page.length < 100) return books
         }

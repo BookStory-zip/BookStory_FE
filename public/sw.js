@@ -16,25 +16,29 @@ self.addEventListener('push', (event) => {
       icon: '/favicon.svg',
       // 같은 날 알림은 하나로 묶는다.
       tag: `reading-reminder-${date}`,
+      data: { date },
     }),
   )
 })
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+  // 알림 날짜의 체크 편집기를 연다. 자정이 지나 눌러도 그날을 체크할 수 있다.
+  const date = event.notification.data?.date
+  const url = /^\d{4}-\d{2}-\d{2}$/.test(date ?? '') ? `/records?check=${date}` : '/records'
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       for (const client of windows) {
         try {
           await client.focus()
-          await client.navigate('/records')
+          await client.navigate(url)
           return
         } catch {
           // 이동할 수 없는 창이면 새 창을 연다.
         }
       }
-      await self.clients.openWindow('/records')
+      await self.clients.openWindow(url)
     })(),
   )
 })

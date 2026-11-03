@@ -148,11 +148,14 @@ export async function getLibraryBooks(
   accessToken: string,
   limit: number,
   offset: number,
+  status?: ReadingStatus,
 ): Promise<LibraryBookItem[]> {
   const query = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   })
+  // 필터를 모르는 서버는 전체를 돌려줄 수 있으므로 호출하는 쪽에서도 상태를 거른다.
+  if (status) query.set('status', status)
   const data = await apiRequest(`/library/books?${query}`, accessToken)
 
   if (!Array.isArray(data) || !data.every(isLibraryBookItem)) {

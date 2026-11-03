@@ -55,6 +55,24 @@ test('선택한 최근 날짜를 체크하면 달력과 월 요약을 다시 조
   await screen.findByRole('button', { name: '어제의 책 체크 취소' })
 })
 
+test('독서 알림으로 들어오면 알림 날짜의 체크 편집기를 읽는 중 필터로 바로 연다', async () => {
+  mocks.getReadingLogs.mockResolvedValue([log('1', '2026-10-27', 'own-b', '이미 읽은 책')])
+  mocks.getLibraryBooks.mockResolvedValue([{ id: 'own-a', title: '오늘의 책', status: 'reading' }])
+  render(<MemoryRouter initialEntries={['/records?check=2026-10-27']}><ReadingRecords /></MemoryRouter>)
+  expect(await screen.findByRole('button', { name: '오늘의 책 체크' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '이미 읽은 책 체크 취소' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '2026년 10월 27일, 1권: 이미 읽은 책', pressed: true })).toBeTruthy()
+  expect(mocks.getLibraryBooks).toHaveBeenCalledWith('test-token', 100, 0, 'reading')
+  await waitFor(() => expect(document.activeElement?.textContent).toBe('2026년 10월 27일'))
+})
+
+test.each(['2026-10-21', '2026-10-29', 'today'])('알림 날짜 %s가 최근 7일 밖이거나 형식이 틀리면 편집기를 열지 않는다', async (date) => {
+  mocks.getReadingLogs.mockResolvedValue([])
+  render(<MemoryRouter initialEntries={[`/records?check=${date}`]}><ReadingRecords /></MemoryRouter>)
+  await screen.findByText('이 달에는 체크하거나 완독한 기록이 없습니다.')
+  expect(screen.queryByLabelText('선택한 날짜 체크 편집')).toBeNull()
+})
+
 test('KST 날짜가 바뀌면 7일 범위 밖이 된 편집을 막는다', async () => {
   mocks.getReadingLogs.mockResolvedValue([])
   mocks.getLibraryBooks.mockResolvedValue([{ id: 'own-a', title: '어제의 책', status: 'reading' }])

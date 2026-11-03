@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { getReadingCompletions, getReadingLogs } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { commonErrorMessage } from './lib/errors'
@@ -29,15 +29,23 @@ type DayBook = {
 // 같은 날 같은 책은 하나로 합친다. 현재 상태로 완독일·읽은 날을 추정하지 않는다.
 export default function ReadingRecords() {
   const today = useKstToday()
-  const [month, setMonth] = useState(() => monthOf(today))
+  const [searchParams] = useSearchParams()
+  // 독서 알림을 누르면 ?check=알림 날짜로 들어와 그날 체크 편집기를 바로 연다. 최근 7일 밖이면 무시한다.
+  const [checkDate] = useState(() => {
+    const date = searchParams.get('check') ?? ''
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= addDays(today, -6) && date <= today ? date : null
+  })
+  const [month, setMonth] = useState(() => monthOf(checkDate ?? today))
   const [view, setView] = useState<'calendar' | 'statistics'>('calendar')
   const [statisticsMode, setStatisticsMode] = useState<'month' | 'year'>('month')
   const [days, setDays] = useState<Map<string, DayBook[]> | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [editing, setEditing] = useState(false)
+  const [selected, setSelected] = useState<string | null>(checkDate)
+  const [editing, setEditing] = useState(checkDate !== null)
   const [editingBusy, setEditingBusy] = useState(false)
   const version = useRef(0)
+  const dayList = useRef<HTMLDivElement>(null)
+  const revealedCheck = useRef(checkDate === null)
 
   const load = useCallback((target: string) => {
     const current = ++version.current
@@ -78,6 +86,14 @@ export default function ReadingRecords() {
       version.current += 1
     }
   }, [month, view, load])
+
+  // 알림으로 들어온 경우 달력이 그려진 뒤 한 번만 편집기로 스크롤·포커스한다.
+  useEffect(() => {
+    if (revealedCheck.current || days === null) return
+    revealedCheck.current = true
+    dayList.current?.scrollIntoView?.({ block: 'start' })
+    dayList.current?.querySelector('h3')?.focus()
+  }, [days])
 
   function moveMonth(delta: number) {
     const nextMonth = addMonths(month, delta)
@@ -200,8 +216,8 @@ export default function ReadingRecords() {
           </div>
 
           {selected && (
-            <div className="records-day-list">
-              <h3>{spokenDate(selected)}</h3>
+            <div className="records-day-list" ref={dayList}>
+              <h3 tabIndex={-1}>{spokenDate(selected)}</h3>
               <p className="result-note">한국 시간 기준으로 오늘을 포함한 최근 7일의 체크를 변경할 수 있어요.</p>
               {selected >= addDays(today, -6) && selected <= today && (
                 <button type="button" className="secondary" aria-expanded={editing} disabled={editingBusy} onClick={() => setEditing(!editing)}>
