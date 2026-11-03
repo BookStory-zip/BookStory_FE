@@ -120,6 +120,8 @@ test('서버 발송 키가 바뀌었으면 다시 구독한 뒤 새 구독을 �
   localStorage.setItem(OWNER_KEY, 'user-a')
   await syncReminder(() => true)
   expect(existing.unsubscribe).toHaveBeenCalled()
+  expect(calls().map(([method, path]) => `${method} ${path}`)).toEqual(['GET /push/public-key', 'DELETE /me/push-subscriptions', 'PUT /me/push-subscriptions'])
+  expect(calls()[1][2]).toBe(JSON.stringify({ endpoint: existing.endpoint }))
   expect(calls().at(-1)?.[2]).toContain('/fcm/send/new')
 })
 

@@ -62,7 +62,12 @@ function sameKey(subscription: PushSubscription, key: Uint8Array) {
 async function subscribeWithServerKey(subscription: PushSubscription | null) {
   const key = decodeKey(await getPushPublicKey())
   if (subscription && sameKey(subscription, key)) return subscription
-  await subscription?.unsubscribe()
+  if (subscription) {
+    // 예전 키 구독이 다음 발송까지 서버에 남지 않게 먼저 지운다. 실패해도 410으로 정리된다.
+    const { endpoint } = subscription
+    await withAccessToken((token) => deletePushSubscription(token, endpoint)).catch(() => undefined)
+    await subscription.unsubscribe()
+  }
   await navigator.serviceWorker.register('/sw.js', { scope: '/' })
   const registration = await navigator.serviceWorker.ready
   return registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
