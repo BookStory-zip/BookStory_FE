@@ -8,6 +8,7 @@ import { useKstToday } from './useKstToday'
 import CabinIcon from './CabinIcon'
 import ReadingStatistics from './ReadingStatistics'
 import ReadingDayEditor from './ReadingDayEditor'
+import ReadingReminder from './ReadingReminder'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -115,6 +116,8 @@ export default function ReadingRecords() {
         />
       ) : (
         <>
+
+      <ReadingReminder />
 
       <div className="records-month">
         <button type="button" className="calendar-nav" aria-label="이전 달" disabled={editingBusy} onClick={() => moveMonth(-1)}>
