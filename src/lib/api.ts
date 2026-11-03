@@ -1,13 +1,16 @@
 export class ApiError extends Error {
   status: number
-  // BE가 409·422에 붙이는 원인 코드(예: invalid_transition). 없으면 undefined.
+  // BE가 409·422·429·5xx에 붙이는 원인 코드(예: invalid_transition). 없으면 undefined.
   code?: string
+  // 429의 Retry-After(초). 숫자가 아니면 undefined.
+  retryAfter?: number
 
-  constructor(status: number, detail?: string, code?: string) {
+  constructor(status: number, detail?: string, code?: string, retryAfter?: number) {
     super(detail ?? `요청에 실패했습니다. (${status})`)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.retryAfter = retryAfter
   }
 }
 
@@ -74,7 +77,10 @@ export async function apiRequestWithStatus(
       typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string'
         ? body.code
         : undefined
-    throw new ApiError(response.status, readDetail(body), code)
+    // 비어 있는 헤더를 0초로 읽지 않는다.
+    const retryHeader = response.headers.get('Retry-After')?.trim()
+    const retryAfter = retryHeader ? Number(retryHeader) : NaN
+    throw new ApiError(response.status, readDetail(body), code, Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : undefined)
   }
 
   if (response.status === 204) return { status: 204, data: null }
@@ -148,11 +154,14 @@ export async function getLibraryBooks(
   accessToken: string,
   limit: number,
   offset: number,
+  status?: ReadingStatus,
 ): Promise<LibraryBookItem[]> {
   const query = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   })
+  // 필터를 모르는 서버는 전체를 돌려줄 수 있으므로 호출하는 쪽에서도 상태를 거른다.
+  if (status) query.set('status', status)
   const data = await apiRequest(`/library/books?${query}`, accessToken)
 
   if (!Array.isArray(data) || !data.every(isLibraryBookItem)) {
@@ -580,4 +589,46 @@ export async function getReadingStatistics(
     throw new Error('통계 응답 형식이 올바르지 않습니다.')
   }
   return data
+}
+
+// 공개 후기에 표시할 닉네임. null이면 공통 이름 '독서가'로 표시된다.
+function readNickname(data: unknown): string | null {
+  if (typeof data !== 'object' || data === null || !('nickname' in data) || (data.nickname !== null && typeof data.nickname !== 'string')) {
+    throw new Error('프로필 응답 형식이 올바르지 않습니다.')
+  }
+  return data.nickname
+}
+
+export async function getProfile(accessToken: string): Promise<string | null> {
+  return readNickname(await apiRequest('/me/profile', accessToken))
+}
+
+export async function updateNickname(accessToken: string, nickname: string | null): Promise<string | null> {
+  return readNickname(await apiRequest('/me/profile', accessToken, { method: 'PATCH', body: { nickname } }))
+}
+
+// 로그인 후 5분 이내 토큰만 받는다(403 recent_login_required). 여러 번 보내도 안전하다.
+export async function deleteMe(accessToken: string): Promise<void> {
+  await apiRequest('/me', accessToken, { method: 'DELETE' })
+}
+
+// 발송 키가 설정되지 않은 서버는 503을 돌려준다.
+export async function getPushPublicKey(): Promise<string> {
+  const data = await apiRequest('/push/public-key', null)
+  if (typeof data !== 'object' || data === null || !('public_key' in data) || typeof data.public_key !== 'string' || !data.public_key) {
+    throw new Error('알림 키 응답 형식이 올바르지 않습니다.')
+  }
+  return data.public_key
+}
+
+export type PushSubscriptionBody = { endpoint: string; keys: { p256dh: string; auth: string } }
+
+// 같은 endpoint를 다시 보내면 키만 갱신되므로 반복 등록해도 안전하다.
+export async function savePushSubscription(accessToken: string, body: PushSubscriptionBody): Promise<void> {
+  await apiRequest('/me/push-subscriptions', accessToken, { method: 'PUT', body })
+}
+
+// 본인 구독이 아니거나 이미 없어도 204다.
+export async function deletePushSubscription(accessToken: string, endpoint: string): Promise<void> {
+  await apiRequest('/me/push-subscriptions', accessToken, { method: 'DELETE', body: { endpoint } })
 }

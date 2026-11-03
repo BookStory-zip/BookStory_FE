@@ -13,6 +13,11 @@ export default defineConfig([
     languageOptions: { globals: globals.node },
   },
   {
+    files: ['public/sw.js'],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: globals.serviceworker },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,

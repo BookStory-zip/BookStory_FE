@@ -1,0 +1,11 @@
+{
+  "name": "BookStory",
+  "short_name": "BookStory",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "lang": "ko",
+  "background_color": "#0f1a14",
+  "theme_color": "#0f1a14",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

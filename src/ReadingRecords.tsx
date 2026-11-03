@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { getReadingCompletions, getReadingLogs } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { commonErrorMessage } from './lib/errors'
-import { addDays, addMonths, calendarDays, monthOf, monthRange, spokenDate, spokenMonth } from './lib/dates'
+import { addMonths, calendarDays, isEditableDate, monthOf, monthRange, spokenDate, spokenMonth } from './lib/dates'
 import { useKstToday } from './useKstToday'
 import CabinIcon from './CabinIcon'
 import ReadingStatistics from './ReadingStatistics'
 import ReadingDayEditor from './ReadingDayEditor'
+import ReadingReminder from './ReadingReminder'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -28,15 +29,24 @@ type DayBook = {
 // 같은 날 같은 책은 하나로 합친다. 현재 상태로 완독일·읽은 날을 추정하지 않는다.
 export default function ReadingRecords() {
   const today = useKstToday()
-  const [month, setMonth] = useState(() => monthOf(today))
+  const [searchParams] = useSearchParams()
+  // 독서 알림을 누르면 ?check=알림 날짜로 들어와 그날 체크 편집기를 바로 연다. 최근 7일 밖이면 무시한다.
+  const [checkDate] = useState(() => {
+    const date = searchParams.get('check') ?? ''
+    return isEditableDate(date, today) ? date : null
+  })
+  const [month, setMonth] = useState(() => monthOf(checkDate ?? today))
   const [view, setView] = useState<'calendar' | 'statistics'>('calendar')
   const [statisticsMode, setStatisticsMode] = useState<'month' | 'year'>('month')
   const [days, setDays] = useState<Map<string, DayBook[]> | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [editing, setEditing] = useState(false)
+  const [selected, setSelected] = useState<string | null>(checkDate)
+  const [editing, setEditing] = useState(checkDate !== null)
   const [editingBusy, setEditingBusy] = useState(false)
+  const [editorReady, setEditorReady] = useState(false)
   const version = useRef(0)
+  const dayList = useRef<HTMLDivElement>(null)
+  const revealedCheck = useRef(checkDate === null)
 
   const load = useCallback((target: string) => {
     const current = ++version.current
@@ -78,6 +88,14 @@ export default function ReadingRecords() {
     }
   }, [month, view, load])
 
+  // 알림으로 들어온 경우 달력이 그려진 뒤 한 번만 편집기로 스크롤·포커스한다.
+  useEffect(() => {
+    if (revealedCheck.current || days === null) return
+    revealedCheck.current = true
+    dayList.current?.scrollIntoView?.({ block: 'start' })
+    dayList.current?.querySelector('h3')?.focus()
+  }, [days])
+
   function moveMonth(delta: number) {
     const nextMonth = addMonths(month, delta)
     const latestMonth = monthOf(today)
@@ -98,6 +116,9 @@ export default function ReadingRecords() {
   const bookCount = new Set(all.filter((book) => book.read).map((book) => book.user_book_id)).size
   const completedCount = all.filter((book) => book.completed).length
   const selectedBooks = selected ? days?.get(selected) ?? [] : []
+  // 편집기가 체크 상태를 불러온 뒤에는 체크한 책이 편집기 카드에 나오므로 완독만 한 책만 아래 목록에 남긴다.
+  // 편집기가 불러오는 중이거나 실패하면 목록을 그대로 보여 기록이 사라져 보이지 않게 한다.
+  const listedBooks = editing && editorReady ? selectedBooks.filter((book) => !book.read) : selectedBooks
 
   return (
     <section className="records" aria-labelledby="records-title">
@@ -115,6 +136,8 @@ export default function ReadingRecords() {
         />
       ) : (
         <>
+
+      <ReadingReminder />
 
       <div className="records-month">
         <button type="button" className="calendar-nav" aria-label="이전 달" disabled={editingBusy} onClick={() => moveMonth(-1)}>
@@ -176,7 +199,11 @@ export default function ReadingRecords() {
                   className={`records-day${day === today ? ' is-today' : ''}`}
                   aria-label={label}
                   aria-pressed={day === selected}
-                  onClick={() => setSelected(day)}
+                  onClick={() => {
+                    setSelected(day)
+                    // 편집할 수 없는 날로 옮기면 편집을 닫아 그날 기록이 목록에 모두 보이게 한다.
+                    if (!isEditableDate(day, today)) setEditing(false)
+                  }}
                   disabled={editingBusy || day > today}
                 >
                   {/* 그날 첫 책의 표지로 칸을 채우고, 여러 권이면 권수, 완독한 책이 있으면 완독 라벨을 붙인다 */}
@@ -197,20 +224,21 @@ export default function ReadingRecords() {
           </div>
 
           {selected && (
-            <div className="records-day-list">
-              <h3>{spokenDate(selected)}</h3>
+            <div className="records-day-list" ref={dayList}>
+              <h3 tabIndex={-1}>{spokenDate(selected)}</h3>
               <p className="result-note">한국 시간 기준으로 오늘을 포함한 최근 7일의 체크를 변경할 수 있어요.</p>
-              {selected >= addDays(today, -6) && selected <= today && (
+              {isEditableDate(selected, today) && (
                 <button type="button" className="secondary" aria-expanded={editing} disabled={editingBusy} onClick={() => setEditing(!editing)}>
                   {editing ? '편집 닫기' : '체크·취소하기'}
                 </button>
               )}
-              {editing && <ReadingDayEditor key={selected} date={selected} today={today} onChanged={() => load(month)} onBusyChange={setEditingBusy} />}
-              {selectedBooks.length === 0 ? (
+              {editing && <ReadingDayEditor key={selected} date={selected} today={today} onChanged={() => load(month)} onBusyChange={setEditingBusy} onReadyChange={setEditorReady} />}
+              {!editing && selectedBooks.length === 0 && (
                 <p className="result-note">이 날은 체크하거나 완독한 책이 없습니다.</p>
-              ) : (
+              )}
+              {listedBooks.length > 0 && (
                 <ul>
-                  {selectedBooks.map((book) => (
+                  {listedBooks.map((book) => (
                     <li key={book.user_book_id}>
                       <Link to={`/books/${book.user_book_id}`} className="records-book">
                         {book.thumbnail_url ? (

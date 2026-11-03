@@ -7,7 +7,41 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 [README.md](./README.md), [docs/backend-api.md](./docs/backend-api.md) API 계약, [CLAUDE.md](./CLAUDE.md)의 작업 규칙을 먼저 읽는다. 이 파일은 사용자의 명시적 요청으로 만든 계획이며, 2026-10-28 사용자 요청으로 완료된 계획을 정리하고 남은 일만 둔다.
 
 - 작업 분담: BE에서 쉽게 되는 일은 BE에서 하고 FE는 꼭 필요한 것만 구현한다. BE 몫은 아래 백엔드 전달 사항에 기록하고 FE에서 대체 구현하지 않는다(2026-10-28 사용자 지시).
-- 제외: 피드·팔로우·추천·공개 서재·회독·페이지 수·푸시·복잡한 통계·서재 꾸미기·PWA·오프라인. 사용자 승인한 책별 공개 후기는 아래 범위로 구현한다. BE 배치를 FE에 옮기지 않는다.
+- 제외: 피드·팔로우·추천·공개 서재·회독·페이지 수·독서 알림 외 푸시·복잡한 통계·서재 꾸미기·홈 화면 추가 외 PWA 기능·오프라인. 사용자 승인한 책별 공개 후기와 21시 독서 알림(2026-11-03 BE와 확정)은 아래 범위로 구현한다. BE 배치를 FE에 옮기지 않는다.
+
+## 공개 가입 전 계정·안정성 (2026-11-03)
+
+- 작업 브랜치 `feat/account-settings`, 기준 develop `4209c81`. BE와 계약 확정(BE 회신, 2026-11-03). 계약·FE 처리는 docs/backend-api.md "계정·안정성"에 둔다. BE 2차 배포에 포함되며 FE는 그 뒤 배포한다.
+- 사용자 결정: 새 계정 화면 `/settings`(상단 메뉴 "계정"), X-Request-ID는 이번에 화면에 표시하지 않는다.
+- [x] `/settings` 닉네임 조회·저장(같은 규칙 선검사·NFC·비우면 null), 탈퇴(영향 안내·확인창·비밀번호 재로그인·같은 계정 확인·새 토큰으로 `DELETE /me`·성공 시 알림 해제·로그아웃 안내), 검색 429 `Retry-After` 동안 검색·더 보기 차단, `rate_limited`·`invalid_nickname`·`recent_login_required`·`account_deletion_failed`·`internal_error` 한국어 안내. 의존성 추가 없음
+- [x] 단위 289개·lint·타입 검사/빌드·Playwright 9개 통과(가짜 API). `.env.local` 없이 CI 조건으로도 통과. 재로그인 계정 확인·새 토큰 사용·재검색 차단·연속 공백 거부를 일부러 망가뜨리면 검사가 실패함을 확인. 로컬 첫 e2e 실행에서 7개가 30초 시간 초과로 실패했으나 직렬·재실행에서 모두 통과(부하로 판단, 코드 수정 없음)
+- [x] `/code-review` 지적 반영: 앞선 탈퇴 요청이 로그인 계정까지 지웠을 때 재시도가 비밀번호 오류로 보이던 문제(`user_not_found` 확인 후 완료 처리), 로그아웃이 늦거나 실패해도 탈퇴 완료 표시·재전송 차단, 검색 429 차단을 화면 재진입에도 유지하고 끝나면 안내 제거, 담기 429 "담지 못했습니다" 안내(검색·공통 상세), 빈 `Retry-After`를 60초 기본값으로, 상태 안내를 `display:none`으로 숨기지 않음(낭독기), 닉네임 입력 `maxLength` 100(정규화 뒤 길이 검사). 로그인·탈퇴 화면의 Supabase 오류 문구 중복은 상황별 문구가 달라 유지. 단위 297개·lint·빌드 통과, 새 검사 3개는 수정을 되돌리면 실패함을 확인(완료 후 재전송 차단은 버튼 비활성·요청 전 확인이 함께 막아 단일 변형으로는 실패하지 않음)
+- [x] 검증 환경 실제 Chrome(이전 에이전트 인계, 2026-11-03, BE `237dcf9`): A 닉네임 저장·null 복구, 검색 429의 `Retry-After`·CORS·노출 헤더와 화면 재진입 차단 유지, 통계 500의 CORS·한국어 안내, 탈퇴 403 `recent_login_required`의 데이터 보존 확인. 이번 재검증에서는 이 항목을 반복하지 않음
+- [x] 탈퇴 데이터 삭제(BE 회신·사용자 전달, 2026-11-03): 첫 전용 계정 `verify-delete`의 서버 요청은 403 → 검증용 503 → 204, Supabase 로그인 계정 삭제 확인. 검증 DB의 users·user_books·reading_logs·push_subscriptions·reading_reminders 모두 0건, 공통 책 `9788936433598` 보존. FE 직접 DB 조회는 하지 않음
+- [x] 검증 환경 실제 Chrome 재검증(에이전트, 2026-11-03, BE 제공 기준 develop `8b569f3`, 16:58 서버 재시작): 새 전용 계정 `verify-delete2`에만 서재·독서 체크·공개 후기를 준비한 뒤 화면 탈퇴. 첫 503에서 오류 안내·로그인 유지·재시도 버튼 활성·자동 재전송 없음·서재 0권 확인, 직접 재시도한 DELETE 204 뒤 로그인 화면·탈퇴 완료 안내 확인. 삭제 후 재로그인은 400 `invalid_credentials`. 이번 계정에는 브라우저 알림 구독을 만들지 않았으며 완료 뒤 구독 없음만 확인(실제 구독 데이터 삭제는 위 BE 확인과 기존 알림 검증으로 구분)
+- [x] 닉네임의 공개 후기 이름 반영: 위 새 계정의 계정 화면에서 닉네임 저장 후 공개 후기 API의 `author_name`이 새 이름으로 바뀜을 직접 확인. BE는 `tests/test_nickname.py::test_public_reviews_show_each_authors_nickname_or_default` CI 통과도 회신함. 같은 Chrome 계정 화면 390·1440px 스크린샷을 확인하고 가로 넘침 없음 검사
+- [x] 최종 self-review·별도 코드 리뷰(에이전트, 2026-11-03): 검색 응답 대기 중 화면을 나갔다 돌아온 뒤 늦게 받은 429가 새 화면을 막지 못하는 문제 발견. 공유 차단 시각 변경을 현재 화면이 구독하도록 수정. 별도 Chrome의 가짜 응답으로 기존 동작 재현·회귀 검사 선실패와 수정 후 통과를 확인했고 수정 재검토에서 추가 중요 지적 없음. 최종 단위 298개·lint·타입 검사/빌드·e2e 9개(`--workers=2`, 25.3초)·`git diff --check` 통과. 앞선 e2e는 9개 시나리오 통과 뒤 테스트용 Vite 종료가 지연돼 해당 프로세스만 종료 후 exit 0을 확인했으며 최종 재실행은 정상 종료
+- 알려진 한계(사용자 수용): 탈퇴 진행 중 상단 로그아웃을 누르면 탈퇴 완료 대신 로그아웃 안내가 표시될 수 있음. 데이터 삭제에는 영향 없음
+- 운영 반영 순서: FE 검증 → BE 2차 운영 반영 완료 → FE develop → main 병합(자동 배포)
+
+## 21시 독서 알림 (2026-11-03)
+
+- 작업 브랜치 `feat/reading-reminder`, 기준 develop `12ea4ce`. BE `feat/reading-reminder` `affb334` 계약 확정(BE 회신, 2026-11-03). 계약·FE 처리는 docs/backend-api.md "독서 알림"에 둔다.
+- 범위: 서비스 워커(푸시 수신·알림 클릭만), 홈 화면 추가용 최소 manifest, 기록 화면 켜기/끄기, 앱 시작 재등록·키 교체 재구독, 로그아웃 해제, 계정별 구독 보호, `/sw.js` no-cache. 오프라인·캐시는 제외한다.
+- [x] API 3개·push 모듈·서비스 워커·manifest·기록 화면 버튼·Vercel 헤더 구현. 의존성 추가 없음
+- [x] 단위 검사 248개(push 14·화면 4 추가)·lint·타입 검사/빌드·Playwright 9개 통과(가짜 API·가짜 브라우저 구독). 다른 계정 구독 차단·등록 실패 시 구독 정리·키 비교를 일부러 망가뜨리면 검사가 실패함을 확인
+- [x] 검증 환경 실제 Chrome(에이전트, 2026-11-03 14시대): A 켜기 PUT 204·새로고침 재등록 PUT 204·로그아웃 DELETE 204, B 로그인 시 요청 없음, A 세션만 사라진 뒤 B 로그인 시 A 구독을 B로 PUT하지 않고 해제, B 켜기·끄기 PUT/DELETE 204. 공개 키 미설정 503에서 재시도 가능 안내·구독 미생성·로그인 유지(390px 화면 확인)
+- [x] BE `3245d86` 검증 서버 발송(BE 실행 기록·사용자 확인): 키 교체 후 새로고침 자동 재구독 PUT 204, 1회차 sent=1·removed=2(A 남은 구독·B 예전 키 구독 모두 410), 2회차 sent=0·skipped=1, Windows Chrome 수신·클릭 시 `/records` 이동(사용자), B 끄기 후 서버 구독 0개. 발송 기준 시각은 그 실행에서만 14시로 낮췄으며 실제 21:00 시작·자정 마감은 BE 고정 시각 테스트로만 확인
+- [x] 정리: 추가한 검증 책 A·B 각 1권 삭제(A 21권·B 2권 복귀). BE는 원래 키로 복구하고 두 번째 키 폐기. 검증 DB의 오늘 발송 기록 2건은 남김(BE)
+- [x] BE 제안 반영: 키 교체로 재구독할 때 예전 endpoint를 먼저 DELETE(실패해도 410 정리). 실제 브라우저 재확인은 하지 않았고 단위 검사로 확인
+- 개선 결정(사용자, 2026-11-03): 알림 클릭 → 기록 화면의 그날 체크 편집기(`ReadingDayEditor` 재사용, 새 화면 없음), BE 서재 상태 필터 요청, 알림과 같은 2차 배포
+- [x] 알림 클릭 `/records?check={date}`(서비스 워커가 알림 `date` 사용, 7일 밖·형식 오류 무시), 편집기로 스크롤·날짜 제목 포커스, 편집기 서재 조회에 `status=reading`(화면에서도 계속 `reading`만 고름). 단위 252개·lint·빌드·e2e 9개 통과. 검증 환경 실제 Chrome에서 `?check=오늘` 진입 시 편집기 열림·포커스, 현재 검증 BE의 `status=reading` 요청 200(필터 미구현으로 무시) 확인
+- [x] 사용자 요청(2026-11-03): 체크 편집기 줄을 기록 목록과 같은 책 카드(표지·제목·저자·상태, 상세 링크)와 체크/취소 버튼 한 박스로 합침. 편집 중에는 체크한 책이 아래 목록에 중복되지 않게 완독만 한 책만 남김. 단위 252개 통과, 검증 환경 실제 Chrome 390·1440px에서 체크 전후 카드·중복 없음·가로 넘침 없음 확인(임시 검증 책 추가 후 삭제)
+- [x] `/code-review` 지적 반영(2026-11-03): 알림 클릭은 열린 창 이동 대신 새 창(작성 중 입력 보존·서비스 워커 미제어 창 실패 방지), 켜는 도중 계정이 바뀌면 등록하지 않음, 구독 키를 알려 주지 않는 브라우저는 매번 재구독하지 않음, 푸시 서비스 실패(AbortError) 안내 수정, 편집기 로딩·실패 중에는 읽은 책을 목록에서 숨기지 않음, 편집할 수 없는 날로 옮기면 편집 닫기, `?check=` 실제 날짜 검사와 7일 범위 검사를 `isEditableDate` 하나로 통일. 로그아웃·끄기 해제 함수의 중복은 서버 응답 대기 여부가 달라 유지. 단위 265개·lint·빌드·e2e 9개 통과, 새 검사 4개는 수정을 되돌리면 실패함을 확인
+- 검증 환경 재발송 테스트는 사용자 결정으로 취소(2026-11-03). BE 상태 필터는 확정 계약대로 2차 배포에 포함하되 FE 검증 환경 확인은 하지 않는다. 준비했던 검증 책 2건은 삭제(A 21권·B 2권)
+- [ ] 운영 배포 후 확인(미검증): 새 서비스 워커의 알림 클릭 → 새 창 `/records?check={date}` 편집기 열림, 운영 BE `status=reading` 필터 응답이 읽는 중만인지·잘못된 값 422
+- [ ] 실제 iPhone(iOS 16.4+, 홈 화면 추가)·macOS Safari·Android 확인은 HTTPS가 필요해 운영 배포 후 진행하고 못 하면 미검증으로 기록. 사용자가 홈 화면에 추가해 둔 아이콘은 manifest 배포 전에 만든 것이므로 FE 배포 후 지우고 다시 추가해 확인한다. Safari의 `applicationServerKey` 비교·SVG 알림 아이콘 표시는 미검증
+- 운영 반영 순서: FE 검증 → BE PR 병합 → 운영 migration `0f24f6f3a7bc` → Render·Actions 발송 키 등록 → BE 배포 → FE 배포(main 병합 = 자동 배포)
 
 ## 다음에 이어서 시작할 순서
 
@@ -38,6 +72,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 | 2026-11-02 14:33 KST | main `aab40d0` ([PR #3](https://github.com/BookStory-zip/BookStory_FE/pull/3), [main CI 41394235068](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41394235068) 통과) | https://bookstory-fe.vercel.app · `dpl_4nbsYowenZBjF61WCTbbz5HKgAdm` · [배포 URL](https://bookstory-p77qwywj9-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포 | main `1ffaa8a`(PR #9) Render Live와 실제 미래 시작일 422·기존 기록 보존 확인(사용자, 2026-11-02). 이번 BE 변경의 스키마·마이그레이션 변경 없음 |
 | 2026-11-03 KST | main `a82c21a` ([PR #5](https://github.com/BookStory-zip/BookStory_FE/pull/5), [main CI 41417329233](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41417329233) 통과) | https://bookstory-fe.vercel.app · `dpl_AtHZiqTumHoAmz3xZJQAJ3fpBNZe` · [배포 URL](https://bookstory-a8tlcrua6-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포·READY | main `2c2b6e7`(PR #12), migration `57f75310c7d5` 적용·Render Live 완료(BE 유지보수 기록·사용자 안내). FE에서 운영 순서 API·health/ready 200·PATCH CORS 확인 |
 | 2026-11-03 12:21 KST | main `85c36a0` ([PR #9](https://github.com/BookStory-zip/BookStory_FE/pull/9), [main CI 41571461514](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41571461514)) | https://bookstory-fe.vercel.app · `dpl_6JzDV4srrZpRqRYBGA6nYKNSDEbc` · [배포 URL](https://bookstory-8s7yfgfav-honey-0a33.vercel.app) · 첫 Actions 자동 배포·READY. 사후 검증 단계만 실패(아래 무료 자동 배포 참고) | 운영 OpenAPI에서 날짜 경로 PUT/DELETE·`last_read_date` 확인(에이전트). BE 배포 SHA는 새로 검증하지 않음 |
+| 2026-11-03 12:39 KST | main `9cd08f2` ([PR #11](https://github.com/BookStory-zip/BookStory_FE/pull/11), [main CI 41573468541](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41573468541) 통과) | https://bookstory-fe.vercel.app · `dpl_3Xw8UvZ5ZQYpugFNWsPoNrBYat4c` · [배포 URL](https://bookstory-q5dwiygq5-honey-0a33.vercel.app) · Actions 자동 배포·사후 검증 통과 | 변경 없음(배포 검증 스크립트·문서만 변경) |
 
 배포 후 확인: 모든 SPA 경로 200, 공개 환경변수 3개 번들 반영, 운영·로컬 origin CORS 허용(에이전트). 운영 주소에서 로그인부터 기록까지 통합 동작(사용자, 2026-10-28). 배포 방법은 [docs/maintenance.md](./docs/maintenance.md)를 따른다.
 
@@ -125,7 +160,8 @@ BE 전달 사항, 2026-10-28 BE 계약 수신 상태, 재독 규칙, BE 배포 �
 - [x] develop `defcbf4` `--skip-domain` 시험 배포 `dpl_8TVnLtkBSt7hsMNUJJVjGNEuGX84` READY. 배포 보호 때문에 `vercel curl`로 커밋 표식·`/`·`/records`·`/catalog/9788936433598` 200·보안 헤더 5종 확인. 운영 alias 유지 확인
 - [x] 사용자 요청으로 배포 PR #9 병합(main `85c36a0`). 첫 Actions 배포가 READY·운영 alias 연결됐고, 에이전트가 운영 커밋 표식 `85c36a0`·SPA 7개 경로·보안 헤더를 `verifyProduction`으로 직접 확인했다
 - [x] 사후 검증 단계 실패 원인: CLI `deploy --json`은 비대화형(에이전트) 실행에서만 `{status, deployment}`로 감싸고 Actions에서는 배포 객체를 그대로 출력한다. 로컬 시험 배포는 감싼 형태만 확인했다. `deploymentInfo`가 두 형태를 모두 받고 `error` 포함 결과를 거부하도록 수정·회귀 검사 추가
-- [ ] 수정 반영 후 다음 main 배포에서 Actions의 사후 검증 단계 통과 확인
+- [x] 수정 반영 후 main `9cd08f2`([PR #11](https://github.com/BookStory-zip/BookStory_FE/pull/11)) 자동 배포 `dpl_3Xw8UvZ5ZQYpugFNWsPoNrBYat4c`에서 [main CI 41573468541](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41573468541)의 check·e2e·배포·사후 검증 모두 통과. 운영 커밋 표식 `9cd08f2` 확인(에이전트), 운영 화면 정상 작동 확인(사용자, 2026-11-03). 무료 자동 배포 활성화 완료
+- PR #11이 squash 병합되어 main 전용 커밋이 생겼으므로 main을 develop에 merge commit으로 동기화했다. develop → main 배포 PR은 merge commit으로 병합한다
 
 ## 개인 독서 통계 연결 (2026-10-30)
 

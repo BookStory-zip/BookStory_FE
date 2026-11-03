@@ -44,11 +44,13 @@ test('완독한 책의 기존 체크도 취소할 수 있고 완독만 한 책�
   expect(screen.queryByRole('button', { name: '채식주의자 체크' })).toBeNull()
 })
 
-test('서재 100권 뒤의 읽는 중인 책도 체크 대상으로 가져온다', async () => {
+// 상태 필터를 모르는 서버가 전체를 돌려줘도 읽는 중인 책만 체크 대상으로 남긴다.
+test('읽는 중 필터로 100권 뒤까지 가져오고, 필터를 무시한 응답에서도 읽는 중만 체크 대상으로 둔다', async () => {
   mocks.getLibraryBooks.mockResolvedValueOnce(Array.from({ length: 100 }, (_, i) => ({ ...book, id: `done-${i}`, status: 'completed' }))).mockResolvedValueOnce([book])
   setup()
   await screen.findByRole('button', { name: '채식주의자 체크' })
-  expect(mocks.getLibraryBooks.mock.calls.map((call) => call.slice(1))).toEqual([[100, 0], [100, 100]])
+  expect(screen.getAllByRole('button', { name: /체크$/ })).toHaveLength(1)
+  expect(mocks.getLibraryBooks.mock.calls.map((call) => call.slice(1))).toEqual([[100, 0, 'reading'], [100, 100, 'reading']])
 })
 
 test.each(['2026-10-22', '2026-10-28'])('오늘 포함 최근 7일 경계 %s는 편집할 수 있다', async (date) => {

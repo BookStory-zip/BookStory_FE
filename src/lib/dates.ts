@@ -8,6 +8,12 @@ export function addDays(date: string, days: number): string {
   return toDate(utc)
 }
 
+// 독서 체크·취소할 수 있는 날짜: 실제 달력 날짜이고 서버 KST 오늘을 포함한 최근 7일.
+export function isEditableDate(date: string, today: string): boolean {
+  const utc = toUtc(date)
+  return !Number.isNaN(utc.getTime()) && toDate(utc) === date && date >= addDays(today, -6) && date <= today
+}
+
 export const monthOf = (date: string) => date.slice(0, 7)
 
 export function addMonths(month: string, delta: number): string {

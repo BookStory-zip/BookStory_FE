@@ -4,6 +4,7 @@ import { isAuthError } from '@supabase/supabase-js'
 import { Navigate, NavLink, Route, Routes } from 'react-router'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
 import { commonErrorMessage, isAuthFailure } from './lib/errors'
+import { releaseReminder, syncReminder } from './lib/push'
 import CabinIcon from './CabinIcon'
 import Library from './Library'
 
@@ -13,6 +14,7 @@ const BookSearch = lazy(() => import('./BookSearch'))
 const BookCatalog = lazy(() => import('./BookCatalog'))
 const PasswordReset = lazy(() => import('./PasswordReset'))
 const ReadingRecords = lazy(() => import('./ReadingRecords'))
+const AccountSettings = lazy(() => import('./AccountSettings'))
 
 function PageLoading() {
   return (
@@ -108,6 +110,16 @@ function AuthScreen() {
       unsubscribe()
     }
   }, [])
+
+  // 확인된 계정으로 열 때 알림 구독을 서버와 맞춘다. 실패해도 화면을 막지 않고 다음 시작 때 다시 맞춘다.
+  useEffect(() => {
+    if (userId === null) return
+    let active = true
+    void syncReminder(() => active).catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [userId])
 
   async function handleAuthSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -205,7 +217,8 @@ function AuthScreen() {
     )
   }
 
-  async function handleLogout() {
+  // 탈퇴 완료 뒤에도 같은 정리(알림 해제·로그아웃)를 하고 안내만 바꾼다.
+  async function handleLogout(doneMessage = '로그아웃되었습니다. 다시 로그인해주세요.') {
     if (isCheckingSession || pendingAction.current !== null) return
 
     const currentAction = ++actionVersion.current
@@ -214,10 +227,12 @@ function AuthScreen() {
     setMessage('로그아웃 중입니다.')
 
     try {
+      // 다음에 로그인하는 계정이 이 기기의 알림을 이어받지 않게 먼저 끊는다.
+      await releaseReminder()
       await signOut()
 
       if (currentAction === actionVersion.current) {
-        setMessage('로그아웃되었습니다. 다시 로그인해주세요.')
+        setMessage(doneMessage)
       }
     } catch {
       if (currentAction === actionVersion.current) {
@@ -246,11 +261,12 @@ function AuthScreen() {
             <NavLink to="/" end>서재</NavLink>
             <NavLink to="/search">책 찾기</NavLink>
             <NavLink to="/records">기록</NavLink>
+            <NavLink to="/settings">계정</NavLink>
           </nav>
           <button
             type="button"
             className="secondary compact"
-            onClick={handleLogout}
+            onClick={() => void handleLogout()}
             disabled={isSubmitting}
           >
             {isSubmitting ? '처리 중…' : '로그아웃'}
@@ -266,6 +282,7 @@ function AuthScreen() {
               <Route path="catalog/:isbn13" element={<BookCatalog />} />
               <Route path="books/:userBookId" element={<BookDetail />} />
               <Route path="records" element={<ReadingRecords />} />
+              <Route path="settings" element={<AccountSettings onDeleted={() => handleLogout('탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.')} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
@@ -282,7 +299,7 @@ function AuthScreen() {
         <p role="status">{message}</p>
         <div className="retry-actions">
           <button type="button" onClick={retryCheck}>다시 시도</button>
-          <button type="button" className="secondary" onClick={handleLogout} disabled={isSubmitting}>
+          <button type="button" className="secondary" onClick={() => void handleLogout()} disabled={isSubmitting}>
             {isSubmitting ? '처리 중…' : '로그아웃'}
           </button>
         </div>
