@@ -37,6 +37,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 | 2026-11-02 | main `cdcbff7` ([PR #2](https://github.com/BookStory-zip/BookStory_FE/pull/2), [main CI 41381439179](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41381439179) 통과) | https://bookstory-fe.vercel.app · `dpl_En5qb68qkXZhcDrSjm1sPwBzwwmx` · [배포 URL](https://bookstory-cabqsyvt6-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포 | 기준 `290da3e`, migration `c4d8e2a76f10`(사용자 2026-11-02 확인). 이번 배포 확인은 운영 health·CORS 조회이며 BE 배포 SHA를 새로 검증한 것은 아님 |
 | 2026-11-02 14:33 KST | main `aab40d0` ([PR #3](https://github.com/BookStory-zip/BookStory_FE/pull/3), [main CI 41394235068](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41394235068) 통과) | https://bookstory-fe.vercel.app · `dpl_4nbsYowenZBjF61WCTbbz5HKgAdm` · [배포 URL](https://bookstory-p77qwywj9-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포 | main `1ffaa8a`(PR #9) Render Live와 실제 미래 시작일 422·기존 기록 보존 확인(사용자, 2026-11-02). 이번 BE 변경의 스키마·마이그레이션 변경 없음 |
 | 2026-11-03 KST | main `a82c21a` ([PR #5](https://github.com/BookStory-zip/BookStory_FE/pull/5), [main CI 41417329233](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41417329233) 통과) | https://bookstory-fe.vercel.app · `dpl_AtHZiqTumHoAmz3xZJQAJ3fpBNZe` · [배포 URL](https://bookstory-a8tlcrua6-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포·READY | main `2c2b6e7`(PR #12), migration `57f75310c7d5` 적용·Render Live 완료(BE 유지보수 기록·사용자 안내). FE에서 운영 순서 API·health/ready 200·PATCH CORS 확인 |
+| 2026-11-03 12:21 KST | main `85c36a0` ([PR #9](https://github.com/BookStory-zip/BookStory_FE/pull/9), [main CI 41571461514](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41571461514)) | https://bookstory-fe.vercel.app · `dpl_6JzDV4srrZpRqRYBGA6nYKNSDEbc` · [배포 URL](https://bookstory-8s7yfgfav-honey-0a33.vercel.app) · 첫 Actions 자동 배포·READY. 사후 검증 단계만 실패(아래 무료 자동 배포 참고) | 운영 OpenAPI에서 날짜 경로 PUT/DELETE·`last_read_date` 확인(에이전트). BE 배포 SHA는 새로 검증하지 않음 |
 
 배포 후 확인: 모든 SPA 경로 200, 공개 환경변수 3개 번들 반영, 운영·로컬 origin CORS 허용(에이전트). 운영 주소에서 로그인부터 기록까지 통합 동작(사용자, 2026-10-28). 배포 방법은 [docs/maintenance.md](./docs/maintenance.md)를 따른다.
 
@@ -120,7 +121,11 @@ BE 전달 사항, 2026-10-28 BE 계약 수신 상태, 재독 규칙, BE 배포 �
 - [x] 배포 확인 스크립트·회귀 검사: BE ready/CORS 사전 확인, Production 설정 확인, 배포 결과 ID/URL·정적 커밋 표식·SPA 경로·보안 헤더 검사와 Actions Summary 기록. 자동 Git 커밋은 만들지 않으며 수동 배포·복구 절차를 남긴다
 - [x] actionlint 1.7.12·Bash 구문 검사·단위 검사 204개·lint·빌드 통과. 독립 리뷰의 CORS 허용 헤더 누락 지적을 회귀 검사 4건과 함께 수정했고 실제 운영 BE의 ready·인증/JSON PATCH CORS 읽기 전용 검사도 통과했다. 앱 코드·e2e가 바뀌지 않아 로컬 브라우저 흐름은 반복하지 않았으며 원격 전체 CI는 develop 대상 PR에서 확인한다. 기존 운영 확인 1줄도 이번 작업 커밋에 포함한다
 - 이번 작업의 원격 반영 범위는 develop 대상 PR·CI·병합이다(사용자 요청, 2026-11-03). 최종 병합 SHA·CI 결과는 해당 PR과 최종 인계에서 확인한다. main 반영·공개 전환·Secrets 등록·운영 배포는 다음 기능 작업 때 진행한다
-- [ ] 다음 기능 작업과 함께 FE 공개 전환 최종 확인·전용 배포 토큰 등록 후 운영 alias를 유지하는 `--skip-domain` 시험 배포와 자동 배포 첫 실행 확인. 공개 최종 확인 전에는 공개 전환·Secrets 등록·운영 배포를 실행하지 않으며, 실제 배포 성공 전에는 자동화 완료로 기록하지 않는다
+- [x] FE 저장소 공개, 변수 `VERCEL_ORG_ID`·`VERCEL_PROJECT_ID`, `production` 환경(main만 허용) Secret `VERCEL_TOKEN` 등록(2026-11-03). 토큰은 대시보드에서 발급한 `bookstory-fe` 프로젝트 한정, 2027-02-01 만료(교체 절차는 docs/maintenance.md). 로컬 토큰 파일은 등록 후 삭제
+- [x] develop `defcbf4` `--skip-domain` 시험 배포 `dpl_8TVnLtkBSt7hsMNUJJVjGNEuGX84` READY. 배포 보호 때문에 `vercel curl`로 커밋 표식·`/`·`/records`·`/catalog/9788936433598` 200·보안 헤더 5종 확인. 운영 alias 유지 확인
+- [x] 사용자 요청으로 배포 PR #9 병합(main `85c36a0`). 첫 Actions 배포가 READY·운영 alias 연결됐고, 에이전트가 운영 커밋 표식 `85c36a0`·SPA 7개 경로·보안 헤더를 `verifyProduction`으로 직접 확인했다
+- [x] 사후 검증 단계 실패 원인: CLI `deploy --json`은 비대화형(에이전트) 실행에서만 `{status, deployment}`로 감싸고 Actions에서는 배포 객체를 그대로 출력한다. 로컬 시험 배포는 감싼 형태만 확인했다. `deploymentInfo`가 두 형태를 모두 받고 `error` 포함 결과를 거부하도록 수정·회귀 검사 추가
+- [ ] 수정 반영 후 다음 main 배포에서 Actions의 사후 검증 단계 통과 확인
 
 ## 개인 독서 통계 연결 (2026-10-30)
 
