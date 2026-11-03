@@ -22,6 +22,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 | 2026-10-28 | main `e3999b0` (PR #1, CI run 40610539527 통과) | https://bookstory-fe.vercel.app · `dpl_76PbqgQdBjZqLd9448dpAP7bdMV5` · Vercel CLI `64.0.2` 수동 배포 | Render 운영 배포 커밋 확인 필요(로컬 대조 기준 `185e11b`). `CORS_ORIGINS`에 운영 주소 추가 후 재배포 |
 | 2026-11-02 | main `cdcbff7` ([PR #2](https://github.com/BookStory-zip/BookStory_FE/pull/2), [main CI 41381439179](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41381439179) 통과) | https://bookstory-fe.vercel.app · `dpl_En5qb68qkXZhcDrSjm1sPwBzwwmx` · [배포 URL](https://bookstory-cabqsyvt6-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포 | 기준 `290da3e`, migration `c4d8e2a76f10`(사용자 2026-11-02 확인). 이번 배포 확인은 운영 health·CORS 조회이며 BE 배포 SHA를 새로 검증한 것은 아님 |
 | 2026-11-02 14:33 KST | main `aab40d0` ([PR #3](https://github.com/BookStory-zip/BookStory_FE/pull/3), [main CI 41394235068](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41394235068) 통과) | https://bookstory-fe.vercel.app · `dpl_4nbsYowenZBjF61WCTbbz5HKgAdm` · [배포 URL](https://bookstory-p77qwywj9-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포 | main `1ffaa8a`(PR #9) Render Live와 실제 미래 시작일 422·기존 기록 보존 확인(사용자, 2026-11-02). 이번 BE 변경의 스키마·마이그레이션 변경 없음 |
+| 2026-11-03 KST | main `a82c21a` ([PR #5](https://github.com/BookStory-zip/BookStory_FE/pull/5), [main CI 41417329233](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41417329233) 통과) | https://bookstory-fe.vercel.app · `dpl_AtHZiqTumHoAmz3xZJQAJ3fpBNZe` · [배포 URL](https://bookstory-a8tlcrua6-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포·READY | main `2c2b6e7`(PR #12), migration `57f75310c7d5` 적용·Render Live 완료(BE 유지보수 기록·사용자 안내). FE에서 운영 순서 API·health/ready 200·PATCH CORS 확인 |
 
 배포 후 확인: 모든 SPA 경로 200, 공개 환경변수 3개 번들 반영, 운영·로컬 origin CORS 허용(에이전트). 운영 주소에서 로그인부터 기록까지 통합 동작(사용자, 2026-10-28). 배포 방법은 [docs/maintenance.md](./docs/maintenance.md)를 따른다.
 
@@ -90,6 +91,10 @@ BE 전달 사항, 2026-10-28 BE 계약 수신 상태, 재독 규칙, BE 배포 �
 - [x] 코드 리뷰 반영(2026-11-02): 불러온 범위 재조회, 자동 스크롤, 문서 단위 Escape, 저장·확인 단계 안내, `aria-busy` 범위 축소. 가짜 API 기반 단위 검사 179개·Playwright 8개·lint·빌드 통과
 - [x] 추가 리뷰 수정(2026-11-02): 끝까지 불러온 서재가 100권을 넘으면 이동 후 재조회에서 잘린 책을 더 보기로 이어 받도록 수정. 100·101·123권 경계에서 다음 offset·전체 순서·누락/중복 없는 이어 받기 회귀 검사 추가. 단위 검사 182개·lint·빌드 검증. 실제 기기·운영 API·e2e는 이번 수정에서 재실행하지 않음
 - [ ] 리뷰 반영분의 실제 확인은 사용자 결정으로 이후 UX 다듬기 때 진행: 검증 API에서 21권 이상 불러온 뒤 이동, 실제 Android·iPhone에서 자동 스크롤 속도(가장자리 80px·프레임당 12px)·손잡이 조작감, macOS Safari Escape 취소
+- [x] 사용자 배포 요청으로 [작업 PR #4](https://github.com/BookStory-zip/BookStory_FE/pull/4)를 squash 병합(develop `14b3cb0`), [배포 PR #5](https://github.com/BookStory-zip/BookStory_FE/pull/5)를 merge commit 병합(main `a82c21a`). 작업 PR CI `41416318514`·develop CI `41416862143`·배포 PR CI `41416990336`·[main CI `41417329233`](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41417329233) 모두 성공. 최종 독립 리뷰 지적 없음, 로컬 lint·182개 검사·빌드·Chrome 워커 2개 기반 e2e 8개 통과
+- [x] Vercel 수동 운영 배포(2026-11-03 KST): BE migration·Render 완료 안내 후 격리된 main `a82c21a`에서 CLI `64.0.2`로 배포하고 READY·운영 alias 연결을 확인했다. 기존 `.env.local`은 보존했고 CLI가 배포 트리에 만든 토큰 파일은 제거했다. 배포 ID·URL·BE 기준은 위 표에 기록했다
+- [x] 운영 응답 검증: SPA 7개 경로 200·보안 헤더, 운영 순서 API·health/ready 200·운영 origin PATCH CORS, 새 순서 편집 코드가 포함된 JS 자산 10개·운영 API 설정·검증 프로젝트/로컬 API 설정 미포함 확인. 실제 Chrome 비로그인 화면 390/1440px에서 가로 넘침·미처리 JS 오류 없음
+- [ ] 운영 계정에서 실제 순서 이동 후 새로고침 유지 확인. 운영 데이터 쓰기와 두 계정 전환은 자동 배포 검증에 포함하지 않음
 - 브랜치 완료 후 작업 브랜치 push·develop 대상 PR·CI 확인을 진행한다. 원격 반영 결과는 해당 PR·CI와 최종 인계에서 확인하며 병합·main 반영·운영 배포는 별도 요청이다.
 
 ## 개인 독서 통계 연결 (2026-10-30)

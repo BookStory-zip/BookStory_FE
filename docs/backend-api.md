@@ -5,7 +5,7 @@ FE가 사용하는 BookStory BE API 계약과 FE 반영 방식, BE 전달 사항
 BE가 FE용으로 정리한 계약은 BE 저장소 `docs/frontend-api.md`에 있습니다.
 
 - 운영 API: https://bookstory-api-w31a.onrender.com · [Swagger](https://bookstory-api-w31a.onrender.com/docs)
-- 기준: BE main `1ffaa8a`(PR #9, 미래 날짜·시각 거부 포함). Render Live와 운영 미래 시작일 422·기존 기록 보존은 사용자가 2026-11-02 확인함. FE 자동 브라우저 검증은 가짜 API를 사용하며 운영 수동 확인 범위는 plan.md에 기록함.
+- 기준: BE main `2c2b6e7`(PR #12, 서재 순서 API·migration `57f75310c7d5` 포함). BE 유지보수 기록의 운영 migration 적용·Render Live와 사용자 완료 안내를 확인했습니다. FE main `a82c21a`는 2026-11-03 Vercel에 배포했고 운영 API·CORS·배포 번들·비로그인 화면을 확인했습니다. 개인 기록 쓰기는 별도 검증 환경을 사용하며 운영 수동 확인 범위는 plan.md에 기록합니다.
 
 ## 인증
 
@@ -28,7 +28,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `GET /library/books/by-isbn/{isbn13}` | Bearer 필수. 내 상세와 같은 응답, 미등록은 404 | 404만 미등록으로 처리. 다른 오류에는 담기 버튼을 표시하지 않음 |
 | `POST /library/books` | `{isbn13}` → `{id, book_id, status}`. 새로 담으면 201, 이미 있으면 200과 기존 기록 | 201 "담았습니다", 200 "이미 서재에 있는 책(상태)". ISBN13 없는 결과는 담기 막음 |
 | `GET /library/books?limit&offset` | 배열, 기본 20·최대 100, 서버 순서. 전체 건수 없음. 순서 API 반영 후 저장된 순서, 초기값은 최신 등록순 | 20개씩 더 보기. 부분 목록으로 통계를 만들지 않음 |
-| `PATCH /library/books/{user_book_id}/position` | 필수 `{after_user_book_id: UUID 또는 null}`, 204·빈 본문. 현재 검증 환경 제공, 운영 미반영 | 개인 서재 ID로 드래그·앞/뒤 이동. 성공·결과 불명확 시 불러온 범위(최대 100개) 재조회 |
+| `PATCH /library/books/{user_book_id}/position` | 필수 `{after_user_book_id: UUID 또는 null}`, 204·빈 본문. 운영 제공 | 개인 서재 ID로 드래그·앞/뒤 이동. 성공·결과 불명확 시 불러온 범위(최대 100개) 재조회 |
 | `GET /library/books/{id}` | 상세. 날짜·별점·메모 등 null 가능. `allowed_statuses`(현재 상태 재요청 포함) | 고를 수 있는 상태를 `allowed_statuses`로 결정. 없는 값을 채우지 않음. 404는 타인 항목과 구분하지 않음 |
 | `PATCH …/{id}/status` | `status` + 선택 `started_date`·`completed_date`(`YYYY-MM-DD`). 시각 필드도 받지만 같은 필드에 둘 다 보내면 422 | 고른 날짜만 날짜 필드로 전송. 아래 날짜 규칙 |
 | `PATCH …/{id}/record` | 선택 `rating`(1~5)·`memo`(1만 자)·`stop_reason`(1천 자)·`is_review_public`(불리언, null 불가) | 바뀐 필드만 전송. 빈 값은 null(삭제), 별점 0은 보내지 않음. 공개 설정 생략은 현재 값 유지 |
@@ -106,14 +106,14 @@ FE 작업 중 확인한 BE 제약과 최소 변경 제안입니다. BE 반영·�
 | 5 | 검색 `isbn13` | FE가 `isbn`에서 ISBN13을 고름 | 항목별 `isbn13` | FE 정리 로직 삭제 |
 | 6 | 날짜만 받는 상태 변경 | FE가 KST 시각으로 변환해 전송 | `started_date`·`completed_date` | FE 시각 변환·자정 보정 삭제, 기기 시계 오차 해소 |
 | 7 | 허용 전환 제공 | FE가 전환 규칙을 복제 | 상세 `allowed_statuses` | FE 규칙 삭제 |
-| 후속 | 서재 순서 바꾸기 | FE `feat/library-order` 구현·검증 환경 통합 확인 | 서버 순서 저장·단일 항목 이동 API(아래 계약, BE 로컬 검증 환경 제공·운영 미반영) | 드래그·키보드로 순서 변경 |
+| 반영 | 서재 순서 바꾸기 | FE main `a82c21a` 운영 반영·검증 환경 통합 확인 | 서버 순서 저장·단일 항목 이동 API(아래 계약, BE main `2c2b6e7` 운영 반영) | 드래그·키보드로 순서 변경 |
 | 후속 | 실제 책등 이미지·판형 | 카카오는 앞표지만 제공 | 데이터 출처 조사 | 책등이 꽂힌 서재 |
 
 **진행 상황(2026-11-02):** 1~7번이 운영에 배포되었고(운영 OpenAPI 확인), FE가 검색 더 보기·201/200 안내·날짜 필드 전송·`allowed_statuses`·완독 라벨·오류 코드 안내로 전환했습니다. FE의 `pickIsbn13`·KST 시각 변환·전환 규칙 복제는 삭제했습니다.
 
-## 서재 순서 변경 계약 (FE 구현·검증 환경 확인, 운영 미반영)
+## 서재 순서 변경 계약 (운영 반영)
 
-BE가 제시한 204 응답과 `invalid_position` 코드를 포함해 아래 계약을 FE에서 수용합니다(2026-11-02). 기존 공통 API는 204에서 JSON을 읽지 않습니다. BE `feat/library-order`의 `728f8e2`와 로컬 검증 API의 `/health`·`/ready` 200, OpenAPI의 필수 기준 필드·204 응답을 확인했습니다. FE는 검증 계정 A/B로 실제 로그인·이동·새로고침 유지·21권 페이지 경계·같은 브라우저 계정 전환을 확인했습니다. BE develop 병합·운영 배포는 확인하지 않았습니다.
+BE가 제시한 204 응답과 `invalid_position` 코드를 포함해 아래 계약을 FE에서 수용합니다(2026-11-02). 기존 공통 API는 204에서 JSON을 읽지 않습니다. BE `728f8e2` 구현과 로컬 검증 API를 대조했고, 검증 계정 A/B로 실제 로그인·이동·새로고침 유지·21권 페이지 경계·같은 브라우저 계정 전환을 확인했습니다. 이후 BE main `2c2b6e7`·FE main `a82c21a` 운영 반영을 확인했습니다. 운영 계정의 실제 순서 이동·새로고침 저장 유지는 아직 검증하지 않았습니다.
 
 - `PATCH /library/books/{user_book_id}/position`, 본문 `{ "after_user_book_id": "바로 앞에 둘 서재 항목 UUID" }`. 필드는 필수이며 `null`이면 맨 앞으로 이동합니다. 생략은 422 `validation_error`입니다. 경로와 본문의 ID는 모두 개인 `user_book_id`입니다.
 - 성공은 본문 없는 204입니다. 이미 같은 위치인 요청도 204로 처리합니다.
