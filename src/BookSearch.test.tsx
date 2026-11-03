@@ -38,6 +38,18 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+test('검색 429는 Retry-After 동안 다시 검색·더 보기를 막고 자동으로 다시 보내지 않는다', async () => {
+  mocks.searchBooks.mockRejectedValueOnce(new ApiError(429, 'Too many requests', 'rate_limited', 1))
+  search('소년이 온다')
+  expect((await screen.findByRole('alert')).textContent).toBe('검색 요청이 많습니다. 1초 뒤에 다시 시도해주세요.')
+  const button = screen.getByRole('button', { name: '검색' })
+  expect(button).toHaveProperty('disabled', true)
+  search('소년이 온다')
+  expect(mocks.searchBooks).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(button).toHaveProperty('disabled', false), { timeout: 2000 })
+  expect(mocks.searchBooks).toHaveBeenCalledTimes(1)
+})
+
 test('공백만 입력하면 요청하지 않는다', () => {
   search('   ')
   expect(mocks.searchBooks).not.toHaveBeenCalled()

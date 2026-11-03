@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { addLibraryBook } from './api'
 import {
+  deleteAccount,
   getPasswordResetUser,
   requestPasswordReset,
   signIn,
@@ -391,4 +392,35 @@ test('사용자 확인 중 계정이 바뀌면 저장 요청을 시작하지 않
   complete({ data: { user: sessionA.user }, error: null })
   await expect(request).rejects.toThrow()
   expect(auth.updateUser).not.toHaveBeenCalled()
+})
+
+const withEmail = (session: Session, email = 'reader@example.test') => ({ ...session, user: { ...session.user, email } })
+
+test('탈퇴는 현재 계정 이메일로 다시 로그인한 새 토큰으로 DELETE /me를 보낸다', async () => {
+  currentSession = withEmail(sessionA)
+  const fresh = { ...withEmail(sessionA), access_token: 'test-token-fresh' }
+  auth.signInWithPassword.mockResolvedValue({ data: { session: fresh }, error: null })
+  fetchMock.mockResolvedValue(new Response(null, { status: 204 }))
+  await expect(deleteAccount('current password')).resolves.toBeUndefined()
+  expect(auth.signInWithPassword).toHaveBeenCalledWith({ email: 'reader@example.test', password: 'current password' })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  const [url, init] = fetchMock.mock.calls[0]
+  expect([url, init?.method, (init?.headers as Record<string, string>).Authorization]).toEqual(['https://api.example.test/me', 'DELETE', 'Bearer test-token-fresh'])
+})
+
+test.each([
+  ['비밀번호가 틀리면', () => auth.signInWithPassword.mockResolvedValue({ data: { session: null }, error: new Error('invalid') })],
+  ['다른 계정으로 로그인되면', () => auth.signInWithPassword.mockResolvedValue({ data: { session: withEmail(sessionB) }, error: null })],
+])('%s 탈퇴 요청을 보내지 않는다', async (_label, arrange) => {
+  currentSession = withEmail(sessionA)
+  arrange()
+  await expect(deleteAccount('password')).rejects.toThrow()
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('탈퇴 전 최근 로그인 확인 실패(403)를 코드와 함께 돌려준다', async () => {
+  currentSession = withEmail(sessionA)
+  auth.signInWithPassword.mockResolvedValue({ data: { session: withEmail(sessionA) }, error: null })
+  fetchMock.mockResolvedValue(Response.json({ detail: 'Recent login required', code: 'recent_login_required' }, { status: 403 }))
+  await expect(deleteAccount('password')).rejects.toMatchObject({ status: 403, code: 'recent_login_required' })
 })

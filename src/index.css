@@ -758,10 +758,26 @@ button.link-button:hover:not(:disabled) {
   margin-inline: auto;
 }
 
-.records h1 {
+.records h1,
+.settings h1 {
   margin: var(--space-8) 0 var(--space-6);
   font-size: 1.75rem;
   text-shadow: none;
+}
+
+/* 계정 화면: 카드 안에서 안내·입력·버튼을 세로로 쌓는다 */
+.settings .detail-card {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.settings .detail-card button {
+  justify-self: start;
+  width: auto;
+}
+
+.settings [role='status']:empty {
+  display: none;
 }
 
 .records-reminder {

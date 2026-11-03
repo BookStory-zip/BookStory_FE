@@ -23,6 +23,8 @@ export const isUnclearWrite = (error: unknown) =>
 
 export const RELOGIN_MESSAGE = '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'
 
+export const NICKNAME_RULE = '닉네임은 2~20자의 한글·영문·숫자와 공백(한 칸)·_·-만 쓸 수 있어요.'
+
 // BE가 409·422에 붙이는 원인 코드별 안내. 영어 detail은 보여 주지 않는다.
 const CODE_MESSAGES: Record<string, string> = {
   invalid_transition: '지금 상태에서는 이 상태로 바꿀 수 없습니다. 최신 상태를 확인해주세요.',
@@ -38,6 +40,11 @@ const CODE_MESSAGES: Record<string, string> = {
   validation_error: '입력값을 확인해주세요.',
   review_memo_required: '공개 후기를 남기려면 메모를 입력해주세요.',
   invalid_position: '책을 자기 자신 뒤로 옮길 수 없습니다. 순서를 다시 확인해주세요.',
+  rate_limited: '요청이 많습니다. 잠시 후 다시 시도해주세요.',
+  invalid_nickname: NICKNAME_RULE,
+  recent_login_required: '보안을 위해 비밀번호를 다시 입력해주세요.',
+  account_deletion_failed: '계정 삭제를 마치지 못했습니다. 기록은 이미 지워졌으니 다시 시도해주세요.',
+  internal_error: '서버에 문제가 생겼습니다. 잠시 후 다시 시도해주세요.',
 }
 
 export function codeMessage(error: unknown): string | undefined {

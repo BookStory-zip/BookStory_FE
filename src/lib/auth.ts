@@ -1,4 +1,4 @@
-import { ApiError, getMe } from './api'
+import { ApiError, deleteMe, getMe } from './api'
 import { supabase } from './supabase'
 
 export class SessionMissingError extends Error {
@@ -60,6 +60,20 @@ export async function signIn(
   if (error) throw error
 }
 
+
+// 탈퇴는 최근 비밀번호 인증을 요구하므로 같은 계정으로 다시 로그인한 새 토큰으로 바로 요청한다.
+export async function deleteAccount(password: string): Promise<void> {
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
+  const user = data.session?.user
+  if (!user?.email) throw new SessionMissingError()
+
+  const { data: signed, error: signInError } = await supabase.auth.signInWithPassword({ email: user.email, password })
+  if (signInError) throw signInError
+  if (signed.session?.user.id !== user.id) throw new SessionMissingError()
+
+  await deleteMe(signed.session.access_token)
+}
 
 export async function signOut(): Promise<void> {
   const { error } = await supabase.auth.signOut({
