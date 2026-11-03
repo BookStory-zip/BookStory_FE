@@ -115,6 +115,8 @@ export default function ReadingRecords() {
   const bookCount = new Set(all.filter((book) => book.read).map((book) => book.user_book_id)).size
   const completedCount = all.filter((book) => book.completed).length
   const selectedBooks = selected ? days?.get(selected) ?? [] : []
+  // 편집 중에는 체크한 책이 편집기 카드에 나오므로 완독만 한 책만 아래 목록에 남긴다.
+  const listedBooks = editing ? selectedBooks.filter((book) => !book.read) : selectedBooks
 
   return (
     <section className="records" aria-labelledby="records-title">
@@ -225,11 +227,12 @@ export default function ReadingRecords() {
                 </button>
               )}
               {editing && <ReadingDayEditor key={selected} date={selected} today={today} onChanged={() => load(month)} onBusyChange={setEditingBusy} />}
-              {selectedBooks.length === 0 ? (
+              {!editing && selectedBooks.length === 0 && (
                 <p className="result-note">이 날은 체크하거나 완독한 책이 없습니다.</p>
-              ) : (
+              )}
+              {listedBooks.length > 0 && (
                 <ul>
-                  {selectedBooks.map((book) => (
+                  {listedBooks.map((book) => (
                     <li key={book.user_book_id}>
                       <Link to={`/books/${book.user_book_id}`} className="records-book">
                         {book.thumbnail_url ? (

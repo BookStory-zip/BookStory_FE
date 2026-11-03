@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { ApiError, cancelReadingDate, checkReadingDate, getLibraryBooks, getReadingLogs } from './lib/api'
 import type { LibraryBookItem, ReadingLogEntry } from './lib/api'
 import { withAccessToken } from './lib/auth'
@@ -104,8 +105,8 @@ export default function ReadingDayEditor({ date, today, onChanged, onBusyChange 
   if (!inRange) return <p className="result-note">오늘을 포함한 최근 7일만 체크하거나 취소할 수 있어요.</p>
   const checked = new Set(data?.logs.map((log) => log.user_book_id))
   const rows = [
-    ...(data?.logs.map((log) => ({ id: log.user_book_id, title: log.title, checked: true })) ?? []),
-    ...(data?.books.filter((book) => book.status === 'reading' && !checked.has(book.id)).map((book) => ({ id: book.id, title: book.title, checked: false })) ?? []),
+    ...(data?.logs.map((log) => ({ id: log.user_book_id, title: log.title, authors: log.authors, cover: log.thumbnail_url, checked: true })) ?? []),
+    ...(data?.books.filter((book) => book.status === 'reading' && !checked.has(book.id)).map((book) => ({ id: book.id, title: book.title, authors: book.authors, cover: book.thumbnail_url, checked: false })) ?? []),
   ]
   return (
     <div className="reading-day-editor" aria-label="선택한 날짜 체크 편집" aria-busy={pending}>
@@ -118,8 +119,20 @@ export default function ReadingDayEditor({ date, today, onChanged, onBusyChange 
       {!data && !error && <p className="result-note">체크할 책을 확인하는 중…</p>}
       {data && rows.length === 0 && <p className="result-note">체크할 수 있는 읽는 중 책이나 취소할 기록이 없습니다.</p>}
       <ul>
+        {/* 표지·제목과 체크 버튼을 한 카드에 둔다. 표지·제목은 기존 기록 목록처럼 상세로 이동한다 */}
         {rows.map((row) => <li key={row.id} className="reading-day-row">
-          <span>{row.title}</span>
+          <Link to={`/books/${row.id}`} className="records-book">
+            {row.cover ? (
+              <img className="result-cover" src={row.cover} alt="" width={120} height={174} loading="lazy" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="result-cover cover-empty" aria-hidden="true">{row.title.slice(0, 1)}</div>
+            )}
+            <span>
+              <span className="book-title">{row.title}</span>
+              {row.authors.length > 0 && <span className="book-authors">{row.authors.join(', ')}</span>}
+              <span className="book-authors">{row.checked ? '읽은 날' : '아직 체크하지 않음'}</span>
+            </span>
+          </Link>
           <button type="button" className="secondary compact" aria-label={`${row.title} ${row.checked ? '체크 취소' : '체크'}`} disabled={pending || blocked} onClick={() => void change(row.id, row.checked)}>
             {row.checked ? '체크 취소' : '체크'}
           </button>
