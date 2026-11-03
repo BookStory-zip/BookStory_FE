@@ -208,7 +208,9 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         result = 'ok'
       } catch (error) {
         const isConflict = error instanceof ApiError && error.status === 409
-        const message = options.conflict && isConflict ? options.conflict : saveErrorMessage(error)
+        const message = kind === 'check' && error instanceof ApiError && error.code === 'date_order'
+          ? '현재 독서 시작일보다 이전 날짜에는 체크할 수 없어요.'
+          : options.conflict && isConflict ? options.conflict : saveErrorMessage(error)
         if (active.current) setNotice({ kind: 'error', text: message })
         result = isConflict ? 'conflict' : isUnclearWrite(error) ? 'unclear' : 'failed'
       }
@@ -411,7 +413,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         <div><dt>시작일</dt><dd>{formatKstDate(book.started_at)}</dd></div>
         <div><dt>완독일</dt><dd>{formatKstDate(book.completed_at)}</dd></div>
         <div><dt>중단일</dt><dd>{formatKstDate(book.stopped_at)}</dd></div>
-        <div><dt>최근 체크</dt><dd>{formatKstDate(book.last_read_at)}</dd></div>
+        <div><dt>최근 체크</dt><dd>{book.last_read_date ? spokenDate(book.last_read_date) : '없음'}</dd></div>
       </dl>
 
       <div className="detail-card today-card" aria-labelledby="today-title">

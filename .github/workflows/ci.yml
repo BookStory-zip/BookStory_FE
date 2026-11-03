@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # main 실행에는 운영 배포가 포함되므로 새 커밋이 와도 진행 중인 배포를 끊지 않는다.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check:
@@ -68,3 +69,70 @@ jobs:
 
       - name: Run end-to-end tests
         run: npm run test:e2e
+
+  deploy:
+    name: Deploy production
+    needs: [check, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'BookStory-zip/BookStory_FE' && github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://bookstory-fe.vercel.app
+
+    steps:
+      - name: Check out tested commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@64.0.2
+
+      - name: Build and deploy current main
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+        run: |
+          latest=$(git ls-remote --exit-code origin refs/heads/main | cut -f1)
+          if [[ "$latest" != "$GITHUB_SHA" ]]; then
+            echo 'Newer main exists; this run will not deploy.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Configure $name before enabling production deployment."
+              exit 1
+            fi
+          done
+          node scripts/verify-deployment.mjs --backend
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          node --env-file=.vercel/.env.production.local --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert(process.env.VITE_API_BASE_URL === 'https://bookstory-api-w31a.onrender.com', 'Unexpected production API')
+          assert(process.env.VITE_SUPABASE_URL === 'https://otaxfczjdijkexgvxjvl.supabase.co', 'Unexpected production auth project')
+          assert(process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.startsWith('sb_publishable_'), 'Missing public Supabase key')
+          NODE
+          vercel build --prod --token="$VERCEL_TOKEN"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { writeFileSync } from 'node:fs'
+          assert(/^[a-f\d]{40}$/i.test(process.env.GITHUB_SHA), 'Invalid commit SHA')
+          writeFileSync('.vercel/output/static/deployment.json', JSON.stringify({ commit: process.env.GITHUB_SHA }))
+          NODE
+          vercel deploy --prebuilt --prod --yes --json --token="$VERCEL_TOKEN" > "$RUNNER_TEMP/vercel-deployment.json"
+          echo 'deployed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Verify production and record deployment
+        if: steps.deploy.outputs.deployed == 'true'
+        run: node scripts/verify-deployment.mjs "$GITHUB_SHA" "$RUNNER_TEMP/vercel-deployment.json"

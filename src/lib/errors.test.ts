@@ -23,3 +23,7 @@ test('시간 초과는 반영 여부를 알 수 없는 쓰기로 보고 안내�
   expect(isUnclearWrite(timeout)).toBe(true)
   expect(commonErrorMessage(timeout, '불러오지 못했습니다')).toContain('서버 응답이 없습니다')
 })
+
+test('최근 7일 범위 오류를 한국어로 안내한다', () => {
+  expect(commonErrorMessage(new ApiError(422, '', 'date_too_old'), '실패')).toBe('오늘을 포함한 최근 7일만 체크하거나 취소할 수 있어요.')
+})

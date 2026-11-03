@@ -15,6 +15,20 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 2. BE(`../BookStory_BE`) 코드·운영 OpenAPI와 docs/backend-api.md 계약의 변경 여부를 대조한다. 백엔드 전달 사항이 반영됐으면 FE 후속 작업을 진행한다.
 3. 새 컴퓨터에서는 `npm ci`와 `.env.local`(README)을 먼저 준비한다.
 
+## 지난 날짜 독서 체크 (2026-11-03)
+
+- 작업 브랜치 `feat/past-reading-check`, 기준 develop `bdd398c`. 자동 배포 PR #7과 별개이며 병합은 사용자가 진행한다.
+- 범위: 달력에서 오늘 포함 최근 7일의 체크·취소, 개인 상세의 `last_read_date`, API·오류 안내·검증·문서. 앱 안 안내·푸시·PWA는 이번에 구현하지 않는다.
+- 현재 읽는 중인 책만 새 체크 가능, 기존 체크 취소는 상태와 무관하다. 완독·중단 후 지난 날짜 추가는 허용하지 않는 기존 계약을 따른다. 시작일 검사는 서버가 판단한다.
+- [x] 날짜 경로 PUT·DELETE와 응답 검증, `date_too_old`·독서 체크 전용 `date_order` 안내(기존 오늘 체크 포함)
+- [x] 달력 날짜 선택 → 체크·취소, 전체 서재 페이지 조회, 결과 불명확 시 재전송 없이 재조회, 실패·늦은 응답·KST 날짜 변경 처리
+- [x] 최근 체크를 `last_read_date`로 표시하고 관련 fixture·응답 검증 갱신
+- [x] 단위 테스트 204개·lint·타입 검사/빌드·가짜 API 기반 Playwright 9개 통과. 설치된 Chrome 임시 설정으로 실행하고 390·768·1440px 화면과 키보드 조작을 확인했다. 임시 설정은 제거하고 CI의 Chromium 설치 설정은 유지했다. API 문서·README·CLAUDE.md 갱신, 전체 변경 독립 리뷰와 self-review 완료.
+- [x] BE `feat/past-reading-check` `26903f5`의 로컬 검증 API·Supabase A/B 실제 연동. 오늘·6일 전 체크/취소, 7일 전·미래 거부, 시작일 이전 거부, 기존 체크 멱등성, 완독 후 취소, 실패 전후 보존, 최신 체크 취소 후 이전 날짜/null 복귀를 확인했다. 실제 브라우저 체크·새로고침·최근 체크·A→B→A 분리와 취소도 통과했다. 검증용 새 항목만 생성·삭제했으며 기존 A 21권·B 2권의 서재 순서·전체 개인 상세가 전후 동일함을 확인했다.
+- 독립 리뷰에서 자정에 `today`가 바뀌면 진행 중 저장의 재조회가 빠지는 문제 1건을 발견해 편집 인스턴스를 유지하도록 수정했다. 저장 도중 KST 자정을 넘긴 뒤 잠금·달력/체크 재조회 회귀 테스트로 확인했다. 실제 자정 수동 검증은 하지 않았으며 고정 시각 테스트와 구분한다.
+- PR #8 작성 후 자동 배포 PR #7이 develop `c9c1a71`에 병합되어 기능 브랜치에 동기화했다. README 검사 설명 충돌은 화면·API·배포 스크립트 검사를 모두 포함하도록 해결했다. 결합한 단위 테스트 226개·lint·타입 검사/빌드·actionlint를 통과했다. 기능 코드 충돌은 없으며 배포 활성화·운영 반영과는 구분한다.
+- 운영 반영 순서: FE 검증 → BE 병합·운영 배포 → FE 운영 배포. DB migration 없음. 이번 요청에 병합·배포는 포함하지 않는다.
+
 ## 운영 배포 기록
 
 | 날짜 | FE | 배포 | BE |
@@ -22,6 +36,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 | 2026-10-28 | main `e3999b0` (PR #1, CI run 40610539527 통과) | https://bookstory-fe.vercel.app · `dpl_76PbqgQdBjZqLd9448dpAP7bdMV5` · Vercel CLI `64.0.2` 수동 배포 | Render 운영 배포 커밋 확인 필요(로컬 대조 기준 `185e11b`). `CORS_ORIGINS`에 운영 주소 추가 후 재배포 |
 | 2026-11-02 | main `cdcbff7` ([PR #2](https://github.com/BookStory-zip/BookStory_FE/pull/2), [main CI 41381439179](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41381439179) 통과) | https://bookstory-fe.vercel.app · `dpl_En5qb68qkXZhcDrSjm1sPwBzwwmx` · [배포 URL](https://bookstory-cabqsyvt6-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포 | 기준 `290da3e`, migration `c4d8e2a76f10`(사용자 2026-11-02 확인). 이번 배포 확인은 운영 health·CORS 조회이며 BE 배포 SHA를 새로 검증한 것은 아님 |
 | 2026-11-02 14:33 KST | main `aab40d0` ([PR #3](https://github.com/BookStory-zip/BookStory_FE/pull/3), [main CI 41394235068](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41394235068) 통과) | https://bookstory-fe.vercel.app · `dpl_4nbsYowenZBjF61WCTbbz5HKgAdm` · [배포 URL](https://bookstory-p77qwywj9-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포 | main `1ffaa8a`(PR #9) Render Live와 실제 미래 시작일 422·기존 기록 보존 확인(사용자, 2026-11-02). 이번 BE 변경의 스키마·마이그레이션 변경 없음 |
+| 2026-11-03 KST | main `a82c21a` ([PR #5](https://github.com/BookStory-zip/BookStory_FE/pull/5), [main CI 41417329233](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41417329233) 통과) | https://bookstory-fe.vercel.app · `dpl_AtHZiqTumHoAmz3xZJQAJ3fpBNZe` · [배포 URL](https://bookstory-a8tlcrua6-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포·READY | main `2c2b6e7`(PR #12), migration `57f75310c7d5` 적용·Render Live 완료(BE 유지보수 기록·사용자 안내). FE에서 운영 순서 API·health/ready 200·PATCH CORS 확인 |
 
 배포 후 확인: 모든 SPA 경로 200, 공개 환경변수 3개 번들 반영, 운영·로컬 origin CORS 허용(에이전트). 운영 주소에서 로그인부터 기록까지 통합 동작(사용자, 2026-10-28). 배포 방법은 [docs/maintenance.md](./docs/maintenance.md)를 따른다.
 
@@ -90,7 +105,22 @@ BE 전달 사항, 2026-10-28 BE 계약 수신 상태, 재독 규칙, BE 배포 �
 - [x] 코드 리뷰 반영(2026-11-02): 불러온 범위 재조회, 자동 스크롤, 문서 단위 Escape, 저장·확인 단계 안내, `aria-busy` 범위 축소. 가짜 API 기반 단위 검사 179개·Playwright 8개·lint·빌드 통과
 - [x] 추가 리뷰 수정(2026-11-02): 끝까지 불러온 서재가 100권을 넘으면 이동 후 재조회에서 잘린 책을 더 보기로 이어 받도록 수정. 100·101·123권 경계에서 다음 offset·전체 순서·누락/중복 없는 이어 받기 회귀 검사 추가. 단위 검사 182개·lint·빌드 검증. 실제 기기·운영 API·e2e는 이번 수정에서 재실행하지 않음
 - [ ] 리뷰 반영분의 실제 확인은 사용자 결정으로 이후 UX 다듬기 때 진행: 검증 API에서 21권 이상 불러온 뒤 이동, 실제 Android·iPhone에서 자동 스크롤 속도(가장자리 80px·프레임당 12px)·손잡이 조작감, macOS Safari Escape 취소
+- [x] 사용자 배포 요청으로 [작업 PR #4](https://github.com/BookStory-zip/BookStory_FE/pull/4)를 squash 병합(develop `14b3cb0`), [배포 PR #5](https://github.com/BookStory-zip/BookStory_FE/pull/5)를 merge commit 병합(main `a82c21a`). 작업 PR CI `41416318514`·develop CI `41416862143`·배포 PR CI `41416990336`·[main CI `41417329233`](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41417329233) 모두 성공. 최종 독립 리뷰 지적 없음, 로컬 lint·182개 검사·빌드·Chrome 워커 2개 기반 e2e 8개 통과
+- [x] Vercel 수동 운영 배포(2026-11-03 KST): BE migration·Render 완료 안내 후 격리된 main `a82c21a`에서 CLI `64.0.2`로 배포하고 READY·운영 alias 연결을 확인했다. 기존 `.env.local`은 보존했고 CLI가 배포 트리에 만든 토큰 파일은 제거했다. 배포 ID·URL·BE 기준은 위 표에 기록했다
+- [x] 운영 응답 검증: SPA 7개 경로 200·보안 헤더, 운영 순서 API·health/ready 200·운영 origin PATCH CORS, 새 순서 편집 코드가 포함된 JS 자산 10개·운영 API 설정·검증 프로젝트/로컬 API 설정 미포함 확인. 실제 Chrome 비로그인 화면 390/1440px에서 가로 넘침·미처리 JS 오류 없음
+- [x] 운영 계정에서 실제 순서 이동 후 새로고침 유지 확인(사용자, 2026-11-03). 운영 데이터 쓰기와 두 계정 전환은 자동 배포 검증에 포함하지 않음
 - 브랜치 완료 후 작업 브랜치 push·develop 대상 PR·CI 확인을 진행한다. 원격 반영 결과는 해당 PR·CI와 최종 인계에서 확인하며 병합·main 반영·운영 배포는 별도 요청이다.
+
+## 무료 자동 배포 준비 (2026-11-03)
+
+- 브랜치 흐름 확정(사용자, 2026-11-03): 모든 작업 브랜치 → develop → main. 이번 자동화 작업은 develop PR·CI·병합까지만 진행하고, 다음 기능 작업도 develop에 모은 뒤 운영 alias를 유지하는 시험 배포와 develop → main PR·첫 운영 자동 배포 검증을 함께 진행한다. 작업 브랜치에서 main으로 직접 반영하지 않는다.
+- 사용자 결정: 무료 유지가 우선이다. FE 공개 적합성 점검 후 FE만 공개하는 방향을 준비하고, 공개 전환은 검사 결과·공개 범위를 제시한 뒤 최종 확인받는다. BE·Infra 비공개와 현재 운영 배포는 유지한다.
+- [x] 공개 적합성 검사: 과거 PR head를 포함한 47개 커밋·과거 파일 61개·PR 6개·Actions 로그 34개를 Gitleaks 8.30.1로 검사해 비밀값 탐지 0건. Actions 산출물·저장소 변수/Secrets는 없음. 커밋 개인 이메일 1개와 문서의 검증 프로젝트 주소·테스트 계정명은 공개 범위에 포함된다. 패턴 검사 결과이며 비밀정보 부재의 절대 보장은 아님
+- [x] `.github/workflows/ci.yml`: 공개된 원본 FE 저장소의 main push에서 check·e2e 성공 뒤 Vercel CLI 64.0.2 pull/build/prebuilt 배포. PR·develop·fork·비공개 저장소는 운영 배포하지 않으며 main 실행을 직렬화해 이전 배포가 최신 배포를 덮지 않게 한다
+- [x] 배포 확인 스크립트·회귀 검사: BE ready/CORS 사전 확인, Production 설정 확인, 배포 결과 ID/URL·정적 커밋 표식·SPA 경로·보안 헤더 검사와 Actions Summary 기록. 자동 Git 커밋은 만들지 않으며 수동 배포·복구 절차를 남긴다
+- [x] actionlint 1.7.12·Bash 구문 검사·단위 검사 204개·lint·빌드 통과. 독립 리뷰의 CORS 허용 헤더 누락 지적을 회귀 검사 4건과 함께 수정했고 실제 운영 BE의 ready·인증/JSON PATCH CORS 읽기 전용 검사도 통과했다. 앱 코드·e2e가 바뀌지 않아 로컬 브라우저 흐름은 반복하지 않았으며 원격 전체 CI는 develop 대상 PR에서 확인한다. 기존 운영 확인 1줄도 이번 작업 커밋에 포함한다
+- 이번 작업의 원격 반영 범위는 develop 대상 PR·CI·병합이다(사용자 요청, 2026-11-03). 최종 병합 SHA·CI 결과는 해당 PR과 최종 인계에서 확인한다. main 반영·공개 전환·Secrets 등록·운영 배포는 다음 기능 작업 때 진행한다
+- [ ] 다음 기능 작업과 함께 FE 공개 전환 최종 확인·전용 배포 토큰 등록 후 운영 alias를 유지하는 `--skip-domain` 시험 배포와 자동 배포 첫 실행 확인. 공개 최종 확인 전에는 공개 전환·Secrets 등록·운영 배포를 실행하지 않으며, 실제 배포 성공 전에는 자동화 완료로 기록하지 않는다
 
 ## 개인 독서 통계 연결 (2026-10-30)
 

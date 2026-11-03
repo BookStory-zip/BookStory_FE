@@ -20,6 +20,7 @@ const detail = {
   source_url: 'https://example.test',
   started_at: '2026-10-01T03:00:00Z',
   last_read_at: null,
+  last_read_date: null,
   completed_at: null,
   stopped_at: null,
   stop_reason: null,
@@ -32,6 +33,56 @@ const detail = {
   updated_at: '2026-10-01T00:00:00Z',
   allowed_statuses: ['want_to_read', 'reading', 'completed', 'paused', 'abandoned'],
 }
+
+test('지난 날짜 체크 → 새로고침 → 최근 체크 날짜 → 완독 후 취소가 이어진다', async ({ page }, testInfo) => {
+  await page.clock.setFixedTime(new Date('2026-11-03T03:00:00Z'))
+  await signInWithMockSession(page)
+  let checked = false
+  let completed = false
+  const requests: string[] = []
+  const readDate = '2026-11-02'
+  const log = { id: 'past-log', user_book_id: book.id, read_date: readDate, created_at: '2026-11-03T03:00:00Z', book_id: book.book_id, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url }
+  await mockBackend(page, async (route, url, method) => {
+    const current = { ...book, status: completed ? 'completed' : 'reading' }
+    if (url.pathname === '/library/books') return json(route, [current]).then(() => true)
+    if (url.pathname === `/library/books/${book.id}`) return json(route, { ...detail, ...current, last_read_at: checked ? log.created_at : null, last_read_date: checked ? readDate : null }).then(() => true)
+    if (url.pathname === '/reading-logs') {
+      const start = url.searchParams.get('start_date')!
+      const end = url.searchParams.get('end_date')!
+      return json(route, checked && readDate >= start && readDate <= end ? [log] : []).then(() => true)
+    }
+    if (url.pathname === `/library/books/${book.id}/reading-logs/${readDate}`) {
+      requests.push(method)
+      checked = method === 'PUT'
+      if (method === 'DELETE') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
+      return json(route, log).then(() => true)
+    }
+    return false
+  })
+  await page.goto('/records')
+  await page.getByRole('button', { name: '2026년 11월 2일', exact: true }).click()
+  await page.getByRole('button', { name: '체크·취소하기' }).click()
+  const check = page.getByRole('button', { name: '소년이 온다 체크', exact: true })
+  await check.focus()
+  await check.press('Enter')
+  await expect(page.getByText('1일 동안 1권을 읽었어요.')).toBeVisible()
+  await expect(page.getByRole('button', { name: '소년이 온다 체크 취소' })).toBeEnabled()
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`past-check-${width}.png`), fullPage: true })
+  }
+  await page.reload()
+  await expect(page.getByRole('button', { name: '2026년 11월 2일, 1권: 소년이 온다' })).toBeVisible()
+  await page.getByRole('link', { name: /소년이 온다/ }).click()
+  await expect(page.locator('.detail-dates div').filter({ has: page.getByText('최근 체크', { exact: true }) })).toContainText('2026년 11월 2일')
+  completed = true
+  await page.goto('/records')
+  await page.getByRole('button', { name: '체크·취소하기' }).click()
+  await page.getByRole('button', { name: '소년이 온다 체크 취소' }).click()
+  await expect(page.getByText('이 달에는 체크하거나 완독한 기록이 없습니다.')).toBeVisible()
+  expect(requests).toEqual(['PUT', 'DELETE'])
+})
 
 test('책 검색 → 공통 상세 → 후기 공개·수정·비공개가 연결된다', async ({ page }, testInfo) => {
   const saved = { ...detail, memo: '마음에 남은 문장', rating: 4, is_review_public: false,

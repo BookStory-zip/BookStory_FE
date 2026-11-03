@@ -2,7 +2,9 @@ import { afterEach, expect, test, vi } from 'vitest'
 import {
   addLibraryBook,
   cancelReadingToday,
+  cancelReadingDate,
   checkReadingToday,
+  checkReadingDate,
   deleteLibraryBook,
   getLibraryBooks,
   getMe,
@@ -16,6 +18,25 @@ import {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
+})
+
+test('지난 날짜 체크·취소는 개인 id와 날짜를 경로로 보내고 본문을 생략한다', async () => {
+  const log = { id: 'log-1', user_book_id: 'own/1', read_date: '2026-10-28', created_at: '2026-11-03T00:00:00Z' }
+  const fetchMock = vi.fn().mockResolvedValueOnce(Response.json(log)).mockResolvedValueOnce(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(checkReadingDate('token', 'own/1', '2026-10-28')).resolves.toEqual(log)
+  await expect(cancelReadingDate('token', 'own/1', '2026-10-28')).resolves.toBeUndefined()
+  expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    ['https://api.example.test/library/books/own%2F1/reading-logs/2026-10-28', 'PUT', undefined],
+    ['https://api.example.test/library/books/own%2F1/reading-logs/2026-10-28', 'DELETE', undefined],
+  ])
+})
+
+test('다른 날짜나 다른 개인 항목의 체크 응답을 성공으로 받아들이지 않는다', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ id: '1', user_book_id: 'other', read_date: '2026-11-03', created_at: 'now' })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(checkReadingDate('token', 'own', '2026-11-02')).rejects.toThrow('독서 체크 응답 형식')
 })
 
 test.each([null, 'anchor-user-book'])('순서 변경은 개인 id와 필수 기준 %j를 보내고 빈 204를 읽는다', async (anchor) => {

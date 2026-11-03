@@ -246,6 +246,7 @@ export type LibraryBookDetail = LibraryBookItem & {
   source_url: string
   started_at: string | null
   last_read_at: string | null
+  last_read_date: string | null
   completed_at: string | null
   stopped_at: string | null
   stop_reason: string | null
@@ -279,6 +280,7 @@ function isLibraryBookDetail(value: unknown): value is LibraryBookDetail {
       'stop_reason',
       'memo',
     ].every((key) => isNullableString(item[key])) &&
+    (item.last_read_date === null || (typeof item.last_read_date === 'string' && DATE_PATTERN.test(item.last_read_date))) &&
     ['review_published_at', 'review_updated_at'].every((key) => item[key] === null ||
       (typeof item[key] === 'string' && Number.isFinite(Date.parse(item[key])))) &&
     typeof item.source_url === 'string' &&
@@ -422,10 +424,18 @@ export async function checkReadingToday(
   accessToken: string,
   userBookId: string,
 ): Promise<ReadingLog> {
-  const data = await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/today`, accessToken, {
+  return checkReadingDate(accessToken, userBookId, 'today')
+}
+
+export async function checkReadingDate(
+  accessToken: string,
+  userBookId: string,
+  readDate: string,
+): Promise<ReadingLog> {
+  const data = await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/${encodeURIComponent(readDate)}`, accessToken, {
     method: 'PUT',
   })
-  if (!isReadingLog(data)) {
+  if (!isReadingLog(data) || data.user_book_id !== userBookId || (readDate !== 'today' && data.read_date !== readDate)) {
     throw new Error('독서 체크 응답 형식이 올바르지 않습니다.')
   }
   return data
@@ -436,7 +446,15 @@ export async function cancelReadingToday(
   accessToken: string,
   userBookId: string,
 ): Promise<void> {
-  await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/today`, accessToken, {
+  return cancelReadingDate(accessToken, userBookId, 'today')
+}
+
+export async function cancelReadingDate(
+  accessToken: string,
+  userBookId: string,
+  readDate: string,
+): Promise<void> {
+  await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/${encodeURIComponent(readDate)}`, accessToken, {
     method: 'DELETE',
   })
 }

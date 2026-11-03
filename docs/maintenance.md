@@ -34,11 +34,45 @@
 npm.cmd run dev -- --mode validation --port 5173 --strictPort
 ```
 
+지난 날짜 체크 검증 시에는 날짜 경로 PUT·DELETE와 개인 상세 `last_read_date`가 있는 BE 브랜치를 실행합니다. 현재 결과는 plan.md의 "지난 날짜 독서 체크"에 기록합니다. 기존 검증 책의 메모·날짜·공개 설정을 바꾸는 대신 새 검증 항목을 만들어 검사 후 해당 항목만 삭제하고, 기존 A/B 데이터·서재 순서의 전후 일치를 확인했습니다. FE 운영 배포는 해당 BE API의 운영 반영 완료 후 진행합니다.
+
 검증 계정은 최소 2개이며 화면·데이터·세션 전환 검사 범위는 [plan.md](../plan.md)의 "다음 기능 제안·검증 준비"를 따릅니다. 미래 완독일은 검증 환경의 인증 API로 422와 기존 기록 보존을 확인합니다. KST 자정 경계의 BE 고정 시각 테스트·FE mock 검사와 실제 자정 수동 확인은 별도 결과로 기록하며, 이를 위해 운영 서버 시계를 바꾸지 않습니다. 운영 데이터 복제·운영 테스트 스위트·자동 정리는 수행하지 않습니다.
 
 검증 계정의 `.test` 주소는 메일을 수신할 수 없으므로 비밀번호 재설정 메일 확인은 현재 검증 범위에서 제외합니다. 이 검사가 필요하면 수신 가능한 검증 주소를 BE와 별도로 협의합니다.
 
-## 배포 절차 (Vercel CLI 수동)
+## 무료 자동 배포 준비 (공개 전환·인증 설정 대기)
+
+현재 운영은 아래 수동 절차를 사용합니다. 자동화 코드는 `ci/vercel-production`에서 준비하며, 공개 최종 확인·Secrets/변수 등록·원격 CI·첫 자동 배포 확인 전까지 활성화 완료로 기록하지 않습니다.
+
+- 무료 구성은 FE 저장소 공개 + Vercel Hobby + GitHub의 표준 `ubuntu-latest` 러너입니다. Hobby의 개인·비상업용 조건과 사용 한도를 따르며 Pro·대형 유료 러너·유료 기능을 자동 선택하지 않습니다. [Vercel Git 제한](https://vercel.com/docs/git#using-hobby-teams), [Hobby 조건](https://vercel.com/docs/plans/hobby), [공개 저장소 러너 요금](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)을 확인합니다.
+- FE만 공개 대상으로 삼으며 BE·Infra는 변경하지 않습니다. 공개 전 소스·과거 PR 커밋·Actions 로그/산출물을 점검하고 개인 이메일·운영 및 검증 환경 주소·테스트 계정명이 이력과 문서에 포함되는 범위를 사용자에게 알립니다. `.env`의 현재 Git 제외만으로 과거 이력까지 안전하다고 판단하지 않습니다.
+- Vercel 기본 Git 연동은 연결하지 않습니다. `vercel.json`의 `git.deploymentEnabled=false`로 중복 배포를 막고 [공식 Actions+CLI 방식](https://vercel.com/kb/guide/how-can-i-use-github-actions-with-vercel)을 사용합니다.
+
+공개 최종 확인 후 다음 값을 GitHub에 설정합니다. 실제 토큰 값은 채팅·소스·로그로 출력하지 않습니다.
+
+| 위치 | 이름 | 내용 |
+| --- | --- | --- |
+| Actions Secret (`production` 환경 또는 저장소) | `VERCEL_TOKEN` | `bookstory-fe` 전용 토큰. CLI 64.0.2의 `tokens create --project` 옵션은 확인했지만 실제 Hobby 계정에서 발급 가능한지 아직 검증하지 않았습니다. 범위를 확인한 뒤 등록하며, 미지원 시 더 넓은 토큰으로 자동 대체하거나 계정 공용 로그인 토큰을 복사하지 않습니다 |
+| Actions 저장소 변수 | `VERCEL_ORG_ID` | 기존 프로젝트 `.vercel/project.json`의 `orgId` |
+| Actions 저장소 변수 | `VERCEL_PROJECT_ID` | 같은 파일의 `projectId` |
+| Vercel Production | 기존 `VITE_` 공개 설정 3개 | 그대로 유지하며 `vercel pull --environment=production`으로 읽습니다 |
+
+모든 작업 브랜치는 develop 대상 PR로 모으며, main 대상 PR은 develop에서만 만듭니다. 자동 배포 준비 브랜치도 예외가 아닙니다.
+
+이번 자동화 작업은 develop PR·CI·병합까지만 진행하며, 첫 배포 검증은 다음 기능 작업과 함께 진행합니다(사용자, 2026-11-03). 다음 기능도 develop으로 모은 뒤, 공개 최종 확인·전용 토큰 준비를 마치고 해당 develop 커밋에서 `vercel build --prod`와 `vercel deploy --prebuilt --prod --skip-domain` 시험 배포를 확인합니다. 운영 alias는 유지한 채 빌드·인증·READY 결과를 확인한 다음 develop → main PR로 반영하고 첫 Actions 배포를 검증합니다. 기능 변화가 없어도 운영의 `deployment.json` 커밋 표식과 Actions Summary로 배포 여부를 확인할 수 있습니다.
+
+배포 흐름은 다음과 같습니다.
+
+1. PR·develop·fork에서는 check·e2e만 실행합니다. 공개된 원본 `BookStory-zip/BookStory_FE`의 main push에서 두 작업이 성공해야 deploy 작업을 실행합니다. 비공개 저장소에서는 배포하지 않습니다.
+2. main 워크플로는 진행 중인 실행을 취소하지 않고 직렬화합니다. 배포 직전 원격 main과 검사한 SHA를 비교해 이미 더 최신 main이 있으면 이전 실행은 배포를 생략합니다. 토큰은 배포 단계에만 전달하고 배포 작업은 공유 npm 캐시를 사용하지 않습니다.
+3. 읽기 전용 BE ready·운영 origin의 PATCH CORS를 먼저 확인합니다. 이 검사가 DB migration·새 API 계약의 적용을 증명하는 것은 아니므로, BE 변경이 필요한 기능은 BE 배포 완료 확인 후 FE main을 병합합니다. 자동화 활성화 후 main 병합은 운영 배포 승인입니다.
+4. CLI `64.0.2`로 Production 설정을 읽고 API 주소·Supabase 프로젝트·공개키 형식을 값 출력 없이 확인합니다. `vercel build --prod` 결과의 `.vercel/output/static/deployment.json`에 검사한 SHA만 기록하고 `vercel deploy --prebuilt --prod --json`으로 올립니다. `.vercel` 파일은 커밋·산출물 업로드하지 않습니다.
+5. CLI가 반환한 READY/production·배포 ID/URL을 검증하고, 운영 alias의 커밋 표식·7개 SPA 경로·보안 헤더를 읽기 전용으로 확인합니다. Actions Summary에는 배포 ID/URL을 먼저 기록하고 검증 성공/실패를 덧붙이므로 사후 검사에 실패해도 배포를 추적할 수 있습니다.
+6. 검사 전 실패는 배포를 막습니다. 배포 후 응답 검사 실패는 이미 바뀐 운영을 자동으로 되돌리지 않으며, 실행을 실패로 표시하고 아래 수동 절차로 복구합니다. 운영 계정의 실제 데이터 쓰기는 이 자동 검사에 포함하지 않습니다.
+
+토큰 만료·취소·저장소 비공개 전환·요금제/권한 변경 시 상태를 다시 확인합니다. CI가 실패했을 때 유료 전환이나 검사를 건너뛰는 대체 경로를 자동 실행하지 않습니다. 수동 복구 시에는 해당 워크플로를 중지하고 진행 중인 Vercel 배포 상태를 먼저 확인한 뒤, 이전 정상 커밋을 아래 절차로 배포합니다. 이후 원인을 해결하고 자동화를 재개합니다.
+
+## 배포 절차 (Vercel CLI 수동·복구용)
 
 조직 비공개 저장소는 Vercel Hobby에서 Git 연동이 제한되어, CLI로 수동 배포합니다(2026-10-28 결정).
 
