@@ -72,6 +72,6 @@
 - PR CI를 확인하며, PR 병합·develop → main 배포 PR·main 반영·운영 배포는 별도 요청 범위에서 진행한다. 요청받은 문서 반영을 앱 전체 자동 구현 권한으로 확대하지 않는다.
 - 커밋 전 staged diff를 확인하고 요청 파일만 포함한다. 무관한 변경을 되돌리거나 강제 push하지 않는다. 원격 main이 변경되면 충돌과 영향 범위를 검토한다.
 - 커밋·PR 제목은 feat: 도서 검색 추가, fix: 독서 상태 수정, docs: 프론트 계획 정리처럼 작성한다. 작업 PR은 squash merge, develop → main 배포 PR은 merge commit을 사용한다. 장기 브랜치는 보존한다.
-- main 긴급 수정은 필요 시 hotfix 브랜치를 사용하고 main → develop 동기화를 진행한다. main 직접 문서 수정도 다음 개발 전 develop 반영 필요 여부를 확인한다.
+- 모든 작업 브랜치(기능·수정·문서·CI·긴급 수정 포함)는 develop 대상 PR로 모은다. main 대상 PR의 출발 브랜치는 develop만 허용하며, 작업 브랜치 → main PR이나 main 직접 수정은 하지 않는다(2026-11-03 사용자 지시).
 - develop → main PR 전 self-review를 수행한다. 사용 가능한 self-review 명령·스킬이 없으면 diff·연결 코드·테스트·접근 제어를 직접 검토하고 그 사실을 밝힌다.
 - 초기 운영 배포는 CI 통과 main 버전을 수동 선택하고 FE·BE 버전을 기록한다. 브랜치 보호는 실제 요금제·체크 이름을 확인한 뒤 설정한다.
