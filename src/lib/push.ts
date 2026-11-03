@@ -1,6 +1,6 @@
 import { deletePushSubscription, getPushPublicKey, savePushSubscription } from './api'
 import type { PushSubscriptionBody } from './api'
-import { withAccessToken } from './auth'
+import { SessionMissingError, withAccessToken } from './auth'
 import { supabase } from './supabase'
 
 // 알림을 켠 계정. 같은 브라우저의 다른 계정이 이 구독을 이어받지 않게 한다.
@@ -54,7 +54,8 @@ function decodeKey(value: string) {
 // 서버 발송 키가 바뀌면 이전 키로 만든 구독은 403으로 실패하므로 다시 구독한다.
 function sameKey(subscription: PushSubscription, key: Uint8Array) {
   const current = subscription.options.applicationServerKey
-  if (!current) return false
+  // 키를 알려 주지 않는 브라우저에서 매번 다시 구독하지 않는다. 키 교체는 그 브라우저에서 다시 켜야 반영된다.
+  if (!current) return true
   const bytes = new Uint8Array(current)
   return bytes.length === key.length && bytes.every((byte, index) => byte === key[index])
 }
@@ -88,6 +89,8 @@ export async function enableReminder(): Promise<ReminderState> {
   const userId = await sessionUserId()
   const subscription = await subscribeWithServerKey(await currentSubscription())
   try {
+    // 키 조회·구독을 기다리는 사이 다른 계정으로 바뀌었으면 그 계정에 등록하지 않는다.
+    if ((await sessionUserId()) !== userId) throw new SessionMissingError()
     await withAccessToken((token) => savePushSubscription(token, toBody(subscription)))
   } catch (error) {
     // 등록을 확인하지 못한 구독은 남기지 않는다. 서버에 저장됐더라도 푸시 서비스의 410으로 정리된다.

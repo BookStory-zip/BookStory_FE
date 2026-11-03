@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from './lib/api'
-import { commonErrorMessage, isTimeout } from './lib/errors'
+import { commonErrorMessage } from './lib/errors'
 import { disableReminder, enableReminder, getReminderState } from './lib/push'
 import type { ReminderState } from './lib/push'
 
@@ -13,8 +13,8 @@ const STATE_NOTES: Record<ReminderState, string> = {
 
 function reminderErrorMessage(error: unknown) {
   if (error instanceof ApiError && error.status === 503) return '지금은 알림을 사용할 수 없어요. 잠시 후 다시 시도해주세요.'
-  // 브라우저·푸시 서비스가 구독을 거절한 경우. 시간 초과는 공통 안내를 쓴다.
-  if (error instanceof DOMException && !isTimeout(error)) return '브라우저가 알림 등록을 거절했어요. 잠시 후 다시 시도해주세요.'
+  // 구독 실패(푸시 서비스 오류는 AbortError)·키 해석 실패. 요청 시간 초과(TimeoutError)만 공통 안내를 쓴다.
+  if (error instanceof DOMException && error.name !== 'TimeoutError') return '알림을 등록하지 못했어요. 잠시 후 다시 시도해주세요.'
   return commonErrorMessage(error, '알림 설정을 바꾸지 못했습니다')
 }
 

@@ -3,12 +3,13 @@ import { Link } from 'react-router'
 import { ApiError, cancelReadingDate, checkReadingDate, getLibraryBooks, getReadingLogs } from './lib/api'
 import type { LibraryBookItem, ReadingLogEntry } from './lib/api'
 import { withAccessToken } from './lib/auth'
-import { addDays } from './lib/dates'
+import { isEditableDate } from './lib/dates'
 import { commonErrorMessage, isUnclearWrite } from './lib/errors'
 
-type Props = { date: string; today: string; onChanged: () => Promise<boolean>; onBusyChange: (busy: boolean) => void }
+// onReadyChange: 체크 상태를 불러와 카드를 보여 줄 수 있는지 알린다. 부모 목록의 중복 표시를 정한다.
+type Props = { date: string; today: string; onChanged: () => Promise<boolean>; onBusyChange: (busy: boolean) => void; onReadyChange?: (ready: boolean) => void }
 
-export default function ReadingDayEditor({ date, today, onChanged, onBusyChange }: Props) {
+export default function ReadingDayEditor({ date, today, onChanged, onBusyChange, onReadyChange }: Props) {
   const [data, setData] = useState<{ books: LibraryBookItem[]; logs: ReadingLogEntry[] } | null>(null)
   const [blocked, setBlocked] = useState(true)
   const [pending, setPending] = useState(false)
@@ -18,7 +19,7 @@ export default function ReadingDayEditor({ date, today, onChanged, onBusyChange 
   const active = useRef(true)
   const locked = useRef(false)
   const noticeRef = useRef<HTMLParagraphElement>(null)
-  const inRange = date >= addDays(today, -6) && date <= today
+  const inRange = isEditableDate(date, today)
 
   const load = useCallback(() => {
     const current = ++version.current
@@ -60,6 +61,12 @@ export default function ReadingDayEditor({ date, today, onChanged, onBusyChange 
     if (inRange) void load()
     return () => { version.current += 1 }
   }, [inRange, load])
+
+  const ready = inRange && data !== null
+  useEffect(() => {
+    onReadyChange?.(ready)
+    return () => onReadyChange?.(false)
+  }, [ready, onReadyChange])
 
   async function change(id: string, cancel: boolean) {
     if (locked.current || blocked || !inRange) return

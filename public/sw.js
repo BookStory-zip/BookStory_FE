@@ -1,6 +1,5 @@
 // 독서 알림 전용 서비스 워커. 푸시 수신과 알림 클릭만 처리하고 요청을 가로채거나 캐시하지 않는다.
 self.addEventListener('install', () => self.skipWaiting())
-self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))
 
 self.addEventListener('push', (event) => {
   let date = ''
@@ -26,19 +25,6 @@ self.addEventListener('notificationclick', (event) => {
   // 알림 날짜의 체크 편집기를 연다. 자정이 지나 눌러도 그날을 체크할 수 있다.
   const date = event.notification.data?.date
   const url = /^\d{4}-\d{2}-\d{2}$/.test(date ?? '') ? `/records?check=${date}` : '/records'
-  event.waitUntil(
-    (async () => {
-      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      for (const client of windows) {
-        try {
-          await client.focus()
-          await client.navigate(url)
-          return
-        } catch {
-          // 이동할 수 없는 창이면 새 창을 연다.
-        }
-      }
-      await self.clients.openWindow(url)
-    })(),
-  )
+  // 열린 창을 이동시키면 작성 중인 메모·날짜가 사라질 수 있어 항상 새 창으로 연다.
+  event.waitUntil(self.clients.openWindow(url))
 })

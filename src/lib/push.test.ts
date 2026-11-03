@@ -13,7 +13,7 @@ type FakeSubscription = ReturnType<typeof fakeSubscription>
 function fakeSubscription(endpoint: string, key: Uint8Array) {
   return {
     endpoint,
-    options: { applicationServerKey: key.slice().buffer },
+    options: { applicationServerKey: key.slice().buffer as ArrayBuffer | null },
     toJSON: () => ({ endpoint, keys: { p256dh: `p256dh-${endpoint}`, auth: 'auth-secret' } }),
     unsubscribe: vi.fn(async () => {
       current = null
@@ -93,6 +93,29 @@ test('발송 키가 없는 서버의 503은 구독 전에 그대로 알린다', 
   await expect(enableReminder()).rejects.toMatchObject({ status: 503 })
   expect(pushManager.subscribe).not.toHaveBeenCalled()
   expect(localStorage.getItem(OWNER_KEY)).toBeNull()
+})
+
+test('켜는 도중 다른 계정으로 바뀌면 새 계정에 등록하지 않고 구독을 끊는다', async () => {
+  pushManager.subscribe.mockImplementationOnce(async ({ applicationServerKey }) => {
+    userId = 'user-b'
+    current = fakeSubscription('https://fcm.googleapis.com/fcm/send/new', applicationServerKey)
+    return current
+  })
+  await expect(enableReminder()).rejects.toThrow('로그인이 필요합니다.')
+  expect(calls()).toEqual([['GET', '/push/public-key', null]])
+  expect(current).toBeNull()
+  expect(localStorage.getItem(OWNER_KEY)).toBeNull()
+})
+
+test('구독 키를 알려 주지 않는 브라우저는 앱 시작 때마다 다시 구독하지 않는다', async () => {
+  const existing = fakeSubscription('https://web.push.apple.com/old', new Uint8Array([4, 1, 2, 3]))
+  existing.options.applicationServerKey = null
+  current = existing
+  localStorage.setItem(OWNER_KEY, 'user-a')
+  await syncReminder(() => true)
+  expect(existing.unsubscribe).not.toHaveBeenCalled()
+  expect(pushManager.subscribe).not.toHaveBeenCalled()
+  expect(calls().map(([method, path]) => `${method} ${path}`)).toEqual(['GET /push/public-key', 'PUT /me/push-subscriptions'])
 })
 
 test('서버 등록에 실패하면 브라우저 구독을 남기지 않는다', async () => {

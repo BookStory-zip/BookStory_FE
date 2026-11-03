@@ -31,6 +31,14 @@ test('켜기가 503이면 로그아웃 없이 다시 시도할 수 있는 안내
   expect(screen.getByRole('button', { name: '알림 켜기' })).toHaveProperty('disabled', false)
 })
 
+test('푸시 서비스가 구독을 실패시키면(AbortError) 시간 초과가 아닌 등록 실패로 안내한다', async () => {
+  push.getReminderState.mockResolvedValue('off')
+  push.enableReminder.mockRejectedValue(new DOMException('push service error', 'AbortError'))
+  render(<ReadingReminder />)
+  fireEvent.click(await screen.findByRole('button', { name: '알림 켜기' }))
+  expect((await screen.findByRole('alert')).textContent).toBe('알림을 등록하지 못했어요. 잠시 후 다시 시도해주세요.')
+})
+
 test('켜고 끄면 서버 결과에 따라 버튼 상태가 바뀐다', async () => {
   push.getReminderState.mockResolvedValue('off')
   push.enableReminder.mockResolvedValue('on')

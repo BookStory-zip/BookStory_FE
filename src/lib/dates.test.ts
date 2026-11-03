@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { addMonths, calendarDays, monthRange } from './dates'
+import { addMonths, calendarDays, isEditableDate, monthRange } from './dates'
 import { msUntilNextKstDay } from '../useKstToday'
 
 test('월 범위는 양 끝을 포함하고 윤년 2월도 맞다', () => {
@@ -13,6 +13,19 @@ test('달력은 1일이 있는 주의 일요일부터 6주를 채운다', () => 
   expect(days).toHaveLength(42)
   expect(days[0]).toBe('2026-09-27')
   expect(days[4]).toBe('2026-10-01')
+})
+
+test.each([
+  ['2026-11-01', true],
+  ['2026-10-26', true],
+  ['2026-10-25', false],
+  ['2026-11-02', false],
+  ['2026-10-99', false],
+  ['2026-10-32', false],
+  ['2026-02-30', false],
+  ['today', false],
+])('오늘 2026-11-01 기준 %s의 체크 가능 여부는 %s', (date, editable) => {
+  expect(isEditableDate(date, '2026-11-01')).toBe(editable)
 })
 
 test('다음 한국 자정까지 남은 시간을 계산한다', () => {
