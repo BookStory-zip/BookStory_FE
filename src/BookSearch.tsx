@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { SubmitEvent } from 'react'
 import { Link } from 'react-router'
 import { addLibraryBook, ApiError, SEARCH_LAST_PAGE, searchBooks, statusLabels } from './lib/api'
@@ -12,6 +12,16 @@ type SaveState = { phase: 'saving' | 'saved' | 'error'; message: string }
 const retrySeconds = (error: ApiError) => Math.max(1, Math.ceil(error.retryAfter ?? 60))
 // 화면을 나갔다 돌아와도 차단이 이어지도록 모듈 범위에 둔다(한도는 접속 IP 기준이라 계정과 무관).
 let searchBlockedUntil = 0
+const searchBlockListeners = new Set<() => void>()
+const getSearchBlockedUntil = () => searchBlockedUntil
+function subscribeSearchBlock(listener: () => void) {
+  searchBlockListeners.add(listener)
+  return () => { searchBlockListeners.delete(listener) }
+}
+function setSearchBlockedUntil(until: number) {
+  searchBlockedUntil = until
+  searchBlockListeners.forEach((listener) => listener())
+}
 
 function searchErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
@@ -49,24 +59,25 @@ export default function BookSearch() {
   const [paging, setPaging] = useState<{ query: string; page: number; isEnd: boolean } | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [moreError, setMoreError] = useState<string | null>(null)
-  const [coolingDown, setCoolingDown] = useState(() => Date.now() < searchBlockedUntil)
+  const blockedUntil = useSyncExternalStore(subscribeSearchBlock, getSearchBlockedUntil)
+  const coolingDown = blockedUntil > 0
   const searchVersion = useRef(0)
 
   // 차단이 끝나면 429 안내도 지운다. 차단 중에는 다른 검색 오류가 생기지 않는다.
   useEffect(() => {
-    if (!coolingDown) return
+    if (!blockedUntil) return
     const timer = setTimeout(() => {
-      setCoolingDown(false)
+      if (searchBlockedUntil !== blockedUntil) return
+      setSearchBlockedUntil(0)
       setError(null)
       setMoreError(null)
-    }, Math.max(0, searchBlockedUntil - Date.now()))
+    }, Math.max(0, blockedUntil - Date.now()))
     return () => clearTimeout(timer)
-  }, [coolingDown])
+  }, [blockedUntil])
 
   function startCooldown(error: unknown) {
     if (!(error instanceof ApiError) || error.status !== 429) return
-    searchBlockedUntil = Date.now() + retrySeconds(error) * 1000
-    setCoolingDown(true)
+    setSearchBlockedUntil(Date.now() + retrySeconds(error) * 1000)
   }
 
   async function handleSearch(event: SubmitEvent<HTMLFormElement>) {

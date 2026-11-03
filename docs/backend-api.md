@@ -38,7 +38,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩. 항목의 `completed_at`·`status`·`has_completed`는 현재 기록(체크 당시 아님) | 마지막 페이지까지 전부 조회. 체크한 날 표시에만 사용 |
 | `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
 | `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`) | 기록 화면 통계 탭에서만 요청. 아래 통계 참고 |
-| `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 검증 환경 제공 예정 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
+| `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 검증 환경 확인·운영 배포 전 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
 | `DELETE /me` | 204. 비밀번호 인증 5분 이내 토큰만, 아니면 403 `recent_login_required`, 로그인 계정 삭제 실패 503 `account_deletion_failed`(재시도 가능) | 계정 화면 탈퇴. 비밀번호 재로그인 후 요청 |
 | `GET /push/public-key` | 공개. `{public_key}`(base64url), 발송 키 미설정이면 503. 검증 환경 제공 예정, 운영 배포 전 | 구독의 `applicationServerKey`. 아래 독서 알림 참고 |
 | `PUT·DELETE /me/push-subscriptions` | PUT `{endpoint, keys: {p256dh, auth}}`, DELETE `{endpoint}`, 모두 204. endpoint는 https 푸시 서비스만, 형식 오류 422 | 알림 켜기·끄기·앱 시작 재등록·로그아웃 해제 |
@@ -109,7 +109,7 @@ BE `feat/reading-reminder` `affb334` 계약을 2026-11-03 확정했습니다. DB
 - 503은 "지금은 알림을 사용할 수 없어요"로 안내하고 로그아웃하지 않습니다. 지원하지 않는 브라우저는 버튼 대신 iOS 16.4 이상 홈 화면 추가 안내를 보여 줍니다. endpoint는 로그·화면에 출력하지 않습니다.
 - 서비스 워커는 요청을 가로채거나 캐시하지 않습니다. `/sw.js`는 `Cache-Control: no-cache`로 배포하고, manifest는 홈 화면 추가용 최소 구성입니다.
 
-## 계정·안정성 (공개 가입 전, 검증 전)
+## 계정·안정성 (공개 가입 전, 검증 완료·운영 배포 전)
 
 BE와 2026-11-03 확정했습니다. BE 2차 배포(알림·상태 필터와 함께)에 포함되며 FE는 그 뒤 배포합니다.
 

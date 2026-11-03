@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
@@ -62,6 +62,22 @@ test('담기 429는 저장되지 않았다고 안내한다', async () => {
   search('소년이 온다')
   fireEvent.click(await screen.findByRole('button', { name: '서재에 담기' }))
   expect(await screen.findByText('요청이 많아 서재에 담지 못했습니다. 잠시 후 다시 시도해주세요.')).toBeTruthy()
+})
+
+test('검색 화면에 재진입한 뒤 이전 요청의 429가 도착해도 현재 검색을 막는다', async () => {
+  let rejectSearch!: (error: unknown) => void
+  mocks.searchBooks.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectSearch = reject }))
+  search('소년이 온다')
+  cleanup()
+  render(<MemoryRouter><BookSearch /></MemoryRouter>)
+
+  await act(async () => rejectSearch(new ApiError(429, undefined, 'rate_limited', 1)))
+  expect(screen.getByRole('button', { name: '검색' })).toHaveProperty('disabled', true)
+  expect(screen.getByText('검색 요청이 많아 잠시 뒤에 다시 검색할 수 있어요.')).toBeTruthy()
+  search('다른 책')
+  expect(mocks.searchBooks).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(screen.getByRole('button', { name: '검색' })).toHaveProperty('disabled', false), { timeout: 2000 })
+  expect(screen.queryByText(/검색 요청이 많/)).toBeNull()
 })
 
 test('공백만 입력하면 요청하지 않는다', () => {
