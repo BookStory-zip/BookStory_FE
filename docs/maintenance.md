@@ -40,26 +40,26 @@ npm.cmd run dev -- --mode validation --port 5173 --strictPort
 
 검증 계정의 `.test` 주소는 메일을 수신할 수 없으므로 비밀번호 재설정 메일 확인은 현재 검증 범위에서 제외합니다. 이 검사가 필요하면 수신 가능한 검증 주소를 BE와 별도로 협의합니다.
 
-## 무료 자동 배포 준비 (공개 전환·인증 설정 대기)
+## 무료 자동 배포
 
-현재 운영은 아래 수동 절차를 사용합니다. 자동화 코드는 `ci/vercel-production`에서 준비하며, 공개 최종 확인·Secrets/변수 등록·원격 CI·첫 자동 배포 확인 전까지 활성화 완료로 기록하지 않습니다.
+2026-11-03 FE 저장소 공개·인증 설정 후 main `85c36a0`에서 첫 자동 배포를 실행했습니다. 결과와 남은 확인은 [plan.md](../plan.md)의 "무료 자동 배포 준비"에 기록합니다. 아래 수동 절차는 복구용입니다.
 
 - 무료 구성은 FE 저장소 공개 + Vercel Hobby + GitHub의 표준 `ubuntu-latest` 러너입니다. Hobby의 개인·비상업용 조건과 사용 한도를 따르며 Pro·대형 유료 러너·유료 기능을 자동 선택하지 않습니다. [Vercel Git 제한](https://vercel.com/docs/git#using-hobby-teams), [Hobby 조건](https://vercel.com/docs/plans/hobby), [공개 저장소 러너 요금](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)을 확인합니다.
 - FE만 공개 대상으로 삼으며 BE·Infra는 변경하지 않습니다. 공개 전 소스·과거 PR 커밋·Actions 로그/산출물을 점검하고 개인 이메일·운영 및 검증 환경 주소·테스트 계정명이 이력과 문서에 포함되는 범위를 사용자에게 알립니다. `.env`의 현재 Git 제외만으로 과거 이력까지 안전하다고 판단하지 않습니다.
 - Vercel 기본 Git 연동은 연결하지 않습니다. `vercel.json`의 `git.deploymentEnabled=false`로 중복 배포를 막고 [공식 Actions+CLI 방식](https://vercel.com/kb/guide/how-can-i-use-github-actions-with-vercel)을 사용합니다.
 
-공개 최종 확인 후 다음 값을 GitHub에 설정합니다. 실제 토큰 값은 채팅·소스·로그로 출력하지 않습니다.
+GitHub에 다음 값을 설정했습니다(2026-11-03). 실제 토큰 값은 채팅·소스·로그로 출력하지 않습니다.
 
 | 위치 | 이름 | 내용 |
 | --- | --- | --- |
-| Actions Secret (`production` 환경 또는 저장소) | `VERCEL_TOKEN` | `bookstory-fe` 전용 토큰. CLI 64.0.2의 `tokens create --project` 옵션은 확인했지만 실제 Hobby 계정에서 발급 가능한지 아직 검증하지 않았습니다. 범위를 확인한 뒤 등록하며, 미지원 시 더 넓은 토큰으로 자동 대체하거나 계정 공용 로그인 토큰을 복사하지 않습니다 |
+| Actions Secret (`production` 환경, main 브랜치만 허용) | `VERCEL_TOKEN` | `bookstory-fe` 프로젝트 한정 토큰 `bookstory-fe-actions`. **2027-02-01 만료** 전에 대시보드(Account → Tokens, Scope `bookstory-fe`)에서 새로 발급해 교체합니다. CLI의 `tokens create`는 로그인 앱 제한으로 거부되어 대시보드에서 발급했습니다. 더 넓은 토큰으로 대체하지 않습니다 |
 | Actions 저장소 변수 | `VERCEL_ORG_ID` | 기존 프로젝트 `.vercel/project.json`의 `orgId` |
 | Actions 저장소 변수 | `VERCEL_PROJECT_ID` | 같은 파일의 `projectId` |
 | Vercel Production | 기존 `VITE_` 공개 설정 3개 | 그대로 유지하며 `vercel pull --environment=production`으로 읽습니다 |
 
 모든 작업 브랜치는 develop 대상 PR로 모으며, main 대상 PR은 develop에서만 만듭니다. 자동 배포 준비 브랜치도 예외가 아닙니다.
 
-이번 자동화 작업은 develop PR·CI·병합까지만 진행하며, 첫 배포 검증은 다음 기능 작업과 함께 진행합니다(사용자, 2026-11-03). 다음 기능도 develop으로 모은 뒤, 공개 최종 확인·전용 토큰 준비를 마치고 해당 develop 커밋에서 `vercel build --prod`와 `vercel deploy --prebuilt --prod --skip-domain` 시험 배포를 확인합니다. 운영 alias는 유지한 채 빌드·인증·READY 결과를 확인한 다음 develop → main PR로 반영하고 첫 Actions 배포를 검증합니다. 기능 변화가 없어도 운영의 `deployment.json` 커밋 표식과 Actions Summary로 배포 여부를 확인할 수 있습니다.
+토큰·설정을 바꾼 뒤에는 develop 커밋에서 `vercel build --prod`와 `vercel deploy --prebuilt --prod --skip-domain`으로 운영 alias를 유지한 시험 배포를 먼저 확인할 수 있습니다. 시험 배포 URL은 Vercel 배포 보호로 로그인 리다이렉트(302)되므로 `vercel curl <경로> --deployment <URL>`로 확인합니다. 운영의 `deployment.json` 커밋 표식과 Actions Summary로 배포 여부를 확인합니다.
 
 배포 흐름은 다음과 같습니다.
 

@@ -24,12 +24,15 @@ function response(input, options) {
 }
 afterEach(() => vi.unstubAllGlobals())
 
-test('완료된 운영 배포 결과에서 ID·URL만 반환한다', () => {
-  expect(deploymentInfo(result)).toEqual({ id: 'dpl_test123', url: result.deployment.url })
+test.each([result, result.deployment])('완료된 운영 배포 결과 %j에서 ID·URL만 반환한다', (body) => {
+  expect(deploymentInfo(body)).toEqual({ id: 'dpl_test123', url: result.deployment.url })
 })
 test.each([
   null,
   { status: 'error' },
+  { status: 'error', deployment: result.deployment },
+  { ...result.deployment, error: { name: 'CHECKS_FAILED' } },
+  { ...result.deployment, readyState: 'ERROR' },
   { ...result, deployment: { ...result.deployment, readyState: 'BUILDING' } },
   { ...result, deployment: { ...result.deployment, target: 'preview' } },
   { ...result, deployment: { ...result.deployment, id: 'untrusted\ntext' } },
