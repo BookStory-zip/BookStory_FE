@@ -65,7 +65,7 @@ CI(`.github/workflows/ci.yml`)가 develop·main push와 두 브랜치 대상 PR�
 ## 배포 기준
 
 - 브랜치: develop에서 분기한 작업 브랜치에서 개발합니다. 로컬 커밋을 쌓고 브랜치 작업·검증이 모두 끝나면 push·develop 대상 PR을 진행합니다. PR 병합·main 반영·배포는 별도 요청으로 진행하며, 배포는 CI를 통과한 main을 사용합니다.
-- 방식: 현재 Vercel CLI 수동 배포입니다. 무료 자동 배포를 위해 FE 공개 전환 점검과 main CI 성공 후 CLI 배포 코드를 준비 중이며, 공개 최종 확인·인증 설정·첫 실행 검증 전에는 전환 완료로 보지 않습니다. 절차는 [docs/maintenance.md](./docs/maintenance.md)를 따릅니다.
+- 방식: 2026-11-03부터 main push CI의 check·e2e 성공 후 GitHub Actions가 Vercel CLI로 운영 배포합니다. main 병합이 곧 운영 배포 승인입니다. 수동 배포는 복구용으로 남깁니다. 절차는 [docs/maintenance.md](./docs/maintenance.md)를 따릅니다.
 - 기록: 운영 반영 시 FE·BE 커밋과 배포 ID를 plan.md에 모아 기록합니다. 자동 배포 전환 후 개별 실행의 커밋·배포 ID/URL·검증 결과는 Actions Summary에 남기며 자동 Git 커밋은 만들지 않습니다.
 - API 변경: 새 필드 추가 → BE 배포 → FE 전환 → 기존 필드 제거 순서로 호환성을 유지합니다.
 

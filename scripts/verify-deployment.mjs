@@ -13,9 +13,10 @@ async function request(url, options) {
   return response
 }
 
+// CLI는 에이전트 등 비대화형 실행에서만 { status, deployment }로 감싸고 Actions에서는 배포 객체를 그대로 출력한다.
 export function deploymentInfo(result) {
-  const deployment = result?.deployment
-  assert(result?.status === 'ok' && deployment?.readyState === 'READY' && deployment.target === 'production', 'Expected a READY production deployment')
+  const deployment = result?.status === undefined ? result : result.status === 'ok' ? result.deployment : undefined
+  assert(deployment?.readyState === 'READY' && deployment.target === 'production' && !deployment.error, 'Expected a READY production deployment')
   assert(typeof deployment.id === 'string' && /^dpl_[a-z\d]+$/i.test(deployment.id), 'Invalid deployment ID')
   const url = new URL(deployment.url)
   assert(url.protocol === 'https:' && url.hostname.startsWith('bookstory-') && url.hostname.endsWith('.vercel.app') && !url.port && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash, 'Invalid deployment URL')
