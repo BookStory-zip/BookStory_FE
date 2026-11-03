@@ -52,6 +52,7 @@ function detail(overrides: Partial<LibraryBookDetail> = {}): LibraryBookDetail {
     source_url: 'https://example.test',
     started_at: '2026-10-01T03:00:00Z',
     last_read_at: null,
+    last_read_date: null,
     completed_at: null,
     stopped_at: null,
     stop_reason: null,
@@ -77,6 +78,13 @@ function renderDetail() {
     </MemoryRouter>,
   )
 }
+
+test('최근 체크는 버튼을 누른 시각이 아니라 실제 읽은 날짜를 표시한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ last_read_at: '2026-10-28T03:00:00Z', last_read_date: '2026-10-25' }))
+  renderDetail()
+  await screen.findByRole('heading', { name: '소년이 온다' })
+  expect(screen.getByText('최근 체크').nextElementSibling?.textContent).toBe('2026년 10월 25일')
+})
 
 test('메모는 기본 비공개이며 직접 선택해 저장해야 공개한다', async () => {
   mocks.getLibraryBook.mockResolvedValue(detail())
@@ -425,6 +433,15 @@ test('체크 409는 상태 안내로 바꾸고 다시 보내지 않는다', asyn
   fireEvent.click(await screen.findByRole('button', { name: '오늘 읽었어요' }))
 
   await waitFor(() => expect(screen.getByRole('status').textContent).toContain('읽는 중인 책만 오늘 체크'))
+  expect(mocks.checkReadingToday).toHaveBeenCalledTimes(1)
+})
+
+test('오늘 체크의 date_order도 상태 날짜 오류와 구분해 안내한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail())
+  mocks.checkReadingToday.mockRejectedValue(new ApiError(409, '', 'date_order'))
+  renderDetail()
+  fireEvent.click(await screen.findByRole('button', { name: '오늘 읽었어요' }))
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('현재 독서 시작일보다 이전 날짜에는 체크할 수 없어요.'))
   expect(mocks.checkReadingToday).toHaveBeenCalledTimes(1)
 })
 

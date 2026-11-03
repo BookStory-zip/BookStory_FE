@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { getReadingCompletions, getReadingLogs } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { commonErrorMessage } from './lib/errors'
-import { addMonths, calendarDays, monthOf, monthRange, spokenDate, spokenMonth } from './lib/dates'
+import { addDays, addMonths, calendarDays, monthOf, monthRange, spokenDate, spokenMonth } from './lib/dates'
 import { useKstToday } from './useKstToday'
 import CabinIcon from './CabinIcon'
 import ReadingStatistics from './ReadingStatistics'
+import ReadingDayEditor from './ReadingDayEditor'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -33,16 +34,18 @@ export default function ReadingRecords() {
   const [days, setDays] = useState<Map<string, DayBook[]> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [editingBusy, setEditingBusy] = useState(false)
   const version = useRef(0)
 
-  function load(target: string) {
+  const load = useCallback((target: string) => {
     const current = ++version.current
     const { start, end } = monthRange(target)
-    withAccessToken((token) =>
+    return withAccessToken((token) =>
       Promise.all([getReadingLogs(token, start, end), getReadingCompletions(token, start, end)]),
     ).then(
       ([logs, completions]) => {
-        if (current !== version.current) return
+        if (current !== version.current) return false
         const merged = new Map<string, DayBook[]>()
         const add = (date: string, book: Omit<DayBook, 'read' | 'completed'>, kind: 'read' | 'completed') => {
           const list = merged.get(date) ?? []
@@ -55,14 +58,16 @@ export default function ReadingRecords() {
         for (const done of completions) add(done.completed_date, done, 'completed')
         setDays(merged)
         setError(null)
-        setSelected((prev) => prev ?? [...merged.keys()].sort().at(-1) ?? null)
+        setSelected((prev) => prev ?? [...merged.keys()].sort().at(-1) ?? (monthOf(today) === target ? today : null))
+        return true
       },
       (loadError: unknown) => {
-        if (current !== version.current) return
+        if (current !== version.current) return false
         setError(errorMessage(loadError))
+        return false
       },
     )
-  }
+  }, [today])
 
   useEffect(() => {
     if (view !== 'calendar') return
@@ -71,7 +76,7 @@ export default function ReadingRecords() {
       // 화면을 떠나거나 달이 바뀌면 이전 요청의 늦은 응답을 버린다.
       version.current += 1
     }
-  }, [month, view])
+  }, [month, view, load])
 
   function moveMonth(delta: number) {
     const nextMonth = addMonths(month, delta)
@@ -80,6 +85,7 @@ export default function ReadingRecords() {
     setDays(null)
     setError(null)
     setSelected(null)
+    setEditing(false)
   }
 
   function retry() {
@@ -98,8 +104,8 @@ export default function ReadingRecords() {
       <h1 id="records-title">독서 기록</h1>
       <p className="library-sub">읽은 날을 돌아보고, 나의 독서를 살펴보세요</p>
       <div className="records-switch" role="group" aria-label="독서 기록 보기">
-        <button type="button" aria-pressed={view === 'calendar'} onClick={() => { if (view !== 'calendar') { setView('calendar'); setDays(null); setError(null) } }}>달력</button>
-        <button type="button" aria-pressed={view === 'statistics'} onClick={() => setView('statistics')}>통계</button>
+        <button type="button" disabled={editingBusy} aria-pressed={view === 'calendar'} onClick={() => { if (view !== 'calendar') { setView('calendar'); setDays(null); setError(null) } }}>달력</button>
+        <button type="button" disabled={editingBusy} aria-pressed={view === 'statistics'} onClick={() => setView('statistics')}>통계</button>
       </div>
 
       {view === 'statistics' ? (
@@ -111,7 +117,7 @@ export default function ReadingRecords() {
         <>
 
       <div className="records-month">
-        <button type="button" className="calendar-nav" aria-label="이전 달" onClick={() => moveMonth(-1)}>
+        <button type="button" className="calendar-nav" aria-label="이전 달" disabled={editingBusy} onClick={() => moveMonth(-1)}>
           ‹
         </button>
         <h2 aria-live="polite">{spokenMonth(month)}</h2>
@@ -120,7 +126,7 @@ export default function ReadingRecords() {
           className="calendar-nav"
           aria-label="다음 달"
           onClick={() => moveMonth(1)}
-          disabled={month >= monthOf(today)}
+          disabled={editingBusy || month >= monthOf(today)}
         >
           ›
         </button>
@@ -171,7 +177,7 @@ export default function ReadingRecords() {
                   aria-label={label}
                   aria-pressed={day === selected}
                   onClick={() => setSelected(day)}
-                  disabled={day > today}
+                  disabled={editingBusy || day > today}
                 >
                   {/* 그날 첫 책의 표지로 칸을 채우고, 여러 권이면 권수, 완독한 책이 있으면 완독 라벨을 붙인다 */}
                   <span className="records-tile" aria-hidden="true">
@@ -193,6 +199,13 @@ export default function ReadingRecords() {
           {selected && (
             <div className="records-day-list">
               <h3>{spokenDate(selected)}</h3>
+              <p className="result-note">한국 시간 기준으로 오늘을 포함한 최근 7일의 체크를 변경할 수 있어요.</p>
+              {selected >= addDays(today, -6) && selected <= today && (
+                <button type="button" className="secondary" aria-expanded={editing} disabled={editingBusy} onClick={() => setEditing(!editing)}>
+                  {editing ? '편집 닫기' : '체크·취소하기'}
+                </button>
+              )}
+              {editing && <ReadingDayEditor key={selected} date={selected} today={today} onChanged={() => load(month)} onBusyChange={setEditingBusy} />}
               {selectedBooks.length === 0 ? (
                 <p className="result-note">이 날은 체크하거나 완독한 책이 없습니다.</p>
               ) : (

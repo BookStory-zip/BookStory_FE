@@ -15,7 +15,7 @@ const review = {
 
 const ownBook = {
   ...book, id: 'own-1', book_id: 'book-1', status: 'reading', created_at: '2026-11-02T00:00:00Z',
-  started_at: null, last_read_at: null, completed_at: null, stopped_at: null, stop_reason: null,
+  started_at: null, last_read_at: null, last_read_date: null, completed_at: null, stopped_at: null, stop_reason: null,
   memo: '개인 메모', rating: null, has_completed: false, updated_at: '2026-11-02T00:00:00Z',
   allowed_statuses: ['reading'], is_review_public: false, review_published_at: null, review_updated_at: null,
 }
@@ -78,6 +78,8 @@ test.each([
   { ...ownBook, review_updated_at: '잘못된 날짜' },
   { ...ownBook, is_review_public: null },
   { ...ownBook, isbn13: '9788936434120' },
+  { ...ownBook, last_read_date: undefined },
+  { ...ownBook, last_read_date: '2026-11-03T00:00:00Z' },
 ])('잘못된 개인 공개 설정이나 다른 책을 비공개 기본값으로 바꾸지 않는다: %j', async (body) => {
   respond(body)
   await expect(getLibraryBookByIsbn('test-token', book.isbn13)).rejects.toThrow('책 상세 응답 형식이 올바르지 않습니다.')

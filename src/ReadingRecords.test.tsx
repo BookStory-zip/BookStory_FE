@@ -6,13 +6,15 @@ import { ApiError } from './lib/api'
 import type { ReadingLogEntry } from './lib/api'
 import ReadingRecords from './ReadingRecords'
 
-const mocks = vi.hoisted(() => ({ getReadingLogs: vi.fn(), getReadingCompletions: vi.fn(), getReadingStatistics: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getReadingLogs: vi.fn(), getReadingCompletions: vi.fn(), getReadingStatistics: vi.fn(), getLibraryBooks: vi.fn(), checkReadingDate: vi.fn() }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),
   getReadingLogs: mocks.getReadingLogs,
   getReadingCompletions: mocks.getReadingCompletions,
   getReadingStatistics: mocks.getReadingStatistics,
+  getLibraryBooks: mocks.getLibraryBooks,
+  checkReadingDate: mocks.checkReadingDate,
 }))
 // 환경변수 없는 CI에서도 실제 Supabase 클라이언트를 만들지 않는다.
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
@@ -33,8 +35,62 @@ const renderRecords = () => render(<MemoryRouter><ReadingRecords /></MemoryRoute
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.getReadingCompletions.mockResolvedValue([])
+  mocks.getLibraryBooks.mockResolvedValue([])
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-28T03:00:00Z'))
+})
+
+test('선택한 최근 날짜를 체크하면 달력과 월 요약을 다시 조회한다', async () => {
+  let saved = false
+  mocks.getReadingLogs.mockImplementation(() => Promise.resolve(saved ? [log('1', '2026-10-27', 'own-a', '어제의 책')] : []))
+  mocks.getLibraryBooks.mockResolvedValue([{ id: 'own-a', book_id: 'common', title: '어제의 책', status: 'reading' }])
+  mocks.checkReadingDate.mockImplementation(() => { saved = true; return Promise.resolve() })
+  renderRecords()
+  await screen.findByText('이 달에는 체크하거나 완독한 기록이 없습니다.')
+  fireEvent.click(screen.getByRole('button', { name: '2026년 10월 27일' }))
+  fireEvent.click(screen.getByRole('button', { name: '체크·취소하기' }))
+  fireEvent.click(await screen.findByRole('button', { name: '어제의 책 체크' }))
+  await screen.findByText('1일 동안 1권을 읽었어요.')
+  expect(mocks.checkReadingDate).toHaveBeenCalledWith('test-token', 'own-a', '2026-10-27')
+  await screen.findByRole('button', { name: '어제의 책 체크 취소' })
+})
+
+test('KST 날짜가 바뀌면 7일 범위 밖이 된 편집을 막는다', async () => {
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getLibraryBooks.mockResolvedValue([{ id: 'own-a', title: '어제의 책', status: 'reading' }])
+  renderRecords()
+  await screen.findByText('이 달에는 체크하거나 완독한 기록이 없습니다.')
+  fireEvent.click(screen.getByRole('button', { name: '2026년 10월 22일' }))
+  fireEvent.click(screen.getByRole('button', { name: '체크·취소하기' }))
+  await screen.findByRole('button', { name: '어제의 책 체크' })
+  await act(async () => {
+    vi.setSystemTime(new Date('2026-10-28T15:00:01Z'))
+    fireEvent.focus(window)
+  })
+  expect(screen.queryByRole('button', { name: '어제의 책 체크' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '편집 닫기' })).toBeNull()
+  expect(screen.getByText('오늘을 포함한 최근 7일만 체크하거나 취소할 수 있어요.')).toBeTruthy()
+})
+
+test('KST 자정을 넘겨 끝난 저장도 잠금을 유지하고 결과를 재조회한다', async () => {
+  let finish!: () => void
+  let saved = false
+  mocks.getReadingLogs.mockImplementation(() => Promise.resolve(saved ? [log('1', '2026-10-27', 'own-a', '어제의 책')] : []))
+  mocks.getLibraryBooks.mockResolvedValue([{ id: 'own-a', title: '어제의 책', status: 'reading' }])
+  mocks.checkReadingDate.mockReturnValue(new Promise<void>((resolve) => { finish = () => { saved = true; resolve() } }))
+  renderRecords()
+  await screen.findByText('이 달에는 체크하거나 완독한 기록이 없습니다.')
+  fireEvent.click(screen.getByRole('button', { name: '2026년 10월 27일' }))
+  fireEvent.click(screen.getByRole('button', { name: '체크·취소하기' }))
+  fireEvent.click(await screen.findByRole('button', { name: '어제의 책 체크' }))
+  await act(async () => {
+    vi.setSystemTime(new Date('2026-10-28T15:00:01Z'))
+    fireEvent.focus(window)
+  })
+  expect(screen.getByRole('button', { name: '이전 달' })).toHaveProperty('disabled', true)
+  await act(async () => finish())
+  await screen.findByText('1일 동안 1권을 읽었어요.')
+  expect(await screen.findByRole('button', { name: '어제의 책 체크 취소' })).toHaveProperty('disabled', false)
 })
 afterEach(() => {
   cleanup()
