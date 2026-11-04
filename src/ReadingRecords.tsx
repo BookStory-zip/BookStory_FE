@@ -132,7 +132,7 @@ export default function ReadingRecords() {
       {view === 'statistics' ? (
         <ReadingStatistics
           month={month} today={today} mode={statisticsMode}
-          onModeChange={setStatisticsMode} onMove={moveMonth}
+          onModeChange={setStatisticsMode} onMove={moveMonth} onBusyChange={setEditingBusy}
         />
       ) : (
         <>

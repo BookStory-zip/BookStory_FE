@@ -317,9 +317,17 @@ test('검색해서 서재에 담으면 서재에서 보인다', async ({ page })
 
 test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온다', async ({ page }, testInfo) => {
   const requests: URLSearchParams[] = []
+  const goalWrites: unknown[] = []
+  let monthGoal: number | null = null
   await signInWithMockSession(page)
-  await mockBackend(page, async (route, url) => {
+  await mockBackend(page, async (route, url, method) => {
     if (url.pathname === '/reading-logs') return json(route, []).then(() => true)
+    if (url.pathname === '/me/goals' && method === 'PUT') {
+      const body = route.request().postDataJSON()
+      goalWrites.push(body)
+      monthGoal = body.target
+      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
+    }
     if (url.pathname === '/me/statistics') {
       requests.push(url.searchParams)
       const year = Number(url.searchParams.get('year'))
@@ -338,6 +346,9 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
           year, month, start_date: `${prefix}-01`, end_date: end,
           reading_days: month === null ? 42 : 7,
           reading_minutes: month === null ? 300 : 42,
+          goals: monthGoal === null ? [] : month === null
+            ? [{ metric: 'reading_days', target: monthGoal * 2, current: 42, source: 'sum' }]
+            : [{ metric: 'reading_days', target: monthGoal, current: 7, source: 'set' }],
         },
       }).then(() => true)
     }
@@ -350,11 +361,22 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
   await expect(page.getByText('7', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '현재 서재' })).toBeVisible()
   expect(requests.at(-1)?.has('month')).toBe(true)
+  await expect(page.getByText('목표를 설정해보세요')).toHaveCount(3)
+
+  await page.getByRole('button', { name: '읽은 날 목표 설정' }).click()
+  await page.getByLabel(/읽은 날 목표\(일\)/).fill('12')
+  await page.screenshot({ path: testInfo.outputPath('goal-editor-mobile.png'), fullPage: true })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.getByRole('button', { name: '저장', exact: true }).click()
+  await expect(page.getByText('7 / 12일')).toBeVisible()
+  expect(goalWrites).toEqual([{ metric: 'reading_days', year: Number(requests.at(-1)?.get('year')), month: Number(requests.at(-1)?.get('month')), target: 12 }])
 
   await page.getByRole('button', { name: '연간', exact: true }).focus()
   await page.keyboard.press('Enter')
   await expect(page.getByText('42', { exact: true })).toBeVisible()
   expect(requests.at(-1)?.has('month')).toBe(false)
+  await expect(page.getByText('42 / 24일')).toBeVisible()
+  await expect(page.getByText('월 목표 합계')).toBeVisible()
   await expect(page.getByRole('button', { name: '연간', exact: true })).toHaveAttribute('aria-pressed', 'true')
 
   await page.screenshot({ path: testInfo.outputPath('statistics-mobile.png'), fullPage: true })

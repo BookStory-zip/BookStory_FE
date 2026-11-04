@@ -37,7 +37,8 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `PUT·DELETE …/{id}/reading-logs/{read_date}` | `YYYY-MM-DD`, 서버 KST 오늘 포함 최근 7일. PUT 200·DELETE 204. 운영 제공 | 달력 날짜별 체크·취소. 아래 계약 참고 |
 | `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩. 항목의 `completed_at`·`status`·`has_completed`는 현재 기록(체크 당시 아님) | 마지막 페이지까지 전부 조회. 체크한 날 표시에만 사용 |
 | `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
-| `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`) | 기록 화면 통계 탭에서만 요청. 아래 통계 참고 |
+| `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`·`reading_minutes`·`goals`) | 기록 화면 통계 탭에서만 요청. 아래 통계·독서 목표 참고 |
+| `PUT·DELETE /me/goals` | JSON 본문, `month` 필수(연은 null), 204 | 통계 탭 목표 설정·끄기·이어받기·합계 복귀. 아래 독서 목표 참고 |
 | `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 운영 제공 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
 | `DELETE /me` | 204. 비밀번호 인증 5분 이내 토큰만, 아니면 403 `recent_login_required`, 로그인 계정 삭제 실패 503 `account_deletion_failed`(재시도 가능) | 계정 화면 탈퇴. 비밀번호 재로그인 후 요청 |
 | `GET /push/public-key` | 공개. `{public_key}`(base64url), 발송 키 미설정이면 503. 운영 200 확인 | 구독의 `applicationServerKey`. 아래 독서 알림 참고 |
@@ -112,6 +113,22 @@ BE PR #25의 `docs/frontend-api.md`·구현과 사용자 회신을 대조했습�
 - `/me/statistics.period.reading_minutes`는 선택 기간에 시작한 세션 초를 모두 합한 뒤 분으로 내림합니다(90초 두 개는 3분). FE는 서버 값을 사용합니다.
 - FE는 계정당 로컬 측정 하나를 보관하며 일시정지를 빼고 시각 차이로 시간을 복원합니다. 1시간에서 멈추고 직접 계속 읽기를 누르면 이전 구간을 저장한 뒤 새 시각·새 ID로 시작합니다. 확인 대기·서버 저장 대기는 새 구간에 포함하지 않습니다. 자동 서버 저장은 없습니다.
 - 저장 전 종료 시간과 ID를 고정합니다. 결과 불명확·409 등 실패 시 보관하고 직접 재시도하게 하며 자동 재전송하지 않습니다. 겹침은 "이미 기록된 시간과 겹칩니다"로 안내합니다. 로그아웃·계정 변경은 측정을 정리하고 늦은 응답으로 복원하지 않습니다. 다른 책의 측정도 확인 후 버릴 수 있어 삭제된 책의 측정 때문에 막히지 않습니다.
+
+## 독서 목표 (2026-11-04 BE PR #26, 운영 반영 전)
+
+BE PR #26(`110e215`)의 `app/schemas.py`·`app/reading_goals.py`·`docs/frontend-api.md` "독서 목표"와 BE 회신을 대조했습니다. 운영 OpenAPI에 `/me/goals`가 있음을 읽기 전용으로 확인했으며, 운영 DB의 migration `d4426d74f2e1` 적용은 확인하지 않았습니다.
+
+| API | 계약 |
+| --- | --- |
+| `PUT /me/goals` | JSON `{metric, year, month, target}` → 204. 같은 기간은 덮어씀. `target: 0`은 그 기간부터 목표 끄기 |
+| `DELETE /me/goals` | JSON `{metric, year, month}` → 204(대상 없어도). 월은 그 달 직접 설정 제거(이전 달 값을 다시 이어받음), 연(`month: null`)은 월 목표 합계로 복귀 |
+
+- `metric`: `reading_days`·`completed_books`·`reading_minutes`(분). `month` 키는 필수이며 1~12 또는 null(연)이고, 빠지면 422 `validation_error`입니다. `year` 1~9999.
+- 직접 입력 상한: `reading_days`는 그 달·해 일수(윤년 반영), `reading_minutes`는 일수 × 1440, `completed_books`는 9999. 넘거나 음수·소수면 422 `validation_error`이며 기존 목표는 유지됩니다.
+- `GET /me/statistics`의 필수 `period.goals`: `[{metric, target, current, source}]`, 순서는 위 `metric` 순. `source`는 `set`, 월 응답의 `inherited`, 연 응답의 `sum`. 한 번도 정하지 않은 지표는 빠지고, 끈 목표는 `target: 0`으로 포함됩니다.
+- 월 목표는 직접 설정이 없으면 가장 최근 이전 달(이전 해 포함) 값을 이어받고, 일수·분 목표는 그 달 상한으로 줄여 응답합니다. 연 목표는 직접 설정이 우선이며 없으면 12개월 적용 목표의 합계입니다. 응답 `target`에는 입력 상한을 적용하지 않으므로 연 완독 합계는 9999를 넘을 수 있습니다.
+- `current`: 일수·분은 같은 응답의 `period` 값, 완독은 그 기간(KST)에 `completed_at`이 있는 완독 경험 책 수로 `library.completed_books`와 다릅니다.
+- FE: 기록 화면 통계 탭의 기존 월간·연간 선택에 붙입니다. 지표별 `current / target`, 100%에서 멈추는 진행 막대(실제 수치 유지), 출처(직접 설정·이전 달에서 이어받음·월 목표 합계), "목표 꺼짐"·"목표를 설정해보세요"를 구분합니다. 한 번에 한 지표만 편집하며 입력 상한만 FE에서 계산하고(`src/lib/goals.ts`) 상속·합계는 서버 응답을 씁니다. 빈 입력은 0으로 바꾸지 않고, 끄기(`target: 0`)·"이전 목표 이어받기"(월 DELETE)·"월 목표 합계로 전환"(연 DELETE)은 별도 버튼입니다. 저장 중에는 기간·탭 이동을 막고 성공 후 통계를 다시 조회합니다. 422·결과 불명확(자동 재전송 없음)·저장 후 재조회 실패("설정은 저장됐지만 최신 상태를 확인하지 못했습니다")에서 입력과 기존 통계를 보존하고 최신 상태 확인을 제공합니다. 화면을 떠난 뒤 늦게 끝난 저장은 재조회하지 않습니다.
 
 ## 독서 알림 (Web Push, 운영 반영)
 

@@ -554,11 +554,27 @@ export type ReadingStatistics = {
     end_date: string
     reading_days: number
     reading_minutes: number
+    goals: GoalProgress[]
   }
 }
 
+export const goalMetrics = ['reading_days', 'completed_books', 'reading_minutes'] as const
+export type GoalMetric = (typeof goalMetrics)[number]
+// month null은 연 목표다. 빠뜨리면 422이므로 선택 속성으로 두지 않는다.
+export type GoalKey = { metric: GoalMetric; year: number; month: number | null }
+// target 0은 목표 꺼짐. 한 번도 정하지 않은 지표는 goals에서 빠진다.
+export type GoalProgress = { metric: GoalMetric; target: number; current: number; source: 'set' | 'inherited' | 'sum' }
+
 const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0
+
+// inherited는 월 응답, sum은 연 응답에만 나온다. 응답 target에는 입력 상한을 적용하지 않는다.
+function isGoalProgress(value: unknown, yearly: boolean): value is GoalProgress {
+  if (typeof value !== 'object' || value === null) return false
+  const goal = value as Record<string, unknown>
+  return goalMetrics.includes(goal.metric as GoalMetric) && isCount(goal.target) && isCount(goal.current) &&
+    (goal.source === 'set' || goal.source === (yearly ? 'sum' : 'inherited'))
+}
 
 function isReadingStatistics(value: unknown): value is ReadingStatistics {
   if (typeof value !== 'object' || value === null) return false
@@ -576,7 +592,8 @@ function isReadingStatistics(value: unknown): value is ReadingStatistics {
     (selected.month === null || (typeof selected.month === 'number' && Number.isInteger(selected.month))) &&
     typeof selected.start_date === 'string' && DATE_PATTERN.test(selected.start_date) &&
     typeof selected.end_date === 'string' && DATE_PATTERN.test(selected.end_date) &&
-    isCount(selected.reading_days) && isCount(selected.reading_minutes)
+    isCount(selected.reading_days) && isCount(selected.reading_minutes) &&
+    Array.isArray(selected.goals) && selected.goals.every((goal) => isGoalProgress(goal, selected.month === null))
   )
 }
 
@@ -592,6 +609,16 @@ export async function getReadingStatistics(
     throw new Error('통계 응답 형식이 올바르지 않습니다.')
   }
   return data
+}
+
+// 같은 기간에 다시 보내면 덮어쓴다. 0은 그 기간부터 목표를 끈다.
+export async function updateGoal(accessToken: string, body: GoalKey & { target: number }): Promise<void> {
+  await apiRequest('/me/goals', accessToken, { method: 'PUT', body })
+}
+
+// 월은 이전 달 목표를 다시 이어받고, 연은 월 목표 합계로 돌아간다. 대상이 없어도 204다.
+export async function deleteGoal(accessToken: string, body: GoalKey): Promise<void> {
+  await apiRequest('/me/goals', accessToken, { method: 'DELETE', body })
 }
 
 // 공개 후기에 표시할 닉네임. null이면 공통 이름 '독서가'로 표시된다.
