@@ -10,10 +10,14 @@ import type { NoteForm } from './lib/notes'
 import ConfirmDialog from './ConfirmDialog'
 import DatePicker from './DatePicker'
 
-type Props = { userBookId: string; today: string; onBusyChange: (busy: boolean) => void }
+// blocked: 책 상세의 다른 저장·타이머 저장·재확인 중에는 노트를 쓰지 않는다.
+type Props = { userBookId: string; today: string; blocked: boolean; onBusyChange: (busy: boolean) => void }
 type List = { items: ReadingNote[]; offset: number; more: boolean }
-type Editor = { note: ReadingNote | null; form: NoteForm }
+// initial: 편집을 연 순간의 값. 자정에 오늘이 바뀌어도 미저장 판단 기준이 흔들리지 않는다.
+type Editor = { note: ReadingNote | null; form: NoteForm; initial: NoteForm }
 const PAGE_SIZE = 20
+// 저장 후에는 이미 불러온 범위를 한 번에 다시 받는다(API 최대 100개).
+const RELOAD_MAX = 100
 
 // 책 상세와 기록 타임라인이 같은 모양으로 노트 내용을 보여 준다.
 export function NoteText({ note }: { note: ReadingNote }) {
@@ -25,7 +29,7 @@ export function NoteText({ note }: { note: ReadingNote }) {
 }
 
 // 부모가 책 key로 다시 그린다. 계정이 바뀌면 개인 화면 전체가 새로 그려져 작성 중 입력도 사라진다.
-export default function ReadingNotes({ userBookId, today, onBusyChange }: Props) {
+export default function ReadingNotes({ userBookId, today, blocked, onBusyChange }: Props) {
   const [list, setList] = useState<List | null>(null)
   const [listError, setListError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -46,13 +50,13 @@ export default function ReadingNotes({ userBookId, today, onBusyChange }: Props)
     }
   }, [])
 
-  const load = useCallback((offset: number) => {
+  const load = useCallback((offset: number, limit = PAGE_SIZE) => {
     const current = ++version.current
-    return withAccessToken((token) => getReadingNotes(token, userBookId, PAGE_SIZE, offset)).then((page) => {
+    return withAccessToken((token) => getReadingNotes(token, userBookId, limit, offset)).then((page) => {
       if (version.current !== current) return
       setList((previous) => ({
         items: offset === 0 ? page : [...new Map([...(previous?.items ?? []), ...page].map((item) => [item.id, item])).values()],
-        offset: offset + page.length, more: page.length === PAGE_SIZE,
+        offset: offset + page.length, more: page.length === limit,
       }))
     }, (loadError: unknown) => {
       // 실패해도 이미 불러온 목록과 다음 위치를 지우지 않는다.
@@ -66,13 +70,17 @@ export default function ReadingNotes({ userBookId, today, onBusyChange }: Props)
     void load(0)
   }, [load])
 
-  function reload(offset: number) {
+  function reload(offset: number, limit = PAGE_SIZE) {
     setLoading(true)
     setListError('')
-    return load(offset)
+    return load(offset, limit)
   }
 
-  const dirty = editor !== null && JSON.stringify(editor.form) !== JSON.stringify(noteForm(editor.note, today))
+  // shortcut: 100개를 넘게 불러온 뒤 저장하면 앞 100개만 다시 받는다. 노트가 많아지면 범위별 재조회로 바꾼다.
+  const reloadLoaded = () => reload(0, Math.min(RELOAD_MAX, Math.max(PAGE_SIZE, list?.offset ?? 0)))
+  const locked = saving || blocked
+
+  const dirty = editor !== null && JSON.stringify(editor.form) !== JSON.stringify(editor.initial)
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => event.preventDefault()
@@ -91,12 +99,15 @@ export default function ReadingNotes({ userBookId, today, onBusyChange }: Props)
       if (!active.current) return
       setEditor(null)
       setMessage(done)
-      await reload(0)
+      await reloadLoaded()
     } catch (writeError) {
       if (!active.current) return
       setError(failed(writeError))
+      const notFound = writeError instanceof ApiError && writeError.status === 404
+      // 수정하던 노트가 사라졌으면 입력을 새 노트로 저장할 수 있게 한다.
+      if (notFound) setEditor((previous) => previous?.note ? { ...previous, note: null } : previous)
       // 결과가 불명확하거나 대상이 없으면 다시 보내지 않고 서버 목록만 확인한다.
-      if (isUnclearWrite(writeError) || (writeError instanceof ApiError && writeError.status === 404)) await reload(0)
+      if (isUnclearWrite(writeError) || notFound) await reloadLoaded()
     } finally {
       busy.current = false
       if (active.current) {
@@ -108,7 +119,7 @@ export default function ReadingNotes({ userBookId, today, onBusyChange }: Props)
 
   function save(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!editor || busy.current) return
+    if (!editor || busy.current || blocked) return
     const parsed = noteInput(editor.form, today)
     if ('error' in parsed) {
       setError(parsed.error)
@@ -125,7 +136,7 @@ export default function ReadingNotes({ userBookId, today, onBusyChange }: Props)
       }
       void write((token) => updateReadingNote(token, target.id, patch), '노트를 수정했습니다.', (saveError) =>
         isUnclearWrite(saveError) ? '수정 결과를 확인하지 못했습니다. 작성한 내용은 그대로 두었어요. 목록을 확인한 뒤 필요하면 다시 저장해주세요.'
-          : saveError instanceof ApiError && saveError.status === 404 ? '노트를 찾을 수 없습니다. 이미 삭제됐을 수 있어 목록을 다시 불러왔어요.'
+          : saveError instanceof ApiError && saveError.status === 404 ? '노트를 찾을 수 없습니다. 이미 삭제됐을 수 있어요. 작성한 내용은 새 노트로 저장할 수 있어요.'
             : commonErrorMessage(saveError, '노트를 수정하지 못했습니다'))
     } else {
       void write((token) => createReadingNote(token, userBookId, parsed.input), '노트를 저장했습니다.', (saveError) =>
@@ -138,7 +149,7 @@ export default function ReadingNotes({ userBookId, today, onBusyChange }: Props)
   function confirmRemove() {
     const target = remove
     setRemove(null)
-    if (!target || busy.current) return
+    if (!target || busy.current || blocked) return
     void write((token) => deleteReadingNote(token, target.id), '노트를 삭제했습니다.', (deleteError) =>
       isUnclearWrite(deleteError) ? '삭제 결과를 확인하지 못했습니다. 목록을 다시 불러왔어요.'
         : deleteError instanceof ApiError && deleteError.status === 404 ? '노트를 찾을 수 없습니다. 목록을 다시 불러왔어요.'
@@ -169,14 +180,14 @@ export default function ReadingNotes({ userBookId, today, onBusyChange }: Props)
         </div>
         {error && <p role="alert">{error}</p>}
         <div className="timer-actions">
-          <button type="submit" disabled={saving}>{saving ? '저장하는 중…' : '노트 저장'}</button>
+          <button type="submit" disabled={locked}>{saving ? '저장하는 중…' : '노트 저장'}</button>
           <button type="button" className="link-button" disabled={saving} onClick={() => { setEditor(null); setError('') }}>취소</button>
         </div>
       </form>
     ) : (
       <>
         {error && <p role="alert">{error}</p>}
-        <button type="button" disabled={saving} onClick={() => { setEditor({ note: null, form: noteForm(null, today) }); setError(''); setMessage('') }}>노트 쓰기</button>
+        <button type="button" disabled={locked} onClick={() => { const form = noteForm(null, today); setEditor({ note: null, form, initial: form }); setError(''); setMessage('') }}>노트 쓰기</button>
       </>
     )}
     <p aria-live="polite">{message}</p>
@@ -187,9 +198,9 @@ export default function ReadingNotes({ userBookId, today, onBusyChange }: Props)
       <div className="note-head">
         <time dateTime={item.note_date}>{spokenDate(item.note_date)}</time>
         <span>
-          <button type="button" className="link-button" disabled={saving || editor !== null} aria-label={`${spokenDate(item.note_date)} 노트 수정`}
-            onClick={() => { setEditor({ note: item, form: noteForm(item, today) }); setError(''); setMessage('') }}>수정</button>
-          <button type="button" className="link-button" disabled={saving || editor !== null} aria-label={`${spokenDate(item.note_date)} 노트 삭제`}
+          <button type="button" className="link-button" disabled={locked || editor !== null} aria-label={`${spokenDate(item.note_date)} 노트 수정`}
+            onClick={() => { const form = noteForm(item, today); setEditor({ note: item, form, initial: form }); setError(''); setMessage('') }}>수정</button>
+          <button type="button" className="link-button" disabled={locked || editor !== null} aria-label={`${spokenDate(item.note_date)} 노트 삭제`}
             onClick={() => setRemove(item)}>삭제</button>
         </span>
       </div>

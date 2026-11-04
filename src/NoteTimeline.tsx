@@ -9,7 +9,7 @@ import CabinIcon from './CabinIcon'
 import { NoteText } from './ReadingNotes'
 
 type Props = { month: string; today: string; onMove: (months: number) => void }
-type List = { month: string; items: ReadingNoteEntry[]; offset: number; more: boolean }
+type List = { items: ReadingNoteEntry[]; offset: number; more: boolean }
 const PAGE_SIZE = 20
 
 // 서버의 평평한 목록(날짜·작성 시각 내림차순)을 그대로 두고, 화면에서만 같은 날짜끼리 묶는다.
@@ -25,7 +25,7 @@ function byDate(items: ReadingNoteEntry[]) {
 
 export default function NoteTimeline({ month, today, onMove }: Props) {
   const [list, setList] = useState<List | null>(null)
-  const [error, setError] = useState<{ month: string; text: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const version = useRef(0)
 
@@ -35,13 +35,12 @@ export default function NoteTimeline({ month, today, onMove }: Props) {
     withAccessToken((token) => getNoteTimeline(token, start, end, PAGE_SIZE, offset)).then((page) => {
       if (version.current !== current) return
       setList((previous) => ({
-        month,
-        items: offset === 0 || previous?.month !== month ? page : [...new Map([...previous.items, ...page].map((item) => [item.id, item])).values()],
+        items: offset === 0 ? page : [...new Map([...(previous?.items ?? []), ...page].map((item) => [item.id, item])).values()],
         offset: offset + page.length, more: page.length === PAGE_SIZE,
       }))
     }, (loadError: unknown) => {
       // 더 보기 실패에도 이미 받은 노트와 다음 위치를 남긴다.
-      if (version.current === current) setError({ month, text: commonErrorMessage(loadError, '노트를 불러오지 못했습니다') })
+      if (version.current === current) setError(commonErrorMessage(loadError, '노트를 불러오지 못했습니다'))
     }).finally(() => {
       if (version.current === current) setLoading(false)
     })
@@ -59,8 +58,9 @@ export default function NoteTimeline({ month, today, onMove }: Props) {
     load(offset)
   }
 
-  const current = list?.month === month ? list : null
-  const failure = error?.month === month ? error.text : null
+  // 부모가 달마다 key로 다시 그리므로 이 목록은 항상 현재 달의 것이다.
+  const current = list
+  const failure = error
 
   return (
     <div className="note-timeline">

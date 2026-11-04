@@ -18,7 +18,7 @@ const note = (id: string, patch: Partial<ReadingNote> = {}): ReadingNote => ({
   created_at: '2026-11-01T01:00:00Z', updated_at: '2026-11-01T01:00:00Z', ...patch,
 })
 const onBusyChange = vi.fn()
-const renderNotes = () => render(<ReadingNotes userBookId="ub-1" today="2026-11-04" onBusyChange={onBusyChange} />)
+const renderNotes = (blocked = false) => render(<ReadingNotes userBookId="ub-1" today="2026-11-04" blocked={blocked} onBusyChange={onBusyChange} />)
 
 beforeEach(() => vi.resetAllMocks())
 afterEach(cleanup)
@@ -135,9 +135,46 @@ test('없는 노트를 수정하면 입력을 남기고 목록을 다시 불러�
   fireEvent.click(screen.getByRole('button', { name: '2026년 11월 1일 노트 수정' }))
   fireEvent.change(screen.getByLabelText('인상 깊은 문구'), { target: { value: '고친 문구' } })
   fireEvent.click(screen.getByRole('button', { name: '노트 저장' }))
-  expect((await screen.findByRole('alert')).textContent).toContain('노트를 찾을 수 없습니다')
+  expect((await screen.findByRole('alert')).textContent).toContain('새 노트로 저장할 수 있어요')
   expect(screen.getByLabelText('인상 깊은 문구')).toHaveProperty('value', '고친 문구')
   await screen.findByText('아직 남긴 노트가 없습니다.')
+
+  // 같은 id로 다시 PATCH하지 않고 새 노트로 저장한다.
+  mocks.createReadingNote.mockResolvedValueOnce(note('n2', { quote: '고친 문구' }))
+  mocks.getReadingNotes.mockResolvedValueOnce([note('n2', { quote: '고친 문구' })])
+  fireEvent.click(screen.getByRole('button', { name: '노트 저장' }))
+  await screen.findByText('노트를 저장했습니다.')
+  expect(mocks.updateReadingNote).toHaveBeenCalledTimes(1)
+  expect(mocks.createReadingNote).toHaveBeenCalledWith('test-token', 'ub-1', { note_date: '2026-11-01', quote: '고친 문구', thought: null, page: null })
+})
+
+test('저장 뒤 이미 불러온 범위를 한 번에 다시 받아 뒤쪽 노트를 잃지 않는다', async () => {
+  const many = Array.from({ length: 45 }, (_, index) => note(`n${index}`))
+  mocks.getReadingNotes
+    .mockResolvedValueOnce(many.slice(0, 20))
+    .mockResolvedValueOnce(many.slice(20, 40))
+    .mockResolvedValueOnce(many.slice(0, 40))
+  mocks.updateReadingNote.mockResolvedValueOnce(many[30])
+  renderNotes()
+  await screen.findByText('문구 n19')
+  fireEvent.click(screen.getByRole('button', { name: '노트 더 보기' }))
+  await screen.findByText('문구 n39')
+  fireEvent.click(screen.getAllByRole('button', { name: '2026년 11월 1일 노트 수정' })[30])
+  fireEvent.change(screen.getByLabelText('생각'), { target: { value: '추가' } })
+  fireEvent.click(screen.getByRole('button', { name: '노트 저장' }))
+  await screen.findByText('노트를 수정했습니다.')
+  expect(mocks.getReadingNotes).toHaveBeenLastCalledWith('test-token', 'ub-1', 40, 0)
+  expect(screen.getByText('문구 n39')).toBeTruthy()
+  expect(screen.getByRole('button', { name: '노트 더 보기' })).toBeTruthy()
+})
+
+test('책 상세의 다른 저장 중에는 노트를 쓰거나 고치지 않는다', async () => {
+  mocks.getReadingNotes.mockResolvedValueOnce([note('n1')])
+  renderNotes(true)
+  await screen.findByText('문구 n1')
+  expect(screen.getByRole('button', { name: '노트 쓰기' })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('button', { name: '2026년 11월 1일 노트 수정' })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('button', { name: '2026년 11월 1일 노트 삭제' })).toHaveProperty('disabled', true)
 })
 
 test('삭제는 확인 후 보내고 목록을 다시 조회한다', async () => {

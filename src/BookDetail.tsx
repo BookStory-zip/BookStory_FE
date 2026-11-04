@@ -450,7 +450,7 @@ function BookDetail({ userBookId, userId }: { userBookId: string; userId: string
           ))}
       </div>
 
-      <ReadingTimer userId={userId} userBookId={book.id} status={book.status} blocked={pending !== null || needsRefresh} onBusyChange={setTimerBusy} onSaved={async () => {
+      <ReadingTimer userId={userId} userBookId={book.id} status={book.status} blocked={pending !== null || needsRefresh || notesBusy} onBusyChange={setTimerBusy} onSaved={async () => {
         const [, fresh] = await Promise.all([loadTodayLog(todayRef.current), reload()])
         return fresh ? bookRef.current?.status ?? null : null
       }} />
@@ -590,7 +590,7 @@ function BookDetail({ userBookId, userId }: { userBookId: string; userId: string
         </button>
       </form>
 
-      <ReadingNotes key={book.id} userBookId={book.id} today={today} onBusyChange={setNotesBusy} />
+      <ReadingNotes key={book.id} userBookId={book.id} today={today} blocked={pending !== null || needsRefresh || timerBusy} onBusyChange={setNotesBusy} />
 
       <div className="detail-card danger">
         <h2>서재에서 빼기</h2>
