@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { ApiError, getLibraryBooks, moveLibraryBook, readingStatuses, statusLabels } from './lib/api'
-import type { LibraryBookItem, LibraryFilter, ReadingStatus } from './lib/api'
+import { ApiError, getLibraryBooks, getShelves, moveLibraryBook, readingStatuses, statusLabels } from './lib/api'
+import type { LibraryBookItem, LibraryFilter, ReadingStatus, Shelf } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { codeMessage, commonErrorMessage, isUnclearWrite } from './lib/errors'
 import { Link } from 'react-router'
 import CabinIcon from './CabinIcon'
+import ShelfManager from './ShelfManager'
 
 export const PAGE_SIZE = 20
 const MAX_LIMIT = 100
@@ -15,9 +16,12 @@ const SCROLL_STEP = 12
 const QUERY_LIMIT = 200
 type Field = NonNullable<LibraryFilter['field']>
 
-function makeFilter(q: string | undefined, field: Field | undefined, status: ReadingStatus | undefined): LibraryFilter {
-  return { ...(q && { q, field: field ?? 'title' }), ...(status && { status }) }
+function makeFilter({ q, field, status, shelf_id }: LibraryFilter): LibraryFilter {
+  return { ...(q && { q, field: field ?? 'title' }), ...(status && { status }), ...(shelf_id && { shelf_id }) }
 }
+
+// 조건 조회를 서버가 거부했을 때 되돌아갈 조건과 안내.
+type Fallback = { filter: LibraryFilter; message: string; kind: 'search' | 'shelf' }
 
 // 손가락·마우스 아래의 책 순번. 서재 밖이면 null.
 function bookIndexAt(shelf: HTMLElement | null, x: number, y: number) {
@@ -61,13 +65,32 @@ export default function Library() {
   const [query, setQuery] = useState('')
   const [field, setField] = useState<Field>('title')
   const [searchError, setSearchError] = useState('')
+  const [shelves, setShelves] = useState<Shelf[] | null>(null)
+  const [shelvesError, setShelvesError] = useState('')
+  const [managing, setManaging] = useState(false)
+  const [shelfBusy, setShelfBusy] = useState(false)
+  const shelvesVersion = useRef(0)
   // 필터 결과의 순서를 전체 서재 순서로 오해해 저장하지 않도록 필터 중에는 순서 편집을 막는다.
-  const filtered = Boolean(filter.q || filter.status)
-  const filterLocked = editing || saving || needsRefresh
+  const filtered = Boolean(filter.q || filter.status || filter.shelf_id)
+  const filterLocked = editing || saving || needsRefresh || shelfBusy
+
+  // book_count는 서버 값만 쓴다. 쓰기 뒤에는 목록 전체를 다시 받는다.
+  function loadShelves() {
+    const run = ++shelvesVersion.current
+    return withAccessToken(getShelves).then((list) => {
+      if (!active.current || run !== shelvesVersion.current) return false
+      setShelves(list)
+      setShelvesError('')
+      return true
+    }, (failure: unknown) => {
+      if (active.current && run === shelvesVersion.current) setShelvesError(commonErrorMessage(failure, '책장을 불러오지 못했습니다'))
+      return false
+    })
+  }
 
   // 첫 조회는 초기 상태가 이미 loading이므로 화면 상태 전환은 버튼 핸들러에서만 한다.
-  // 조건 조회를 서버가 422로 거부하면 그 안내 문구를 돌려준다(되돌리기는 apply가 한다).
-  async function load(offset: number, preserve = false, limit = PAGE_SIZE, truncated = false): Promise<boolean | string> {
+  // 조건 조회를 서버가 거부하면 되돌아갈 조건과 안내를 돌려준다(되돌리기는 apply가 한다).
+  async function load(offset: number, preserve = false, limit = PAGE_SIZE, truncated = false): Promise<boolean | Fallback> {
     busy.current = true
     const version = ++loadVersion.current
 
@@ -89,7 +112,11 @@ export default function Library() {
       if (!active.current || version !== loadVersion.current) return false
       // 같은 조건을 다시 보내도 422이므로 재시도 대신 이전 조건으로 돌아가 입력란에 이유를 알린다.
       if (offset === 0 && !preserve && loadError instanceof ApiError && loadError.status === 422 && filterRef.current !== previousFilter.current) {
-        return codeMessage(loadError) ?? '검색 조건을 확인해주세요.'
+        return { filter: previousFilter.current, message: codeMessage(loadError) ?? '검색 조건을 확인해주세요.', kind: 'search' }
+      }
+      // 선택한 책장이 삭제됐으면 원인을 추정하지 않고 책장 목록을 다시 받은 뒤 전체 책장으로 돌아간다.
+      if (offset === 0 && !preserve && loadError instanceof ApiError && loadError.status === 404 && filterRef.current.shelf_id) {
+        return { filter: makeFilter({ ...filterRef.current, shelf_id: undefined }), message: '선택한 책장을 찾을 수 없어 전체 책장으로 돌아왔어요.', kind: 'shelf' }
       }
       setError(errorMessage(loadError))
       if (offset === 0 && !preserve) setPhase('error')
@@ -117,10 +144,14 @@ export default function Library() {
     setSlow(false)
     setLoadingMore(false)
     setPhase('loading')
-    void load(0).then((rejected) => {
-      if (typeof rejected !== 'string' || !active.current) return
-      apply(previousFilter.current, false)
-      setSearchError(rejected)
+    void load(0).then((fallback) => {
+      if (typeof fallback !== 'object' || !active.current) return
+      apply(fallback.filter, false)
+      if (fallback.kind === 'search') setSearchError(fallback.message)
+      else {
+        setNotice(fallback.message)
+        void loadShelves()
+      }
     })
   }
 
@@ -130,13 +161,13 @@ export default function Library() {
     const q = query.trim().normalize('NFC')
     if (!q) return setSearchError('검색어를 입력해주세요.')
     if ([...q].length > QUERY_LIMIT) return setSearchError(`검색어는 ${QUERY_LIMIT}자까지 입력할 수 있어요.`)
-    apply(makeFilter(q, field, filter.status))
+    apply(makeFilter({ ...filter, q, field }))
   }
 
   function clearSearch() {
     if (filterLocked) return
     setQuery('')
-    apply(makeFilter(undefined, undefined, filter.status))
+    apply(makeFilter({ ...filter, q: undefined }))
   }
 
   function retry() {
@@ -156,6 +187,7 @@ export default function Library() {
   useEffect(() => {
     active.current = true
     if (!busy.current) void load(0)
+    void loadShelves()
     return () => {
       active.current = false
       loadVersion.current += 1
@@ -295,11 +327,25 @@ export default function Library() {
           onChange={(event) => {
             // 제출하지 않은 검색 기준이 아니라 적용된 기준을 쓰고, 선택 상자도 그에 맞춘다.
             if (filter.field) setField(filter.field)
-            apply(makeFilter(filter.q, filter.field, (event.target.value || undefined) as ReadingStatus | undefined))
+            apply(makeFilter({ ...filter, status: (event.target.value || undefined) as ReadingStatus | undefined }))
           }}>
           <option value="">전체</option>
           {readingStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
         </select>
+        {shelves && shelves.length > 0 && <>
+          <label htmlFor="library-shelf">책장</label>
+          <select id="library-shelf" value={filter.shelf_id ?? ''} disabled={filterLocked}
+            onChange={(event) => {
+              if (filter.field) setField(filter.field)
+              apply(makeFilter({ ...filter, shelf_id: event.target.value || undefined }))
+            }}>
+            <option value="">전체</option>
+            {shelves.map((shelf) => <option key={shelf.id} value={shelf.id}>{shelf.name} ({shelf.book_count}권)</option>)}
+          </select>
+        </>}
+        <button type="button" className="secondary compact" aria-expanded={managing} disabled={editing || saving} onClick={() => setManaging(!managing)}>
+          {managing ? '책장 관리 닫기' : '책장 관리'}
+        </button>
         {filter.q && (
           <p aria-live="polite">
             {filter.field === 'author' ? '저자' : '제목'} ‘{filter.q}’ 검색 결과
@@ -307,6 +353,17 @@ export default function Library() {
           </p>
         )}
       </div>
+
+      {shelvesError && (
+        <div className="library-note" role="alert">
+          <p>{shelvesError}</p>
+          <button type="button" className="secondary compact" onClick={() => void loadShelves()}>책장 다시 불러오기</button>
+        </div>
+      )}
+      {managing && shelves && (
+        <ShelfManager shelves={shelves} refresh={loadShelves} onBusyChange={setShelfBusy}
+          onDeleted={(shelfId) => { if (filterRef.current.shelf_id === shelfId) apply(makeFilter({ ...filterRef.current, shelf_id: undefined })) }} />
+      )}
 
       {phase === 'ready' && books.length > 0 && (
         <div className="library-order">
@@ -317,7 +374,7 @@ export default function Library() {
             }}>
             {editing ? '편집 마치기' : '순서 편집'}
           </button>
-          {filtered && <p>검색·상태 필터를 해제하면 전체 서재 순서를 편집할 수 있어요.</p>}
+          {filtered && <p>검색·상태·책장 필터를 해제하면 전체 서재 순서를 편집할 수 있어요.</p>}
           {editing && <p id="order-help">손잡이를 끌거나 앞·뒤 버튼으로 옮겨요. 이동할 때마다 저장돼요. 불러온 책 사이에서만 옮길 수 있어요.</p>}
         </div>
       )}

@@ -405,6 +405,68 @@ main.app {
   margin-bottom: var(--space-6);
 }
 
+.shelf-manager {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background-color: var(--color-veil-bottom);
+}
+
+.shelf-manager h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.shelf-manager .search-form {
+  margin-bottom: 0;
+}
+
+.shelf-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shelf-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-rule);
+}
+
+.shelf-list .search-form {
+  flex: 1 1 100%;
+}
+
+.shelf-name {
+  overflow-wrap: anywhere;
+}
+
+.shelf-name small {
+  color: var(--color-muted);
+}
+
+.shelf-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.shelf-options {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .library-filters p {
   display: flex;
   flex-wrap: wrap;

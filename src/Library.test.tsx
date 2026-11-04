@@ -10,12 +10,14 @@ import Library, { PAGE_SIZE } from './Library'
 const mocks = vi.hoisted(() => ({
   getLibraryBooks: vi.fn(),
   moveLibraryBook: vi.fn(),
+  getShelves: vi.fn(),
 }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),
   getLibraryBooks: mocks.getLibraryBooks,
   moveLibraryBook: mocks.moveLibraryBook,
+  getShelves: mocks.getShelves,
 }))
 // 환경변수 없는 CI에서도 실제 Supabase 클라이언트를 만들지 않는다.
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
@@ -41,7 +43,10 @@ function makeBooks(count: number, prefix: string): LibraryBookItem[] {
 // 표지가 상세 링크이므로 라우터 안에서 그린다.
 const renderInRouter = (ui: ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>)
 
-beforeEach(() => vi.resetAllMocks())
+beforeEach(() => {
+  vi.resetAllMocks()
+  mocks.getShelves.mockResolvedValue([])
+})
 afterEach(cleanup)
 
 test('더 보기는 받은 개수만큼 offset을 넘겨 다음 페이지를 이어 붙인다', async () => {
@@ -283,7 +288,7 @@ test('저자 검색은 서버에 검색 조건을 보내고, 필터 중에는 �
   expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0, { q: '한강', field: 'author' })
   expect(screen.queryByText('A 책 0')).toBeNull()
   expect(screen.getByRole('button', { name: '순서 편집' })).toHaveProperty('disabled', true)
-  expect(screen.getByText('검색·상태 필터를 해제하면 전체 서재 순서를 편집할 수 있어요.')).toBeTruthy()
+  expect(screen.getByText('검색·상태·책장 필터를 해제하면 전체 서재 순서를 편집할 수 있어요.')).toBeTruthy()
 
   fireEvent.click(screen.getByRole('button', { name: '검색 해제' }))
   await screen.findByText('A 책 2')
@@ -414,4 +419,36 @@ test('검색 기준만 바꾸고 제출하지 않았으면 상태 변경은 적�
   fireEvent.change(screen.getByLabelText('읽기 상태'), { target: { value: 'completed' } })
   await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0, { q: '한강', field: 'title', status: 'completed' }))
   expect(screen.getByLabelText('검색 기준')).toHaveProperty('value', 'title')
+})
+
+const shelfItem = (id: string, name: string, count: number) => ({ id, name, book_count: count, position: 0 })
+
+test('책장 필터는 검색·상태와 함께 서버에 보내고 서버 권수를 표시하며 순서 편집을 막는다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 12), shelfItem('s2', '에세이', 0)])
+  mocks.getLibraryBooks.mockResolvedValueOnce(makeBooks(3, 'A')).mockResolvedValueOnce(makeBooks(1, 'S'))
+  renderInRouter(<Library />)
+  await screen.findByText('A 책 2')
+  const select = await screen.findByLabelText('책장')
+  expect([...(select as HTMLSelectElement).options].map((option) => option.textContent)).toEqual(['전체', 'SF (12권)', '에세이 (0권)'])
+  fireEvent.change(select, { target: { value: 's1' } })
+  await screen.findByText('S 책 0')
+  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0, { shelf_id: 's1' })
+  expect(screen.getByRole('button', { name: '순서 편집' })).toHaveProperty('disabled', true)
+})
+
+test('선택한 책장이 없어졌으면(404) 책장 목록을 다시 받고 전체 책장으로 돌아간다', async () => {
+  mocks.getShelves.mockResolvedValueOnce([shelfItem('s1', 'SF', 2)]).mockResolvedValueOnce([])
+  mocks.getLibraryBooks
+    .mockResolvedValueOnce(makeBooks(2, 'A'))
+    .mockRejectedValueOnce(new ApiError(404, 'Shelf not found'))
+    .mockResolvedValueOnce(makeBooks(2, 'A'))
+  renderInRouter(<Library />)
+  await screen.findByText('A 책 1')
+  fireEvent.change(await screen.findByLabelText('책장'), { target: { value: 's1' } })
+  await screen.findByText('선택한 책장을 찾을 수 없어 전체 책장으로 돌아왔어요.')
+  await waitFor(() => expect(mocks.getShelves).toHaveBeenCalledTimes(2))
+  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0, {})
+  await screen.findByText('A 책 1')
+  expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull()
+  expect(screen.queryByLabelText('책장')).toBeNull()
 })

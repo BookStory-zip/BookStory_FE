@@ -212,3 +212,120 @@ test('서재 검색·상태 필터: 서버 조건 조합, 더 보기, 해제 후
     'offset=0',
   ])
 })
+
+test('서브 책장: 만들기·필터·상세에서 넣기·이름 변경·순서·삭제 후 책 보존', async ({ page }, testInfo) => {
+  const books = Array.from({ length: 3 }, (_, i) => ({
+    id: `personal-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598', title: `책장 책 ${i}`, authors: ['독서가'],
+    thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-02T00:00:00Z',
+  }))
+  let shelves: { id: string; name: string; position: number }[] = []
+  const members = new Map<string, Set<string>>()
+  const writes: string[] = []
+  const shelfList = () => shelves.map((shelf) => ({ ...shelf, book_count: members.get(shelf.id)?.size ?? 0 }))
+  await mockBackend(page, async (route, url, method) => {
+    const request = route.request()
+    const path = url.pathname
+    if (method !== 'GET') writes.push(`${method} ${path} ${request.postData() ?? ''}`.trim())
+    const noContent = () => route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
+    if (path === '/shelves' && method === 'GET') return json(route, shelfList()).then(() => true)
+    if (path === '/shelves' && method === 'POST') {
+      const shelf = { id: `shelf-${shelves.length + 1}`, name: request.postDataJSON().name, position: shelves.length }
+      shelves.push(shelf)
+      return json(route, { ...shelf, book_count: 0 }, 201).then(() => true)
+    }
+    const shelfMatch = path.match(/^\/shelves\/([^/]+)(\/position|\/books\/([^/]+))?$/)
+    if (shelfMatch) {
+      const [, id, sub, bookId] = shelfMatch
+      if (sub === '/position') {
+        const moved = shelves.find((shelf) => shelf.id === id)!
+        shelves = shelves.filter((shelf) => shelf.id !== id)
+        const after = request.postDataJSON().after_shelf_id
+        shelves.splice(after === null ? 0 : shelves.findIndex((shelf) => shelf.id === after) + 1, 0, moved)
+        return noContent()
+      }
+      if (bookId) {
+        const set = members.get(id) ?? new Set()
+        if (method === 'PUT') set.add(bookId); else set.delete(bookId)
+        members.set(id, set)
+        return noContent()
+      }
+      if (method === 'PATCH') {
+        const shelf = shelves.find((item) => item.id === id)!
+        shelf.name = request.postDataJSON().name
+        return json(route, { ...shelf, book_count: members.get(id)?.size ?? 0 }).then(() => true)
+      }
+      if (method === 'DELETE') {
+        shelves = shelves.filter((shelf) => shelf.id !== id)
+        members.delete(id)
+        return noContent()
+      }
+    }
+    if (path === '/library/books' && method === 'GET') {
+      const shelfId = url.searchParams.get('shelf_id')
+      if (shelfId && !shelves.some((shelf) => shelf.id === shelfId)) return json(route, { detail: 'Shelf not found' }, 404).then(() => true)
+      return json(route, books.filter((book) => !shelfId || members.get(shelfId)?.has(book.id))).then(() => true)
+    }
+    const detailMatch = path.match(/^\/library\/books\/(personal-\d)$/)
+    if (detailMatch && method === 'GET') {
+      const book = books.find((item) => item.id === detailMatch[1])!
+      return json(route, {
+        ...book, publisher: null, published_date: null, description: null, source_url: 'https://example.test', started_at: null,
+        last_read_at: null, last_read_date: null, completed_at: null, stopped_at: null, stop_reason: null, rating: null, memo: null,
+        is_review_public: false, review_published_at: null, review_updated_at: null, has_completed: false, updated_at: '2026-11-02T00:00:00Z',
+        allowed_statuses: ['want_to_read', 'reading', 'completed', 'paused', 'abandoned'],
+        shelves: shelves.filter((shelf) => members.get(shelf.id)?.has(book.id)).map(({ id, name }) => ({ id, name })),
+      }).then(() => true)
+    }
+    return false
+  })
+  await signInWithMockSession(page)
+  await page.goto('/')
+  await expect(page.getByRole('listitem')).toHaveCount(3)
+
+  await page.getByRole('button', { name: '책장 관리' }).click()
+  for (const name of ['SF', '에세이']) {
+    await page.getByLabel('새 책장 이름').fill(`  ${name} `)
+    await page.getByRole('button', { name: '만들기' }).click()
+    await expect(page.getByText(`‘${name}’ 책장을 만들었습니다.`)).toBeVisible()
+  }
+  await page.screenshot({ path: testInfo.outputPath('shelf-manager-mobile.png'), fullPage: true })
+
+  await page.getByRole('link', { name: /책장 책 1/ }).click()
+  await page.getByRole('checkbox', { name: 'SF' }).click()
+  await expect(page.getByText('들어 있는 책장: SF')).toBeVisible()
+  await page.getByRole('checkbox', { name: '에세이' }).click()
+  await expect(page.getByText('들어 있는 책장: SF, 에세이')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('book-shelves-mobile.png'), fullPage: true })
+
+  await page.getByRole('link', { name: '서재', exact: true }).click()
+  await page.getByLabel('책장', { exact: true }).selectOption({ label: 'SF (1권)' })
+  await expect(page.locator('ul.shelf > li')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: '순서 편집' })).toBeDisabled()
+
+  await page.getByRole('button', { name: '책장 관리' }).click()
+  await page.getByRole('button', { name: '에세이 앞으로' }).click()
+  await expect(page.getByText('책장 순서를 바꿨습니다.')).toBeVisible()
+  await page.getByRole('button', { name: 'SF 이름 바꾸기' }).click()
+  await page.getByLabel('SF 새 이름').fill('sf')
+  await page.getByRole('button', { name: '저장', exact: true }).click()
+  await expect(page.getByText('책장 이름을 바꿨습니다.')).toBeVisible()
+  await page.getByRole('button', { name: 'sf 삭제' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '책장 삭제' }).click()
+  await expect(page.getByText('‘sf’ 책장을 삭제했습니다. 책은 서재에 그대로 있어요.')).toBeVisible()
+  // 보고 있던 책장을 지우면 전체 서재로 돌아가고 책은 그대로다.
+  await expect(page.locator('ul.shelf > li')).toHaveCount(3)
+  await expect(page.getByRole('button', { name: '순서 편집' })).toBeEnabled()
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  }
+  expect(writes).toEqual([
+    'POST /shelves {"name":"SF"}',
+    'POST /shelves {"name":"에세이"}',
+    'PUT /shelves/shelf-1/books/personal-1',
+    'PUT /shelves/shelf-2/books/personal-1',
+    'PATCH /shelves/shelf-2/position {"after_shelf_id":null}',
+    'PATCH /shelves/shelf-1 {"name":"sf"}',
+    'DELETE /shelves/shelf-1',
+  ])
+})

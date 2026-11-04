@@ -153,7 +153,7 @@ function isLibraryBookItem(value: unknown): value is LibraryBookItem {
 }
 
 // 검색·상태 조건은 서버가 함께 적용한다. 정렬은 저장된 서재 순서이고 전체 개수는 없다.
-export type LibraryFilter = { q?: string; field?: 'title' | 'author'; status?: ReadingStatus }
+export type LibraryFilter = { q?: string; field?: 'title' | 'author'; status?: ReadingStatus; shelf_id?: string }
 
 export async function getLibraryBooks(
   accessToken: string,
@@ -173,6 +173,8 @@ export async function getLibraryBooks(
   // 서버가 조건을 적용한다고 믿는다. 체크 편집기만 체크 대상 보호를 위해 화면에서 한 번 더 읽는 중을 고른다.
   // 조건을 모르는 BE는 전체를 돌려주므로 FE는 BE 운영 반영 뒤에 배포한다.
   if (filter.status) query.set('status', filter.status)
+  // 타인·없는 책장은 404다.
+  if (filter.shelf_id) query.set('shelf_id', filter.shelf_id)
   const data = await apiRequest(`/library/books?${query}`, accessToken)
 
   if (!Array.isArray(data) || !data.every(isLibraryBookItem)) {
@@ -279,6 +281,8 @@ export type LibraryBookDetail = LibraryBookItem & {
   updated_at: string
   // 지금 요청할 수 있는 상태(현재 상태 재요청 포함). 날짜 검증은 요청 시점에 서버가 따로 한다.
   allowed_statuses: ReadingStatus[]
+  // 이 책이 속한 책장(책장 순서). 서재 목록 항목에는 없다.
+  shelves: { id: string; name: string }[]
 }
 
 function isNullableString(value: unknown) {
@@ -310,7 +314,10 @@ function isLibraryBookDetail(value: unknown): value is LibraryBookDetail {
     typeof item.is_review_public === 'boolean' &&
     typeof item.updated_at === 'string' &&
     Array.isArray(item.allowed_statuses) &&
-    item.allowed_statuses.every((status) => readingStatuses.includes(status as ReadingStatus))
+    item.allowed_statuses.every((status) => readingStatuses.includes(status as ReadingStatus)) &&
+    Array.isArray(item.shelves) &&
+    item.shelves.every((shelf: unknown) => typeof shelf === 'object' && shelf !== null &&
+      typeof (shelf as Record<string, unknown>).id === 'string' && typeof (shelf as Record<string, unknown>).name === 'string')
   )
 }
 
@@ -684,6 +691,55 @@ export async function getReadingSessions(accessToken: string, userBookId: string
 
 export async function deleteReadingSession(accessToken: string, sessionId: string): Promise<void> {
   await apiRequest(`/reading-sessions/${encodeURIComponent(sessionId)}`, accessToken, { method: 'DELETE' })
+}
+
+// 서브 책장. 전체 서재 위의 필터이며 한 책이 여러 책장에 속할 수 있다. 사용자당 최대 30개.
+export type Shelf = { id: string; name: string; book_count: number; position: number }
+
+function readShelf(data: unknown): Shelf {
+  if (typeof data !== 'object' || data === null) throw new Error('책장 응답 형식이 올바르지 않습니다.')
+  const item = data as Record<string, unknown>
+  if (typeof item.id !== 'string' || typeof item.name !== 'string' || !isCount(item.book_count) ||
+    typeof item.position !== 'number' || !Number.isInteger(item.position)) throw new Error('책장 응답 형식이 올바르지 않습니다.')
+  return item as Shelf
+}
+
+// 책장 순서대로 전체(최대 30개)를 한 번에 받는다. book_count는 필터와 무관한 그 책장의 전체 권수다.
+export async function getShelves(accessToken: string): Promise<Shelf[]> {
+  const data = await apiRequest('/shelves', accessToken)
+  if (!Array.isArray(data)) throw new Error('책장 응답 형식이 올바르지 않습니다.')
+  return data.map(readShelf)
+}
+
+export async function createShelf(accessToken: string, name: string): Promise<Shelf> {
+  return readShelf(await apiRequest('/shelves', accessToken, { method: 'POST', body: { name } }))
+}
+
+export async function renameShelf(accessToken: string, shelfId: string, name: string): Promise<Shelf> {
+  return readShelf(await apiRequest(`/shelves/${encodeURIComponent(shelfId)}`, accessToken, { method: 'PATCH', body: { name } }))
+}
+
+// after_shelf_id는 필수 키다. null이면 맨 앞으로 옮긴다.
+export async function moveShelf(accessToken: string, shelfId: string, afterShelfId: string | null): Promise<void> {
+  await apiRequest(`/shelves/${encodeURIComponent(shelfId)}/position`, accessToken, { method: 'PATCH', body: { after_shelf_id: afterShelfId } })
+}
+
+// 책장만 지우고 책은 서재에 남는다.
+export async function deleteShelf(accessToken: string, shelfId: string): Promise<void> {
+  await apiRequest(`/shelves/${encodeURIComponent(shelfId)}`, accessToken, { method: 'DELETE' })
+}
+
+const shelfBookPath = (shelfId: string, userBookId: string) =>
+  `/shelves/${encodeURIComponent(shelfId)}/books/${encodeURIComponent(userBookId)}`
+
+// 이미 있으면 그대로 204다.
+export async function addBookToShelf(accessToken: string, shelfId: string, userBookId: string): Promise<void> {
+  await apiRequest(shelfBookPath(shelfId, userBookId), accessToken, { method: 'PUT' })
+}
+
+// 책장에 없어도 204다.
+export async function removeBookFromShelf(accessToken: string, shelfId: string, userBookId: string): Promise<void> {
+  await apiRequest(shelfBookPath(shelfId, userBookId), accessToken, { method: 'DELETE' })
 }
 
 // 비공개 독서 노트. 공개 후기 memo와 별개이며 저장해도 독서 체크를 만들지 않는다.

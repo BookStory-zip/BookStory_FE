@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   getReadingSessions: vi.fn(),
   getReadingNotes: vi.fn(),
   createReadingNote: vi.fn(),
+  getShelves: vi.fn(),
+  addBookToShelf: vi.fn(),
+  removeBookFromShelf: vi.fn(),
 }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
@@ -67,6 +70,7 @@ function detail(overrides: Partial<LibraryBookDetail> = {}): LibraryBookDetail {
     has_completed: false,
     updated_at: '2026-10-01T00:00:00Z',
     allowed_statuses: allowedFor(status),
+    shelves: [],
     ...overrides,
   }
 }
@@ -139,6 +143,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   mocks.getReadingSessions.mockResolvedValue([])
   mocks.getReadingNotes.mockResolvedValue([])
+  mocks.getShelves.mockResolvedValue([])
   mocks.getReadingLogs.mockResolvedValue([])
   // 한국 시간 2026-10-28 12:00으로 고정해 '오늘' 계산을 안정시킨다.
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -362,7 +367,7 @@ test('읽고 싶음 전환과 삭제는 확인창에서 취소하면 요청하�
 
   fireEvent.click(screen.getByRole('button', { name: '서재에서 빼기' }))
   const remove = screen.getByRole('dialog', { name: /서재에서 뺄까요/ })
-  expect(remove.textContent).toContain('독서 체크·시간 기록·독서 노트와 공개 후기도 함께 삭제')
+  expect(remove.textContent).toContain('독서 노트와 공개 후기도 함께 삭제되고 책장에서도 빠지며')
   fireEvent.click(within(remove).getByRole('button', { name: '취소' }))
 
   expect(mocks.updateLibraryStatus).not.toHaveBeenCalled()
