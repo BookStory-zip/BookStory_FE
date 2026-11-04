@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   checkReadingToday: vi.fn(),
   cancelReadingToday: vi.fn(),
   getReadingSessions: vi.fn(),
+  getReadingNotes: vi.fn(),
+  createReadingNote: vi.fn(),
 }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
@@ -136,6 +138,7 @@ test('공개 설정만 수정해도 책 정보로 이동하기 전에 미저장 
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.getReadingSessions.mockResolvedValue([])
+  mocks.getReadingNotes.mockResolvedValue([])
   mocks.getReadingLogs.mockResolvedValue([])
   // 한국 시간 2026-10-28 12:00으로 고정해 '오늘' 계산을 안정시킨다.
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -359,7 +362,7 @@ test('읽고 싶음 전환과 삭제는 확인창에서 취소하면 요청하�
 
   fireEvent.click(screen.getByRole('button', { name: '서재에서 빼기' }))
   const remove = screen.getByRole('dialog', { name: /서재에서 뺄까요/ })
-  expect(remove.textContent).toContain('독서 체크·시간 기록과 공개 후기도 함께 삭제')
+  expect(remove.textContent).toContain('독서 체크·시간 기록·독서 노트와 공개 후기도 함께 삭제')
   fireEvent.click(within(remove).getByRole('button', { name: '취소' }))
 
   expect(mocks.updateLibraryStatus).not.toHaveBeenCalled()
@@ -591,4 +594,22 @@ test('오류 code가 있으면 원인별 한국어로 안내한다', async () =>
   expect(screen.getByRole('status').textContent).not.toContain('Final reading')
   // 409는 화면이 오래된 상태라는 뜻이므로 서버 기준으로 다시 불러온다.
   await waitFor(() => expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2))
+})
+
+test('독서 노트는 공개 후기 메모와 따로 저장하고 독서 체크를 만들지 않는다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ memo: '공개 후기 메모' }))
+  mocks.createReadingNote.mockResolvedValue({
+    id: 'note-1', user_book_id: 'user-book-1', note_date: '2026-10-28', quote: '문장', thought: null, page: null,
+    created_at: '2026-10-28T03:00:00Z', updated_at: '2026-10-28T03:00:00Z',
+  })
+  renderDetail()
+  fireEvent.click(await screen.findByRole('button', { name: '노트 쓰기' }))
+  fireEvent.change(screen.getByLabelText('인상 깊은 문구'), { target: { value: '문장' } })
+  fireEvent.click(screen.getByRole('button', { name: '노트 저장' }))
+
+  await screen.findByText('노트를 저장했습니다.')
+  expect(mocks.createReadingNote).toHaveBeenCalledWith('test-token', 'user-book-1', { note_date: '2026-10-28', quote: '문장', thought: null, page: null })
+  expect(mocks.updateLibraryRecord).not.toHaveBeenCalled()
+  expect(mocks.checkReadingToday).not.toHaveBeenCalled()
+  expect(screen.getByLabelText('메모')).toHaveProperty('value', '공개 후기 메모')
 })

@@ -390,3 +390,64 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
   await page.getByRole('button', { name: '달력', exact: true }).click()
   await expect(page.getByText('이 달에는 체크하거나 완독한 기록이 없습니다.')).toBeVisible()
 })
+
+test('상세에서 비공개 노트를 쓰고 고친 뒤 기록의 노트 탭에서 날짜별로 본다', async ({ page }, testInfo) => {
+  const notes: Record<string, unknown>[] = []
+  const writes: string[] = []
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
+  await signInWithMockSession(page)
+  await mockBackend(page, async (route, url, method) => {
+    const request = route.request()
+    if (url.pathname === '/library/books') return json(route, [book]).then(() => true)
+    if (url.pathname === '/library/books/user-book-1') return json(route, detail).then(() => true)
+    if (url.pathname === '/library/books/user-book-1/notes') {
+      if (method === 'POST') {
+        writes.push(`POST ${request.postData()}`)
+        const note = { id: `note-${notes.length + 1}`, user_book_id: book.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...request.postDataJSON() }
+        notes.unshift(note)
+        return json(route, note, 201).then(() => true)
+      }
+      return json(route, notes).then(() => true)
+    }
+    if (url.pathname.startsWith('/notes/') && method === 'PATCH') {
+      writes.push(`PATCH ${request.postData()}`)
+      Object.assign(notes[0], request.postDataJSON())
+      return json(route, notes[0]).then(() => true)
+    }
+    if (url.pathname === '/notes') {
+      return json(route, notes.map((note) => ({ ...note, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url }))).then(() => true)
+    }
+    return false
+  })
+
+  await page.goto('/books/user-book-1')
+  await expect(page.getByText('아직 남긴 노트가 없습니다.')).toBeVisible()
+  await page.getByRole('button', { name: '노트 쓰기' }).click()
+  await page.getByLabel('인상 깊은 문구').fill('  기억하고 싶은 문장  ')
+  await page.getByLabel('페이지(선택)').fill('41')
+  await page.screenshot({ path: testInfo.outputPath('note-editor-mobile.png'), fullPage: true })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.getByRole('button', { name: '노트 저장' }).click()
+  await expect(page.getByText('노트를 저장했습니다.')).toBeVisible()
+  await expect(page.getByText('기억하고 싶은 문장', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: /노트 수정$/ }).click()
+  await page.getByLabel('생각').fill('다시 읽고 싶다')
+  await page.getByLabel('페이지(선택)').fill('')
+  await page.getByRole('button', { name: '노트 저장' }).click()
+  await expect(page.getByText('노트를 수정했습니다.')).toBeVisible()
+  expect(writes).toEqual([
+    `POST ${JSON.stringify({ note_date: today, quote: '기억하고 싶은 문장', thought: null, page: 41 })}`,
+    `PATCH ${JSON.stringify({ thought: '다시 읽고 싶다', page: null })}`,
+  ])
+
+  await page.getByRole('link', { name: '기록' }).click()
+  await page.getByRole('button', { name: '노트', exact: true }).click()
+  await expect(page.getByText('다시 읽고 싶다')).toBeVisible()
+  await expect(page.getByRole('link', { name: /소년이 온다/ })).toBeVisible()
+  for (const [name, width] of [['mobile', 390], ['tablet', 768], ['desktop', 1440]] as const) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`note-timeline-${name}.png`), fullPage: true })
+  }
+})

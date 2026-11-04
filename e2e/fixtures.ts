@@ -35,6 +35,7 @@ export async function mockBackend(page: Page, handle: Handler) {
     // 따로 다루지 않는 테스트에서는 완독 기록이 없는 것으로 본다.
     if (url.pathname === '/reading-completions') return json(route, [])
     if (url.pathname.endsWith('/reading-sessions')) return json(route, [])
+    if (url.pathname.endsWith('/notes') && request.method() === 'GET') return json(route, [])
     return json(route, { detail: 'not mocked' }, 404)
   })
 }

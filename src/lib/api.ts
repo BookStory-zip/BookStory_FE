@@ -677,6 +677,63 @@ export async function deleteReadingSession(accessToken: string, sessionId: strin
   await apiRequest(`/reading-sessions/${encodeURIComponent(sessionId)}`, accessToken, { method: 'DELETE' })
 }
 
+// 비공개 독서 노트. 공개 후기 memo와 별개이며 저장해도 독서 체크를 만들지 않는다.
+export type NoteInput = { note_date: string; quote: string | null; thought: string | null; page: number | null }
+export type ReadingNote = NoteInput & { id: string; user_book_id: string; created_at: string; updated_at: string }
+export type ReadingNoteEntry = ReadingNote & { title: string; authors: string[]; thumbnail_url: string | null }
+
+const NOTE_INVALID = '노트 응답 형식이 올바르지 않습니다.'
+
+function isReadingNote(value: unknown): value is ReadingNote {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Record<string, unknown>
+  return typeof item.id === 'string' && typeof item.user_book_id === 'string' &&
+    typeof item.note_date === 'string' && DATE_PATTERN.test(item.note_date) &&
+    isNullableString(item.quote) && isNullableString(item.thought) && (item.quote !== null || item.thought !== null) &&
+    (item.page === null || (Number.isInteger(item.page) && Number(item.page) >= 1)) &&
+    typeof item.created_at === 'string' && typeof item.updated_at === 'string'
+}
+
+function isReadingNoteEntry(value: unknown): value is ReadingNoteEntry {
+  if (!isReadingNote(value)) return false
+  const item = value as Record<string, unknown>
+  return typeof item.title === 'string' && Array.isArray(item.authors) &&
+    item.authors.every((author) => typeof author === 'string') && isNullableString(item.thumbnail_url)
+}
+
+function readNote(data: unknown, userBookId?: string): ReadingNote {
+  if (!isReadingNote(data) || (userBookId !== undefined && data.user_book_id !== userBookId)) throw new Error(NOTE_INVALID)
+  return data
+}
+
+export async function createReadingNote(accessToken: string, userBookId: string, body: NoteInput): Promise<ReadingNote> {
+  return readNote(await apiRequest(`${libraryBookPath(userBookId)}/notes`, accessToken, { method: 'POST', body }), userBookId)
+}
+
+export async function getReadingNotes(accessToken: string, userBookId: string, limit: number, offset: number): Promise<ReadingNote[]> {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  const data = await apiRequest(`${libraryBookPath(userBookId)}/notes?${query}`, accessToken)
+  if (!Array.isArray(data) || !data.every((item) => isReadingNote(item) && item.user_book_id === userBookId)) throw new Error(NOTE_INVALID)
+  return data
+}
+
+// 생략한 항목은 유지되고 null로 보낸 항목은 지워진다. note_date는 null로 보내지 않는다.
+export async function updateReadingNote(accessToken: string, noteId: string, patch: Partial<NoteInput>): Promise<ReadingNote> {
+  return readNote(await apiRequest(`/notes/${encodeURIComponent(noteId)}`, accessToken, { method: 'PATCH', body: patch }))
+}
+
+export async function deleteReadingNote(accessToken: string, noteId: string): Promise<void> {
+  await apiRequest(`/notes/${encodeURIComponent(noteId)}`, accessToken, { method: 'DELETE' })
+}
+
+// 기간(최대 366일)의 모든 책 노트. note_date·created_at·id 내림차순의 평평한 목록이다.
+export async function getNoteTimeline(accessToken: string, startDate: string, endDate: string, limit: number, offset: number): Promise<ReadingNoteEntry[]> {
+  const query = new URLSearchParams({ start_date: startDate, end_date: endDate, limit: String(limit), offset: String(offset) })
+  const data = await apiRequest(`/notes?${query}`, accessToken)
+  if (!Array.isArray(data) || !data.every(isReadingNoteEntry)) throw new Error(NOTE_INVALID)
+  return data
+}
+
 // 발송 키가 설정되지 않은 서버는 503을 돌려준다.
 export async function getPushPublicKey(): Promise<string> {
   const data = await apiRequest('/push/public-key', null)
