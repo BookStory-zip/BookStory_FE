@@ -39,6 +39,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
 | `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`·`reading_minutes`·`goals`) | 기록 화면 통계 탭에서만 요청. 아래 통계·독서 목표 참고 |
 | `PUT·DELETE /me/goals` | JSON 본문, `month` 필수(연은 null), 204 | 통계 탭 목표 설정·끄기·이어받기·합계 복귀. 아래 독서 목표 참고 |
+| 독서 노트 5개 API | 책별 작성·목록·수정·삭제, 기간 타임라인. BE 미배포 | 책 상세 노트 카드·기록 노트 탭. 아래 독서 노트 참고 |
 | `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 운영 제공 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
 | `DELETE /me` | 204. 비밀번호 인증 5분 이내 토큰만, 아니면 403 `recent_login_required`, 로그인 계정 삭제 실패 503 `account_deletion_failed`(재시도 가능) | 계정 화면 탈퇴. 비밀번호 재로그인 후 요청 |
 | `GET /push/public-key` | 공개. `{public_key}`(base64url), 발송 키 미설정이면 503. 운영 200 확인 | 구독의 `applicationServerKey`. 아래 독서 알림 참고 |
@@ -129,6 +130,22 @@ BE PR #26(`110e215`)의 `app/schemas.py`·`app/reading_goals.py`·`docs/frontend
 - 월 목표는 직접 설정이 없으면 가장 최근 이전 달(이전 해 포함) 값을 이어받고, 일수·분 목표는 그 달 상한으로 줄여 응답합니다. 연 목표는 직접 설정이 우선이며 없으면 12개월 적용 목표의 합계입니다. 응답 `target`에는 입력 상한을 적용하지 않으므로 연 완독 합계는 9999를 넘을 수 있습니다.
 - `current`: 일수·분은 같은 응답의 `period` 값, 완독은 그 기간(KST)에 `completed_at`이 있는 완독 경험 책 수로 `library.completed_books`와 다릅니다.
 - FE: 기록 화면 통계 탭의 기존 월간·연간 선택에 붙입니다. 지표별 `current / target`, 100%에서 멈추는 진행 막대(실제 수치 유지), 출처(직접 설정·이전 달에서 이어받음·월 목표 합계), "목표 꺼짐"·"목표를 설정해보세요"를 구분합니다. 한 번에 한 지표만 편집하며 입력 상한만 FE에서 계산하고(`src/lib/goals.ts`) 상속·합계는 서버 응답을 씁니다. 빈 입력은 0으로 바꾸지 않고, 끄기(`target: 0`)·"이전 목표 이어받기"(월 DELETE)·"월 목표 합계로 전환"(연 DELETE)은 별도 버튼입니다. 저장 중에는 기간·탭 이동을 막고 성공 후 통계를 다시 조회합니다. 422·결과 불명확(자동 재전송 없음)·저장 후 재조회 실패("설정은 저장됐지만 최신 상태를 확인하지 못했습니다")에서 입력과 기존 통계를 보존하고 최신 상태 확인을 제공합니다. 화면을 떠난 뒤 늦게 끝난 저장은 재조회하지 않습니다.
+
+## 독서 노트 (2026-11-04 합의, BE 미배포)
+
+BE와 사전 합의(2026-11-04 확정 회신)한 계약입니다. BE `feat/reading-notes` `411347f` 구현과 대조했고 검증 환경에서 실제 연동을 확인했습니다(plan.md). 운영 반영 전입니다.
+
+| API | 계약 |
+| --- | --- |
+| `POST /library/books/{user_book_id}/notes` | `{note_date, quote, thought, page}` → 201 노트. `note_date` 필수(생략 422) |
+| `GET /library/books/{user_book_id}/notes?limit=20&offset=0` | 배열, limit 1~100(기본 20) |
+| `PATCH /notes/{note_id}` | 200 노트. 생략은 유지, `quote`·`thought`·`page`의 null은 삭제, `note_date: null`은 422 |
+| `DELETE /notes/{note_id}` | 204 |
+| `GET /notes?start_date&end_date&limit&offset` | 기간 필수·최대 366일. 노트 필드에 `title`·`authors`·`thumbnail_url` 추가 |
+
+- 노트: `id`, `user_book_id`, `note_date`(KST 날짜, 미래 422 `future_date`·과거 제한 없음), `quote`(1000자), `thought`(2000자), `page`(null 또는 1~99999), `created_at`, `updated_at`. 앞뒤 공백을 지워 저장하고 공백만 있으면 null이며, 결과적으로 둘 다 비면 422 `validation_error`(빈 노트 PATCH의 `detail`은 문자열)입니다.
+- 목록은 `note_date`·`created_at`·`id` 내림차순의 평평한 배열이며 전체 개수는 없습니다. 상태와 무관하게 서재의 모든 책에 쓸 수 있고 독서 체크를 만들지 않습니다. 서재 삭제·탈퇴 시 함께 삭제됩니다. 없는/타인 책·노트는 404, 기간 역전·초과는 422 `date_order`·`date_range`입니다.
+- FE: 책 상세의 "독서 노트" 카드(공개 후기 "나의 기록"과 별도)에서 20개씩 더 보기·작성·수정·삭제합니다. 입력 규칙을 같은 기준으로 먼저 검사하고(글자 수는 코드 포인트), PATCH는 바뀐 항목만 보냅니다. 저장 중 중복 요청을 막고, 실패 시 입력을 보존합니다. 결과 불명확·404는 다시 보내지 않고 목록만 재조회합니다. 기록 화면 "노트" 탭은 선택한 달을 기간으로 요청하고 서버 순서 그대로 같은 날짜끼리만 묶어 보여 주며, 달 변경·화면 이탈 뒤 늦은 응답을 버립니다.
 
 ## 독서 알림 (Web Push, 운영 반영)
 

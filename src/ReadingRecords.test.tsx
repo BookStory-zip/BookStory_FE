@@ -3,10 +3,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
-import type { GoalProgress, ReadingLogEntry } from './lib/api'
+import type { GoalProgress, ReadingLogEntry, ReadingNoteEntry } from './lib/api'
 import ReadingRecords from './ReadingRecords'
 
-const mocks = vi.hoisted(() => ({ getReadingLogs: vi.fn(), getReadingCompletions: vi.fn(), getReadingStatistics: vi.fn(), getLibraryBooks: vi.fn(), checkReadingDate: vi.fn(), updateGoal: vi.fn(), deleteGoal: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getReadingLogs: vi.fn(), getReadingCompletions: vi.fn(), getReadingStatistics: vi.fn(), getLibraryBooks: vi.fn(), checkReadingDate: vi.fn(), updateGoal: vi.fn(), deleteGoal: vi.fn(), getNoteTimeline: vi.fn() }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),
@@ -17,6 +17,7 @@ vi.mock('./lib/api', async (importOriginal) => ({
   checkReadingDate: mocks.checkReadingDate,
   updateGoal: mocks.updateGoal,
   deleteGoal: mocks.deleteGoal,
+  getNoteTimeline: mocks.getNoteTimeline,
 }))
 // 환경변수 없는 CI에서도 실제 Supabase 클라이언트를 만들지 않는다.
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
@@ -508,4 +509,85 @@ test('목표 저장 중 화면을 떠나면 늦은 성공 응답으로 다시 �
   cleanup()
   await act(async () => { finish() })
   expect(mocks.getReadingStatistics).toHaveBeenCalledTimes(1)
+})
+
+const timelineNote = (id: string, date: string, userBookId: string, title: string, patch: Partial<ReadingNoteEntry> = {}): ReadingNoteEntry => ({
+  id, user_book_id: userBookId, note_date: date, quote: `문구 ${id}`, thought: null, page: null,
+  created_at: `${date}T01:00:00Z`, updated_at: `${date}T01:00:00Z`, title, authors: ['저자'], thumbnail_url: null, ...patch,
+})
+
+test('노트 탭은 선택한 달의 노트를 서버 순서대로 날짜별로 묶어 보여 준다', async () => {
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getNoteTimeline.mockResolvedValueOnce([
+    timelineNote('a', '2026-10-27', 'ub-a', '소년이 온다', { thought: '생각 a', page: 41 }),
+    timelineNote('b', '2026-10-27', 'ub-b', '데미안'),
+    timelineNote('c', '2026-10-03', 'ub-a', '소년이 온다'),
+  ])
+  renderRecords()
+  fireEvent.click(screen.getByRole('button', { name: '노트' }))
+
+  await screen.findByText('문구 a')
+  expect(mocks.getNoteTimeline).toHaveBeenCalledWith('test-token', '2026-10-01', '2026-10-31', 20, 0)
+  const days = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)
+  expect(days).toEqual(['2026년 10월 27일', '2026년 10월 3일'])
+  const first = screen.getByRole('heading', { name: '2026년 10월 27일' }).closest('section') as HTMLElement
+  expect(within(first).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(['/books/ub-a', '/books/ub-b'])
+  expect(within(first).getByText('생각 a')).toBeTruthy()
+  expect(within(first).getByText('41쪽')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: '노트 더 보기' })).toBeNull()
+})
+
+test('노트 더 보기는 이어서 조회하고, 실패하면 기존 노트와 다음 위치를 유지한다', async () => {
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getNoteTimeline
+    .mockResolvedValueOnce(Array.from({ length: 20 }, (_, index) => timelineNote(`n${index}`, '2026-10-20', 'ub-a', '책')))
+    .mockRejectedValueOnce(new ApiError(503))
+    .mockResolvedValueOnce([timelineNote('n20', '2026-10-02', 'ub-a', '책')])
+  renderRecords()
+  fireEvent.click(screen.getByRole('button', { name: '노트' }))
+  await screen.findByText('문구 n19')
+  fireEvent.click(screen.getByRole('button', { name: '노트 더 보기' }))
+  expect((await screen.findByRole('alert')).textContent).toContain('잠시 응답할 수 없습니다')
+  expect(screen.getByText('문구 n0')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+  await screen.findByText('문구 n20')
+  expect(mocks.getNoteTimeline).toHaveBeenLastCalledWith('test-token', '2026-10-01', '2026-10-31', 20, 20)
+  expect(screen.getAllByText(/문구 n/)).toHaveLength(21)
+})
+
+test('노트 조회 오류는 빈 달과 구분하고, 달을 바꾸면 이전 달의 늦은 응답을 버린다', async () => {
+  let resolveOctober!: (notes: ReadingNoteEntry[]) => void
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getNoteTimeline
+    .mockReturnValueOnce(new Promise((resolve) => { resolveOctober = resolve }))
+    .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    .mockResolvedValueOnce([])
+  renderRecords()
+  fireEvent.click(screen.getByRole('button', { name: '노트' }))
+  fireEvent.click(screen.getByRole('button', { name: '이전 달' }))
+  expect((await screen.findByRole('alert')).textContent).toContain('서버에 연결하지 못했습니다')
+  expect(screen.queryByText('이 달에 남긴 노트가 없습니다.')).toBeNull()
+  expect(mocks.getNoteTimeline).toHaveBeenLastCalledWith('test-token', '2026-09-01', '2026-09-30', 20, 0)
+
+  await act(async () => { resolveOctober([timelineNote('late', '2026-10-27', 'ub-a', '책')]) })
+  expect(screen.queryByText('문구 late')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+  await screen.findByText('이 달에 남긴 노트가 없습니다.')
+  expect(screen.getByRole('heading', { name: '2026년 9월' })).toBeTruthy()
+})
+
+test('새 달 노트를 받은 뒤 늦게 온 이전 달 노트가 화면을 덮지 않는다', async () => {
+  let resolveOctober!: (notes: ReadingNoteEntry[]) => void
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getNoteTimeline
+    .mockReturnValueOnce(new Promise((resolve) => { resolveOctober = resolve }))
+    .mockResolvedValueOnce([timelineNote('sep', '2026-09-10', 'ub-a', '책')])
+  renderRecords()
+  fireEvent.click(screen.getByRole('button', { name: '노트' }))
+  fireEvent.click(screen.getByRole('button', { name: '이전 달' }))
+  await screen.findByText('문구 sep')
+
+  await act(async () => { resolveOctober([timelineNote('late', '2026-10-27', 'ub-a', '책')]) })
+  expect(screen.getByText('문구 sep')).toBeTruthy()
+  expect(screen.queryByText('문구 late')).toBeNull()
 })
