@@ -51,7 +51,8 @@ export default function BookShelves({ userBookId, current, blocked, onChanged, o
     try {
       await withAccessToken((token) => inShelf ? removeBookFromShelf(token, shelf.id, userBookId) : addBookToShelf(token, shelf.id, userBookId))
       if (!active.current) return
-      await Promise.all([onChanged(), load()])
+      // 소속은 상세가 알려 준다. 책장 목록(권수)은 이 화면에 표시하지 않으므로 다시 받지 않는다.
+      await onChanged()
     } catch (failure) {
       if (!active.current) return
       const unclear = isUnclearWrite(failure)

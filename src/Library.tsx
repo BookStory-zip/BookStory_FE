@@ -74,18 +74,31 @@ export default function Library() {
   const filtered = Boolean(filter.q || filter.status || filter.shelf_id)
   const filterLocked = editing || saving || needsRefresh || shelfBusy
 
-  // book_count는 서버 값만 쓴다. 쓰기 뒤에는 목록 전체를 다시 받는다.
-  function loadShelves() {
+  // book_count는 서버 값만 쓴다. 실패하면 null, 더 새 요청에 밀렸으면 undefined(그 요청이 목록을 채운다).
+  function loadShelves(): Promise<Shelf[] | null | undefined> {
     const run = ++shelvesVersion.current
     return withAccessToken(getShelves).then((list) => {
-      if (!active.current || run !== shelvesVersion.current) return false
+      if (!active.current || run !== shelvesVersion.current) return undefined
       setShelves(list)
       setShelvesError('')
-      return true
+      return list
     }, (failure: unknown) => {
-      if (active.current && run === shelvesVersion.current) setShelvesError(commonErrorMessage(failure, '책장을 불러오지 못했습니다'))
-      return false
+      if (!active.current || run !== shelvesVersion.current) return undefined
+      setShelvesError(commonErrorMessage(failure, '책장을 불러오지 못했습니다'))
+      return null
     })
+  }
+
+  // 책장 쓰기 뒤의 재조회. 보던 책장이 목록에 없으면(삭제·다른 탭 변경) 전체 책장으로 돌아간다.
+  async function refreshShelves() {
+    const list = await loadShelves()
+    if (list === null) return false
+    const shelfId = filterRef.current.shelf_id
+    if (list && shelfId && !list.some((shelf) => shelf.id === shelfId) && active.current) {
+      apply(makeFilter({ ...filterRef.current, shelf_id: undefined }))
+      setNotice('보던 책장이 목록에 없어 전체 책장으로 돌아왔어요.')
+    }
+    return true
   }
 
   // 첫 조회는 초기 상태가 이미 loading이므로 화면 상태 전환은 버튼 핸들러에서만 한다.
@@ -144,6 +157,11 @@ export default function Library() {
     setSlow(false)
     setLoadingMore(false)
     setPhase('loading')
+    loadFirstPage()
+  }
+
+  // 조건을 바꾸거나 다시 시도할 때 첫 페이지를 받는다. 서버가 조건을 거부하면 되돌아간다.
+  function loadFirstPage() {
     void load(0).then((fallback) => {
       if (typeof fallback !== 'object' || !active.current) return
       apply(fallback.filter, false)
@@ -174,7 +192,7 @@ export default function Library() {
     if (busy.current) return
     setError(null)
     setPhase('loading')
-    void load(0)
+    loadFirstPage()
   }
 
   function loadMore() {
@@ -343,7 +361,7 @@ export default function Library() {
             {shelves.map((shelf) => <option key={shelf.id} value={shelf.id}>{shelf.name} ({shelf.book_count}권)</option>)}
           </select>
         </>}
-        <button type="button" className="secondary compact" aria-expanded={managing} disabled={editing || saving} onClick={() => setManaging(!managing)}>
+        <button type="button" className="secondary compact" aria-expanded={managing} disabled={editing || saving || shelfBusy} onClick={() => setManaging(!managing)}>
           {managing ? '책장 관리 닫기' : '책장 관리'}
         </button>
         {filter.q && (
@@ -361,8 +379,7 @@ export default function Library() {
         </div>
       )}
       {managing && shelves && (
-        <ShelfManager shelves={shelves} refresh={loadShelves} onBusyChange={setShelfBusy}
-          onDeleted={(shelfId) => { if (filterRef.current.shelf_id === shelfId) apply(makeFilter({ ...filterRef.current, shelf_id: undefined })) }} />
+        <ShelfManager shelves={shelves} refresh={refreshShelves} onBusyChange={setShelfBusy} />
       )}
 
       {phase === 'ready' && books.length > 0 && (

@@ -9,13 +9,12 @@ import ConfirmDialog from './ConfirmDialog'
 
 type Props = {
   shelves: Shelf[]
-  // 책장 목록을 다시 조회한다. 쓰기 결과는 항상 서버 목록으로 확인한다.
+  // 책장 목록을 다시 조회한다. 쓰기 결과는 항상 서버 목록으로 확인한다(보던 책장이 없어지면 부모가 전체로 돌린다).
   refresh: () => Promise<boolean>
-  onDeleted: (shelfId: string) => void
   onBusyChange: (busy: boolean) => void
 }
 
-export default function ShelfManager({ shelves, refresh, onDeleted, onBusyChange }: Props) {
+export default function ShelfManager({ shelves, refresh, onBusyChange }: Props) {
   const [newName, setNewName] = useState('')
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
   const [remove, setRemove] = useState<Shelf | null>(null)
@@ -27,8 +26,15 @@ export default function ShelfManager({ shelves, refresh, onDeleted, onBusyChange
 
   useEffect(() => {
     active.current = true
-    return () => { active.current = false }
-  }, [])
+    return () => {
+      active.current = false
+      // 저장 중에 사라져도 부모의 잠금을 풀어 둔다.
+      if (busy.current) onBusyChange(false)
+    }
+  }, [onBusyChange])
+
+  // 고치던 책장이 목록에서 사라졌으면(404·다른 탭 삭제) 편집 상태를 버린다.
+  const renaming = editing && shelves.some((shelf) => shelf.id === editing.id) ? editing : null
 
   // 성공하면 true. 결과가 불명확하거나 대상이 없으면 다시 보내지 않고 목록만 다시 확인한다.
   async function write(request: (token: string) => Promise<unknown>, done: string, failed: string): Promise<boolean> {
@@ -72,8 +78,8 @@ export default function ShelfManager({ shelves, refresh, onDeleted, onBusyChange
 
   async function rename(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!editing) return
-    const target = editing
+    if (!renaming) return
+    const target = renaming
     const parsed = shelfName(target.name)
     if ('error' in parsed) return setError(parsed.error)
     // 대소문자만 바꾸는 것은 보낸다. 완전히 같으면 요청하지 않는다.
@@ -82,6 +88,7 @@ export default function ShelfManager({ shelves, refresh, onDeleted, onBusyChange
   }
 
   function move(from: number, to: number) {
+    if (from === to || to < 0 || to >= shelves.length) return
     const moved = shelves[from]
     const remaining = shelves.filter((shelf) => shelf.id !== moved.id)
     const anchor = to === 0 ? null : remaining[to - 1].id
@@ -92,7 +99,7 @@ export default function ShelfManager({ shelves, refresh, onDeleted, onBusyChange
     const target = remove
     setRemove(null)
     if (!target) return
-    if (await write((token) => deleteShelf(token, target.id), `‘${target.name}’ 책장을 삭제했습니다. 책은 서재에 그대로 있어요.`, '책장을 삭제하지 못했습니다')) onDeleted(target.id)
+    await write((token) => deleteShelf(token, target.id), `‘${target.name}’ 책장을 삭제했습니다. 책은 서재에 그대로 있어요.`, '책장을 삭제하지 못했습니다')
   }
 
   return (
@@ -111,10 +118,10 @@ export default function ShelfManager({ shelves, refresh, onDeleted, onBusyChange
         <ul className="shelf-list">
           {shelves.map((shelf, index) => (
             <li key={shelf.id}>
-              {editing?.id === shelf.id ? (
+              {renaming?.id === shelf.id ? (
                 <form className="search-form" onSubmit={(event) => void rename(event)}>
                   <label htmlFor={`rename-${shelf.id}`} className="visually-hidden">{shelf.name} 새 이름</label>
-                  <input id={`rename-${shelf.id}`} value={editing.name} disabled={saving} autoComplete="off"
+                  <input id={`rename-${shelf.id}`} value={renaming.name} disabled={saving} autoComplete="off"
                     onChange={(event) => setEditing({ id: shelf.id, name: event.target.value })} />
                   <button type="submit" disabled={saving}>저장</button>
                   <button type="button" className="link-button" disabled={saving} onClick={() => { setEditing(null); setError('') }}>취소</button>
@@ -123,10 +130,10 @@ export default function ShelfManager({ shelves, refresh, onDeleted, onBusyChange
                 <>
                   <span className="shelf-name">{shelf.name} <small>{shelf.book_count}권</small></span>
                   <span className="shelf-actions">
-                    <button type="button" className="secondary compact" aria-label={`${shelf.name} 앞으로`} disabled={saving || editing !== null || index === 0} onClick={() => move(index, index - 1)}>앞</button>
-                    <button type="button" className="secondary compact" aria-label={`${shelf.name} 뒤로`} disabled={saving || editing !== null || index === shelves.length - 1} onClick={() => move(index, index + 1)}>뒤</button>
-                    <button type="button" className="link-button" aria-label={`${shelf.name} 이름 바꾸기`} disabled={saving || editing !== null} onClick={() => { setEditing({ id: shelf.id, name: shelf.name }); setError('') }}>이름</button>
-                    <button type="button" className="link-button" aria-label={`${shelf.name} 삭제`} disabled={saving || editing !== null} onClick={() => setRemove(shelf)}>삭제</button>
+                    <button type="button" className="secondary compact" aria-label={`${shelf.name} 앞으로`} disabled={saving || renaming !== null || index === 0} onClick={() => move(index, index - 1)}>앞</button>
+                    <button type="button" className="secondary compact" aria-label={`${shelf.name} 뒤로`} disabled={saving || renaming !== null || index === shelves.length - 1} onClick={() => move(index, index + 1)}>뒤</button>
+                    <button type="button" className="link-button" aria-label={`${shelf.name} 이름 바꾸기`} disabled={saving || renaming !== null} onClick={() => { setEditing({ id: shelf.id, name: shelf.name }); setError('') }}>이름</button>
+                    <button type="button" className="link-button" aria-label={`${shelf.name} 삭제`} disabled={saving || renaming !== null} onClick={() => setRemove(shelf)}>삭제</button>
                   </span>
                 </>
               )}

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getLibraryBooks: vi.fn(),
   moveLibraryBook: vi.fn(),
   getShelves: vi.fn(),
+  deleteShelf: vi.fn(),
 }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
@@ -18,6 +19,7 @@ vi.mock('./lib/api', async (importOriginal) => ({
   getLibraryBooks: mocks.getLibraryBooks,
   moveLibraryBook: mocks.moveLibraryBook,
   getShelves: mocks.getShelves,
+  deleteShelf: mocks.deleteShelf,
 }))
 // 환경변수 없는 CI에서도 실제 Supabase 클라이언트를 만들지 않는다.
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
@@ -451,4 +453,37 @@ test('선택한 책장이 없어졌으면(404) 책장 목록을 다시 받고 �
   await screen.findByText('A 책 1')
   expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull()
   expect(screen.queryByLabelText('책장')).toBeNull()
+})
+
+test('책장 필터 조회를 다시 시도하다 책장이 없어졌으면(404) 로딩에 머물지 않고 전체 책장으로 돌아간다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 2)])
+  mocks.getLibraryBooks
+    .mockResolvedValueOnce(makeBooks(2, 'A'))
+    .mockRejectedValueOnce(new ApiError(503))
+    .mockRejectedValueOnce(new ApiError(404, 'Shelf not found'))
+    .mockResolvedValueOnce(makeBooks(2, 'A'))
+  renderInRouter(<Library />)
+  await screen.findByText('A 책 1')
+  fireEvent.change(await screen.findByLabelText('책장'), { target: { value: 's1' } })
+  fireEvent.click(await screen.findByRole('button', { name: '다시 시도' }))
+  await screen.findByText('선택한 책장을 찾을 수 없어 전체 책장으로 돌아왔어요.')
+  await screen.findByText('A 책 1')
+  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0, {})
+})
+
+test('보던 책장을 지우다 이미 없던 경우(404)에도 책장 목록을 다시 받아 전체 책장으로 돌아간다', async () => {
+  mocks.getShelves.mockResolvedValueOnce([shelfItem('s1', 'SF', 1)]).mockResolvedValueOnce([])
+  mocks.getLibraryBooks.mockResolvedValueOnce(makeBooks(2, 'A')).mockResolvedValueOnce(makeBooks(1, 'S')).mockResolvedValueOnce(makeBooks(2, 'A'))
+  mocks.deleteShelf.mockRejectedValueOnce(new ApiError(404, 'Shelf not found'))
+  renderInRouter(<Library />)
+  await screen.findByText('A 책 1')
+  fireEvent.change(await screen.findByLabelText('책장'), { target: { value: 's1' } })
+  await screen.findByText('S 책 0')
+  fireEvent.click(screen.getByRole('button', { name: '책장 관리' }))
+  fireEvent.click(screen.getByRole('button', { name: 'SF 삭제' }))
+  fireEvent.click(screen.getByRole('button', { name: '책장 삭제', hidden: true }))
+  await screen.findByText('보던 책장이 목록에 없어 전체 책장으로 돌아왔어요.')
+  await screen.findByText('A 책 1')
+  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0, {})
+  expect(screen.getByRole('button', { name: '순서 편집' })).toHaveProperty('disabled', false)
 })

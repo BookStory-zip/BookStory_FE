@@ -19,9 +19,8 @@ const shelves: Shelf[] = [
   { id: 's3', name: '시', book_count: 0, position: 2 },
 ]
 const refresh = vi.fn()
-const onDeleted = vi.fn()
 const onBusyChange = vi.fn()
-const renderManager = () => render(<ShelfManager shelves={shelves} refresh={refresh} onDeleted={onDeleted} onBusyChange={onBusyChange} />)
+const renderManager = () => render(<ShelfManager shelves={shelves} refresh={refresh} onBusyChange={onBusyChange} />)
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -101,7 +100,6 @@ test('결과가 불명확한 쓰기는 다시 보내지 않고 목록만 확인�
   expect((await screen.findByRole('alert')).textContent).toContain('저장 결과를 확인하지 못했습니다')
   expect(mocks.deleteShelf).toHaveBeenCalledTimes(1)
   expect(refresh).toHaveBeenCalledTimes(1)
-  expect(onDeleted).not.toHaveBeenCalled()
 })
 
 test('책장 삭제는 책이 서재에 남는다고 안내하고, 성공하면 알린다', async () => {
@@ -112,5 +110,27 @@ test('책장 삭제는 책이 서재에 남는다고 안내하고, 성공하면 
   expect(dialog.textContent).toContain('책은 서재에 그대로 남습니다')
   fireEvent.click(within(dialog).getByRole('button', { name: '책장 삭제', hidden: true }))
   await screen.findByText('‘SF’ 책장을 삭제했습니다. 책은 서재에 그대로 있어요.')
-  expect(onDeleted).toHaveBeenCalledWith('s1')
+  expect(refresh).toHaveBeenCalledTimes(1)
+})
+
+test('저장 중에 책장 관리가 사라지면 부모의 잠금을 푼다', async () => {
+  mocks.createShelf.mockReturnValueOnce(new Promise(() => {}))
+  const view = renderManager()
+  fireEvent.change(screen.getByLabelText('새 책장 이름'), { target: { value: '소설' } })
+  fireEvent.click(screen.getByRole('button', { name: '만들기' }))
+  expect(onBusyChange).toHaveBeenLastCalledWith(true)
+  view.unmount()
+  expect(onBusyChange).toHaveBeenLastCalledWith(false)
+})
+
+test('이름을 고치던 책장이 사라지면(404) 편집을 버리고 다른 버튼을 다시 쓸 수 있다', async () => {
+  mocks.renameShelf.mockRejectedValueOnce(new ApiError(404, 'Shelf not found'))
+  const view = renderManager()
+  fireEvent.click(screen.getByRole('button', { name: 'SF 이름 바꾸기' }))
+  fireEvent.change(screen.getByLabelText('SF 새 이름'), { target: { value: '공상' } })
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  await screen.findByRole('alert')
+  view.rerender(<ShelfManager shelves={shelves.slice(1)} refresh={refresh} onBusyChange={onBusyChange} />)
+  expect(screen.getByRole('button', { name: '에세이 삭제' })).toHaveProperty('disabled', false)
+  expect(screen.queryByLabelText('SF 새 이름')).toBeNull()
 })

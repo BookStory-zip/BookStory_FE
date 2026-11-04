@@ -40,7 +40,8 @@ test('상세의 소속을 체크로 보이고, 넣기·빼기는 서재 id로 �
   fireEvent.click(essay)
   await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
   expect(mocks.addBookToShelf).toHaveBeenCalledWith('test-token', 's2', 'ub-1')
-  expect(mocks.getShelves).toHaveBeenCalledTimes(2)
+  // 성공 뒤에는 상세만 다시 받는다.
+  expect(mocks.getShelves).toHaveBeenCalledTimes(1)
   // 서버 상세가 바뀌기 전에는 체크된 것으로 보이지 않는다.
   expect(essay).toHaveProperty('checked', false)
 
