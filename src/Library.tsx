@@ -3,7 +3,7 @@ import type { SubmitEvent } from 'react'
 import { ApiError, getLibraryBooks, moveLibraryBook, readingStatuses, statusLabels } from './lib/api'
 import type { LibraryBookItem, LibraryFilter, ReadingStatus } from './lib/api'
 import { withAccessToken } from './lib/auth'
-import { commonErrorMessage, isUnclearWrite } from './lib/errors'
+import { codeMessage, commonErrorMessage, isUnclearWrite } from './lib/errors'
 import { Link } from 'react-router'
 import CabinIcon from './CabinIcon'
 
@@ -13,10 +13,10 @@ const SCROLL_EDGE = 80
 const SCROLL_STEP = 12
 // BE와 같이 앞뒤 공백 제거·NFC 정규화 뒤 코드 포인트로 센다.
 const QUERY_LIMIT = 200
-type Field = 'title' | 'author'
+type Field = NonNullable<LibraryFilter['field']>
 
-function makeFilter(q: string | undefined, field: Field, status: ReadingStatus | undefined): LibraryFilter {
-  return { ...(q && { q, field }), ...(status && { status }) }
+function makeFilter(q: string | undefined, field: Field | undefined, status: ReadingStatus | undefined): LibraryFilter {
+  return { ...(q && { q, field: field ?? 'title' }), ...(status && { status }) }
 }
 
 // 손가락·마우스 아래의 책 순번. 서재 밖이면 null.
@@ -56,6 +56,8 @@ export default function Library() {
   // 적용 중인 조건. 요청은 ref로 읽어 조건을 바꾼 직후의 조회에도 새 조건을 쓴다.
   const [filter, setFilter] = useState<LibraryFilter>({})
   const filterRef = useRef<LibraryFilter>({})
+  // 서버가 새 조건을 422로 거부하면 되돌아갈 직전 조건.
+  const previousFilter = useRef<LibraryFilter>({})
   const [query, setQuery] = useState('')
   const [field, setField] = useState<Field>('title')
   const [searchError, setSearchError] = useState('')
@@ -64,7 +66,8 @@ export default function Library() {
   const filterLocked = editing || saving || needsRefresh
 
   // 첫 조회는 초기 상태가 이미 loading이므로 화면 상태 전환은 버튼 핸들러에서만 한다.
-  async function load(offset: number, preserve = false, limit = PAGE_SIZE, truncated = false) {
+  // 조건 조회를 서버가 422로 거부하면 그 안내 문구를 돌려준다(되돌리기는 apply가 한다).
+  async function load(offset: number, preserve = false, limit = PAGE_SIZE, truncated = false): Promise<boolean | string> {
     busy.current = true
     const version = ++loadVersion.current
 
@@ -84,6 +87,10 @@ export default function Library() {
       return true
     } catch (loadError) {
       if (!active.current || version !== loadVersion.current) return false
+      // 같은 조건을 다시 보내도 422이므로 재시도 대신 이전 조건으로 돌아가 입력란에 이유를 알린다.
+      if (offset === 0 && !preserve && loadError instanceof ApiError && loadError.status === 422 && filterRef.current !== previousFilter.current) {
+        return codeMessage(loadError) ?? '검색 조건을 확인해주세요.'
+      }
       setError(errorMessage(loadError))
       if (offset === 0 && !preserve) setPhase('error')
       return false
@@ -98,16 +105,23 @@ export default function Library() {
   }
 
   // 조건이 바뀌면 처음부터 다시 조회한다. 이전 조건의 늦은 응답은 load의 version으로 버린다.
-  function apply(next: LibraryFilter) {
+  function apply(next: LibraryFilter, remember = true) {
+    if (remember) previousFilter.current = filterRef.current
     filterRef.current = next
     setFilter(next)
     setBooks([])
     setHasMore(false)
     setError(null)
     setNotice('')
+    setSearchError('')
+    setSlow(false)
     setLoadingMore(false)
     setPhase('loading')
-    void load(0)
+    void load(0).then((rejected) => {
+      if (typeof rejected !== 'string' || !active.current) return
+      apply(previousFilter.current, false)
+      setSearchError(rejected)
+    })
   }
 
   function submitSearch(event: SubmitEvent<HTMLFormElement>) {
@@ -116,15 +130,13 @@ export default function Library() {
     const q = query.trim().normalize('NFC')
     if (!q) return setSearchError('검색어를 입력해주세요.')
     if ([...q].length > QUERY_LIMIT) return setSearchError(`검색어는 ${QUERY_LIMIT}자까지 입력할 수 있어요.`)
-    setSearchError('')
     apply(makeFilter(q, field, filter.status))
   }
 
   function clearSearch() {
     if (filterLocked) return
     setQuery('')
-    setSearchError('')
-    apply(makeFilter(undefined, field, filter.status))
+    apply(makeFilter(undefined, undefined, filter.status))
   }
 
   function retry() {
@@ -272,19 +284,24 @@ export default function Library() {
         </select>
         <label htmlFor="library-query" className="visually-hidden">서재 검색어</label>
         <input id="library-query" type="search" value={query} disabled={filterLocked} placeholder="내 서재에서 찾기"
-          autoComplete="off" enterKeyHint="search" onChange={(event) => setQuery(event.target.value)} />
+          autoComplete="off" enterKeyHint="search" aria-invalid={searchError ? true : undefined}
+          aria-describedby={searchError ? 'library-search-error' : undefined} onChange={(event) => setQuery(event.target.value)} />
         <button type="submit" disabled={filterLocked}>검색</button>
       </form>
-      {searchError && <p className="library-note" role="alert">{searchError}</p>}
+      {searchError && <p id="library-search-error" className="library-note" role="alert">{searchError}</p>}
       <div className="library-filters">
         <label htmlFor="library-status">읽기 상태</label>
         <select id="library-status" value={filter.status ?? ''} disabled={filterLocked}
-          onChange={(event) => apply(makeFilter(filter.q, filter.field ?? field, (event.target.value || undefined) as ReadingStatus | undefined))}>
+          onChange={(event) => {
+            // 제출하지 않은 검색 기준이 아니라 적용된 기준을 쓰고, 선택 상자도 그에 맞춘다.
+            if (filter.field) setField(filter.field)
+            apply(makeFilter(filter.q, filter.field, (event.target.value || undefined) as ReadingStatus | undefined))
+          }}>
           <option value="">전체</option>
           {readingStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
         </select>
         {filter.q && (
-          <p>
+          <p aria-live="polite">
             {filter.field === 'author' ? '저자' : '제목'} ‘{filter.q}’ 검색 결과
             <button type="button" className="link-button" disabled={filterLocked} onClick={clearSearch}>검색 해제</button>
           </p>
@@ -325,7 +342,7 @@ export default function Library() {
       )}
 
       {phase === 'ready' && books.length === 0 && filtered && (
-        <div className="shelf-empty">
+        <div className="shelf-empty" role="status">
           <p>조건에 맞는 책이 없습니다.</p>
         </div>
       )}

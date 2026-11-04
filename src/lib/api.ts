@@ -170,7 +170,8 @@ export async function getLibraryBooks(
     query.set('q', filter.q)
     if (filter.field) query.set('field', filter.field)
   }
-  // 필터를 모르는 서버는 전체를 돌려줄 수 있으므로 체크 편집기는 화면에서도 상태를 거른다.
+  // 서버가 조건을 적용한다고 믿는다. 체크 편집기만 체크 대상 보호를 위해 화면에서 한 번 더 읽는 중을 고른다.
+  // 조건을 모르는 BE는 전체를 돌려주므로 FE는 BE 운영 반영 뒤에 배포한다.
   if (filter.status) query.set('status', filter.status)
   const data = await apiRequest(`/library/books?${query}`, accessToken)
 

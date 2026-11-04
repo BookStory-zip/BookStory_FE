@@ -381,3 +381,37 @@ test('순서 편집 중에는 검색·상태 조건을 바꾸지 않는다', asy
   expect(screen.getByLabelText('읽기 상태')).toHaveProperty('disabled', true)
   expect(screen.getByRole('button', { name: /^검색$/ })).toHaveProperty('disabled', true)
 })
+
+test('서버가 검색 조건을 422로 거부하면 이전 조건으로 돌아가 이유를 입력란에 안내한다', async () => {
+  mocks.getLibraryBooks
+    .mockResolvedValueOnce(makeBooks(2, 'A'))
+    .mockRejectedValueOnce(new ApiError(422, 'blank', 'blank_query'))
+    .mockResolvedValueOnce(makeBooks(2, 'A'))
+  renderInRouter(<Library />)
+  await screen.findByText('A 책 1')
+  search('\u001f')
+  await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(3))
+  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0, {})
+  await screen.findByText('A 책 1')
+  expect(screen.getByRole('alert').textContent).toBe('검색어를 입력해주세요.')
+  expect(screen.getByLabelText('서재 검색어').getAttribute('aria-invalid')).toBe('true')
+  expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull()
+
+  // 조건을 바꾸면 지난 안내를 지운다.
+  mocks.getLibraryBooks.mockResolvedValueOnce(makeBooks(1, 'C'))
+  fireEvent.change(screen.getByLabelText('읽기 상태'), { target: { value: 'completed' } })
+  await screen.findByText('C 책 0')
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('검색 기준만 바꾸고 제출하지 않았으면 상태 변경은 적용된 기준을 쓰고 선택 상자도 맞춘다', async () => {
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(1, 'A'))
+  renderInRouter(<Library />)
+  await screen.findByText('A 책 0')
+  search('한강', '제목')
+  await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(2))
+  fireEvent.change(screen.getByLabelText('검색 기준'), { target: { value: 'author' } })
+  fireEvent.change(screen.getByLabelText('읽기 상태'), { target: { value: 'completed' } })
+  await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0, { q: '한강', field: 'title', status: 'completed' }))
+  expect(screen.getByLabelText('검색 기준')).toHaveProperty('value', 'title')
+})
