@@ -9,7 +9,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 - 작업 분담: BE에서 쉽게 되는 일은 BE에서 하고 FE는 꼭 필요한 것만 구현한다. BE 몫은 아래 백엔드 전달 사항에 기록하고 FE에서 대체 구현하지 않는다(2026-10-28 사용자 지시).
 - 제외: 피드·팔로우·추천·공개 서재·회독·페이지 수·독서 알림 외 푸시·복잡한 통계·서재 꾸미기·홈 화면 추가 외 PWA 기능·오프라인. 사용자 승인한 책별 공개 후기와 21시 독서 알림(2026-11-03 BE와 확정)은 아래 범위로 구현한다. BE 배치를 FE에 옮기지 않는다.
 
-## 서재 검색·상태 필터·서브 책장 D (2026-11-04, 구현·실제 연동 완료, 운영 반영 전)
+## 서재 검색·상태 필터·서브 책장 D (2026-11-04, 구현·실제 연동 완료, 운영 반영)
 
 - 작업 브랜치 `feat/library-search`, 기준 develop `1e8c26b`(C 노트 PR #19 병합 포함). 사용자 결정(2026-11-04): BE 운영 반영이 C·D-1·D-2 함께이므로 D-1·D-2를 한 브랜치에서 커밋만 나눠 구현하고 한 PR로 올린다.
 - BE 사전 합의 확정(2026-11-04). 계약 전문은 docs/backend-api.md "서재 검색·상태 필터"에 두고 여기에는 진행만 기록한다.
@@ -31,7 +31,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 - e2e 책장 흐름이 반복 실행 중 1회 실패: 상세의 "책장" 영역(aria-labelledby)이 이동 중 남아 `getByLabel('책장')`이 선택 상자 대신 영역을 잡음. 서재 제목을 기다리고 combobox 역할로 고친 뒤 6회 반복·전체 13개 통과
 - BE와 대조·실제 연동 뒤 push·develop PR(사용자 결정, 2026-11-04). 운영 계정·DB는 사용하지 않았다. BE 운영 반영(C·D-1·D-2 함께, BE 회신 예정) 확인 뒤 FE를 배포한다. 상세 `shelves` 필수 검사 때문에 먼저 배포하면 상세 화면이 형식 오류가 된다
 
-## 비공개 독서 노트 (2026-11-04, 구현·검증 완료, 운영 반영 전)
+## 비공개 독서 노트 (2026-11-04, 구현·검증 완료, 운영 반영)
 
 - 작업 브랜치 `feat/reading-notes`, 기준 develop `3b66776`(B 목표 PR #18 병합 포함). 이번 단위는 C만 구현한다.
 - BE와 사전 합의 확정(2026-11-04): 타임라인 `start_date`/`end_date`·기간 필수(FE는 월 단위), POST `note_date` 필수, 상태 제한 없음, PATCH 생략 유지·null 삭제·`note_date: null` 422, 앞뒤 공백 제거 후 저장. BE 추가 통보: page 상한 99999, 빈 노트 PATCH의 `detail`은 문자열. 계약은 docs/backend-api.md "독서 노트". 로컬 BE `feat/reading-notes`에 5개 API·migration `292a366b983b`·테스트가 있음을 확인(2026-11-04, 미커밋·미배포, page `strict` 정수 1~99999)
@@ -47,7 +47,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 - 정리: 추가한 노트 25건(API 24·UI 1)과 임시 서재 항목 1건만 삭제, A 서재 2권·순서와 A/B 노트 0건 확인. 실제 기기(iPhone·Android)는 미검증
 - BE 운영 반영은 아직(BE 회신). BE PR 병합·운영 migration 확인 뒤 FE를 배포한다. 병합·운영 배포는 별도 요청
 
-## 독서 목표 (2026-11-04, 구현·검증 완료, FE 운영 반영 전)
+## 독서 목표 (2026-11-04, 구현·검증 완료, 운영 반영)
 
 - 작업 브랜치 `feat/reading-goals`, 기준 develop `eb415ec`(A 타이머 PR #17 병합 포함). 이번 단위는 B만 구현한다.
 - BE PR #26(`110e215`) 코드·`docs/frontend-api.md`·BE 회신과 대조. 계약 전문은 docs/backend-api.md "독서 목표". 운영 OpenAPI의 `/me/goals` 존재는 읽기 전용으로 확인(운영 계정·DB 미사용).
@@ -61,7 +61,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 - 정리: 검증에서 추가한 A 목표만 DELETE했고 A·B 2026년·2026-11·2027-1·2028-3 통계 목표가 비어 있음을 확인. 검증 데이터의 완독·읽은 날이 0이라 완독 `current`와 `library.completed_books`의 실제 값 차이는 단위 검사로만 확인. 실제 기기(iPhone·Android)는 미검증
 - BE 운영 반영(A·B·알림 보완, main `d4a93be`, migration·`/ready`·모델 일치)은 BE 회신으로 완료. FE 병합·develop → main·운영 배포는 별도 요청
 
-## 독서 타이머 (2026-11-04, 구현·검증 완료, 운영 반영 전)
+## 독서 타이머 (2026-11-04, 구현·검증 완료, 운영 반영)
 
 - 작업 브랜치 `feat/reading-timer`, 기준 develop `f9d20d0`. A 타이머 → B 목표 → C 독서 노트 → D 검색·서브 책장 순서이며 이번 작업 단위는 A만 구현한다.
 - 사용자 확정: 한 구간 최대 1시간, 한도 도달 후 직접 계속 읽기 확인, 확인 대기 시간 제외. 로컬에는 같은 계정의 측정 상태만 복원하며 자동 서버 저장 없이 사용자 확인 후 저장한다.
@@ -149,6 +149,9 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 | 2026-11-03 12:21 KST | main `85c36a0` ([PR #9](https://github.com/BookStory-zip/BookStory_FE/pull/9), [main CI 41571461514](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41571461514)) | https://bookstory-fe.vercel.app · `dpl_6JzDV4srrZpRqRYBGA6nYKNSDEbc` · [배포 URL](https://bookstory-8s7yfgfav-honey-0a33.vercel.app) · 첫 Actions 자동 배포·READY. 사후 검증 단계만 실패(아래 무료 자동 배포 참고) | 운영 OpenAPI에서 날짜 경로 PUT/DELETE·`last_read_date` 확인(에이전트). BE 배포 SHA는 새로 검증하지 않음 |
 | 2026-11-03 12:39 KST | main `9cd08f2` ([PR #11](https://github.com/BookStory-zip/BookStory_FE/pull/11), [main CI 41573468541](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41573468541) 통과) | https://bookstory-fe.vercel.app · `dpl_3Xw8UvZ5ZQYpugFNWsPoNrBYat4c` · [배포 URL](https://bookstory-q5dwiygq5-honey-0a33.vercel.app) · Actions 자동 배포·사후 검증 통과 | 변경 없음(배포 검증 스크립트·문서만 변경) |
 | 2026-11-03 18:03 KST | main `d066516` ([PR #15](https://github.com/BookStory-zip/BookStory_FE/pull/15), [main CI 41607470999](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41607470999) check·e2e·Deploy production 통과) | https://bookstory-fe.vercel.app · `dpl_6oATSREex2nVonaR8AMrMaSSSNUX` · [배포 URL](https://bookstory-qer4vejzu-honey-0a33.vercel.app) · Actions 자동 배포·사후 검증 통과 | 기준 main `e48ee827`(PR #23). BE 전체 운영 반영 완료·FE 병합 가능은 사용자 전달. 운영 새 API 계약·공개 알림 키 200·CORS는 FE 직접 확인, Render SHA·DB는 직접 조회하지 않음 |
+| 2026-11-04 22:43 KST | main `97a039c` ([PR #21](https://github.com/BookStory-zip/BookStory_FE/pull/21), develop `65d0547`, [main CI 41840243951](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41840243951) check·e2e·Deploy production 통과). A 타이머 #17·B 목표 #18·C 노트 #19·D 검색·책장 #20 | https://bookstory-fe.vercel.app · `dpl_2pMRegVLJS7Mfu8yWwPvQ9ZBZgSM` · [배포 URL](https://bookstory-48gwc4a2h-honey-0a33.vercel.app) · Actions 자동 배포·사후 검증 통과 | A·B는 3차 main `d4a93be`, C·D는 4차 main `4c69319`(PR #30, migration `292a366b983b`·`3cb2823f8db5`) 운영 반영·스키마 일치는 BE 회신. 운영 OpenAPI의 노트·책장·목표·타이머 경로, `q`·`field`·`shelf_id`, 상세 필수 `shelves`, `/ready`는 FE 직접 확인. Render SHA·DB는 직접 조회하지 않음 |
+
+2026-11-04 22:45 KST 읽기 전용 사후 확인(에이전트): 운영 커밋 표식 `97a039c` 일치, SPA 7개 경로·보안 헤더, BE ready·PATCH CORS(워크플로와 직접 재실행 모두 통과). 운영 origin의 새 API 사전 요청 5종(책장 생성·책 넣기, 목표 삭제, 노트 수정, 타이머 저장) 200, 미인증 `/shelves` 401에 CORS 헤더, 운영 번들에 책장 관리·독서 노트·독서 목표 포함·검증 설정(`127.0.0.1`·검증 Supabase) 미포함, 비로그인 로그인 화면 390·1440px 가로 넘침·JS 오류 없음. 미확인: 운영 계정의 책 상세(`shelves` 검사 통과)·서재 필터·책장 관리·기록 노트 탭·통계 목표 화면(사용자 확인 대기), 실제 기기(iPhone·Android·Safari), 운영 데이터 쓰기.
 
 2026-11-04 09:01 KST 읽기 전용 사후 확인(에이전트): 운영 `deployment.json`의 커밋이 `d066516`과 일치, 기존 SPA 7개 경로·보안 헤더와 추가 `/settings` 200, manifest 내용·서비스 워커 본문이 배포 소스와 일치, `/sw.js`의 `Cache-Control: no-cache`, BE ready·운영 PATCH CORS 통과. 알림 클릭의 새 창·편집기, 운영 계정의 데이터 쓰기와 실제 기기 수신은 이 검사에 포함하지 않음.
 
