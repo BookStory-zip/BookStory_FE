@@ -133,7 +133,7 @@ BE PR #26(`110e215`)의 `app/schemas.py`·`app/reading_goals.py`·`docs/frontend
 
 ## 독서 노트 (2026-11-04 합의, BE 미배포)
 
-BE와 사전 합의(2026-11-04 확정 회신)한 계약입니다. 로컬 BE `feat/reading-notes`의 미커밋 구현과 대조했으며, BE 커밋·검증 환경 안내를 받으면 다시 대조합니다.
+BE와 사전 합의(2026-11-04 확정 회신)한 계약입니다. BE `feat/reading-notes` `411347f` 구현과 대조했고 검증 환경에서 실제 연동을 확인했습니다(plan.md). 운영 반영 전입니다.
 
 | API | 계약 |
 | --- | --- |
