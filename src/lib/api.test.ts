@@ -172,8 +172,13 @@ test('서재 목록은 limit·offset을 보내고 표지 null을 허용한다', 
   expect(fetchMock.mock.calls[0][0]).toBe(
     'https://api.example.test/library/books?limit=20&offset=40',
   )
-  await getLibraryBooks('test-access-token', 100, 0, 'reading')
+  await getLibraryBooks('test-access-token', 100, 0, { status: 'reading' })
   expect(fetchMock.mock.calls[1][0]).toBe('https://api.example.test/library/books?limit=100&offset=0&status=reading')
+  await getLibraryBooks('test-access-token', 20, 0, { q: '소년 100%', field: 'author', status: 'completed' })
+  expect(fetchMock.mock.calls[2][0]).toBe('https://api.example.test/library/books?limit=20&offset=0&q=%EC%86%8C%EB%85%84+100%25&field=author&status=completed')
+  // 검색어 없이 기준만 보내지 않는다.
+  await getLibraryBooks('test-access-token', 20, 0, { field: 'author' })
+  expect(fetchMock.mock.calls[3][0]).toBe('https://api.example.test/library/books?limit=20&offset=0')
 })
 
 test.each([{ total: 1 }, [{ id: 'x', title: '제목' }], [{ status: 'unknown' }]])(

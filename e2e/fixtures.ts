@@ -36,6 +36,7 @@ export async function mockBackend(page: Page, handle: Handler) {
     if (url.pathname === '/reading-completions') return json(route, [])
     if (url.pathname.endsWith('/reading-sessions')) return json(route, [])
     if (url.pathname.endsWith('/notes') && request.method() === 'GET') return json(route, [])
+    if (url.pathname === '/shelves' && request.method() === 'GET') return json(route, [])
     return json(route, { detail: 'not mocked' }, 404)
   })
 }

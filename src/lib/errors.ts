@@ -45,6 +45,8 @@ const CODE_MESSAGES: Record<string, string> = {
   invalid_position: '책을 자기 자신 뒤로 옮길 수 없습니다. 순서를 다시 확인해주세요.',
   rate_limited: '요청이 많습니다. 잠시 후 다시 시도해주세요.',
   invalid_nickname: NICKNAME_RULE,
+  shelf_limit_exceeded: '책장은 30개까지 만들 수 있어요.',
+  shelf_name_conflict: '같은 이름의 책장이 이미 있어요. 다른 이름을 입력해주세요.',
   recent_login_required: '보안을 위해 비밀번호를 다시 입력해주세요.',
   account_deletion_failed: '계정 삭제를 마치지 못했습니다. 기록은 이미 지워졌으니 다시 시도해주세요.',
   internal_error: '서버에 문제가 생겼습니다. 잠시 후 다시 시도해주세요.',

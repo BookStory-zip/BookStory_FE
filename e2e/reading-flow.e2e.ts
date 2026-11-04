@@ -34,6 +34,7 @@ const detail = {
   has_completed: false,
   updated_at: '2026-10-01T00:00:00Z',
   allowed_statuses: ['want_to_read', 'reading', 'completed', 'paused', 'abandoned'],
+  shelves: [],
 }
 
 test('타이머 복원·1시간 확인·같은 요청 재시도·자동 체크·삭제·로그아웃이 이어진다', async ({ page }, testInfo) => {
