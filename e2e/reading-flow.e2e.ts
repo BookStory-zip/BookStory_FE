@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { cover, json, mockBackend, signInWithMockSession } from './fixtures'
+type ReadingSessionInput = { client_session_id: string; started_at: string; duration_seconds: number }
+type ReadingSession = ReadingSessionInput & { id: string; user_book_id: string; read_date: string; created_at: string }
 
 const book = {
   id: 'user-book-1',
@@ -33,6 +35,76 @@ const detail = {
   updated_at: '2026-10-01T00:00:00Z',
   allowed_statuses: ['want_to_read', 'reading', 'completed', 'paused', 'abandoned'],
 }
+
+test('타이머 복원·1시간 확인·같은 요청 재시도·자동 체크·삭제·로그아웃이 이어진다', async ({ page }, testInfo) => {
+  const start = Date.parse('2026-11-04T14:50:00Z')
+  await page.clock.setFixedTime(new Date(start))
+  await signInWithMockSession(page)
+  const sent: ReadingSessionInput[] = []
+  let sessions: ReadingSession[] = []
+  let checked = false
+  await mockBackend(page, async (route, url, method) => {
+    if (url.pathname === `/library/books/${book.id}`) return json(route, {
+      ...detail, last_read_at: checked ? new Date(start).toISOString() : null,
+      last_read_date: checked ? '2026-11-04' : null,
+    }).then(() => true)
+    if (url.pathname === '/library/books') return json(route, [book]).then(() => true)
+    if (url.pathname === '/reading-logs') return json(route, checked && url.searchParams.get('start_date')! <= '2026-11-04' && url.searchParams.get('end_date')! >= '2026-11-04' ? [{
+      id: 'timer-log', user_book_id: book.id, book_id: book.book_id, title: book.title,
+      authors: book.authors, thumbnail_url: book.thumbnail_url, read_date: '2026-11-04', created_at: new Date(start).toISOString(),
+    }] : []).then(() => true)
+    if (url.pathname === `/library/books/${book.id}/reading-sessions`) {
+      if (method === 'GET') return json(route, sessions).then(() => true)
+      const body = route.request().postDataJSON() as ReadingSessionInput
+      sent.push(body)
+      checked = true
+      const session = { ...body, id: 'timer-session', user_book_id: book.id, read_date: '2026-11-04', created_at: new Date(start).toISOString() }
+      sessions = [session]
+      if (sent.length === 1) return route.abort('failed').then(() => true)
+      return json(route, session, 200).then(() => true)
+    }
+    if (url.pathname === '/reading-sessions/timer-session' && method === 'DELETE') {
+      sessions = []
+      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
+    }
+    return false
+  })
+  const jump = async (ms: number) => {
+    await page.clock.setFixedTime(new Date(start + ms))
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  }
+  await page.goto(`/books/${book.id}`)
+  await page.getByRole('button', { name: '타이머 시작' }).click()
+  await jump(90_000)
+  await page.getByRole('button', { name: '일시정지', exact: true }).click()
+  await jump(1890_000)
+  await page.reload()
+  await expect(page.getByRole('timer')).toHaveText('00:01:30')
+  await page.getByRole('button', { name: '다시 읽기' }).click()
+  await jump(5400_000)
+  await expect(page.getByRole('timer')).toHaveText('01:00:00')
+  expect(sent).toHaveLength(0)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`timer-${width}.png`), fullPage: true })
+  }
+  await page.getByRole('button', { name: '계속 읽기', exact: true }).click()
+  await expect(page.getByText(/저장 결과를 확인하지 못했습니다/)).toBeVisible()
+  await page.getByRole('button', { name: '계속 읽기', exact: true }).click()
+  await expect(page.getByRole('timer')).toHaveText('00:00:00')
+  expect(sent).toHaveLength(2)
+  expect(sent[1]).toEqual(sent[0])
+  expect(sent[0].duration_seconds).toBe(3600)
+  await page.getByRole('button', { name: /시간 기록 삭제/ }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '시간 기록 삭제' }).click()
+  await expect(page.getByText('시간 기록을 삭제했습니다. 독서 체크는 그대로 남습니다.')).toBeVisible()
+  expect(checked).toBe(true)
+  await page.getByRole('link', { name: '기록', exact: true }).click()
+  await expect(page.getByRole('button', { name: /2026년 11월 4일, 1권:/ })).toBeVisible()
+  await page.getByRole('button', { name: '로그아웃', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('bookstory-reading-timer:')))).toEqual([])
+})
 
 test('지난 날짜 체크 → 새로고침 → 최근 체크 날짜 → 완독 후 취소가 이어진다', async ({ page }, testInfo) => {
   await page.clock.setFixedTime(new Date('2026-11-03T03:00:00Z'))
@@ -265,6 +337,7 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
         period: {
           year, month, start_date: `${prefix}-01`, end_date: end,
           reading_days: month === null ? 42 : 7,
+          reading_minutes: month === null ? 300 : 42,
         },
       }).then(() => true)
     }

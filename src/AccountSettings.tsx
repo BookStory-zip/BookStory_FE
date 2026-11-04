@@ -166,7 +166,7 @@ export default function AccountSettings({ onDeleted }: Props) {
 
       <form className="detail-card danger" aria-labelledby="delete-title" onSubmit={requestDelete}>
         <h2 id="delete-title">계정 탈퇴</h2>
-        <p className="result-note">서재·메모·별점·날짜·독서 체크·공개 후기·알림 설정이 모두 바로 삭제되며 되돌릴 수 없습니다. 공통 책 정보는 남습니다.</p>
+        <p className="result-note">서재·메모·별점·날짜·독서 체크·시간 기록·공개 후기·알림 설정이 모두 바로 삭제되며 되돌릴 수 없습니다. 공통 책 정보는 남습니다.</p>
         <label htmlFor="delete-password">비밀번호 확인</label>
         <input id="delete-password" ref={passwordRef} type="password" autoComplete="current-password" disabled={deleting || deleted} />
         <button type="submit" className="secondary" disabled={deleting || deleted}>{deleting && !deleted ? '탈퇴하는 중…' : '탈퇴하기'}</button>

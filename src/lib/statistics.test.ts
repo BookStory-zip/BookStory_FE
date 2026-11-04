@@ -8,7 +8,7 @@ const statistics = {
     completed_books: 2,
   },
   period: {
-    year: 2026, month: 10, start_date: '2026-10-01', end_date: '2026-10-31', reading_days: 3,
+    year: 2026, month: 10, start_date: '2026-10-01', end_date: '2026-10-31', reading_days: 3, reading_minutes: 42,
   },
 }
 

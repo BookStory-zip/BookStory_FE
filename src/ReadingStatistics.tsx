@@ -87,6 +87,11 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
                 : '같은 날 여러 권을 읽어도 하루로 셉니다.'}
             </p>
           </div>
+          <div className="statistics-activity">
+            <h3>독서 시간</h3>
+            <p className="statistics-days"><strong>{data.period.reading_minutes}</strong><span>분</span></p>
+            <p className="result-note">저장한 타이머 기록을 시작한 날짜 기준으로 합산합니다.</p>
+          </div>
           <section className="statistics-library" aria-labelledby="statistics-library-title">
             <h3 id="statistics-library-title">현재 서재</h3>
             <p className="result-note">선택한 기간과 관계없는 현재 현황입니다.</p>

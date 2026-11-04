@@ -183,7 +183,7 @@ const monthlyStatistics = {
     completed_books: 2,
   },
   period: {
-    year: 2026, month: 10, start_date: '2026-10-01', end_date: '2026-10-31', reading_days: 3,
+    year: 2026, month: 10, start_date: '2026-10-01', end_date: '2026-10-31', reading_days: 3, reading_minutes: 42,
   },
 }
 
@@ -196,6 +196,7 @@ test('통계는 탭을 열 때 조회하고 연간 합계와 현재 서재를 �
 
   fireEvent.click(screen.getByRole('button', { name: '통계' }))
   await screen.findByText('3')
+  expect(screen.getByRole('heading', { name: '독서 시간' }).parentElement?.textContent).toContain('42분')
   expect(mocks.getReadingStatistics).toHaveBeenLastCalledWith('test-token', 2026, 10)
   expect(screen.getByRole('heading', { name: '현재 서재' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: /2026년 10월 3일/ })).toBeNull()
@@ -203,7 +204,7 @@ test('통계는 탭을 열 때 조회하고 연간 합계와 현재 서재를 �
   mocks.getReadingStatistics.mockResolvedValueOnce({
     ...monthlyStatistics,
     period: {
-      year: 2026, month: null, start_date: '2026-01-01', end_date: '2026-12-31', reading_days: 17,
+      year: 2026, month: null, start_date: '2026-01-01', end_date: '2026-12-31', reading_days: 17, reading_minutes: 300,
     },
   })
   fireEvent.click(screen.getByRole('button', { name: '연간' }))

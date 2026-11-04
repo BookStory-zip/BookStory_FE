@@ -28,6 +28,7 @@ import ConfirmDialog from './ConfirmDialog'
 import DatePicker from './DatePicker'
 import { spokenDate } from './lib/dates'
 import { useKstToday } from './useKstToday'
+import ReadingTimer from './ReadingTimer'
 
 type Pending = 'status' | 'record' | 'delete' | 'check' | 'refresh' | null
 // conflict: 409. 화면이 오래된 상태라 서버 기준으로 다시 불러와야 한다.
@@ -64,16 +65,17 @@ const sameForm = (a: RecordForm, b: RecordForm) =>
   a.rating === b.rating && a.memo === b.memo && a.stopReason === b.stopReason && a.isReviewPublic === b.isReviewPublic
 
 // 다른 책으로 이동하면 새로 마운트해 이전 책의 늦은 응답과 입력을 버린다.
-export default function BookDetailPage() {
+export default function BookDetailPage({ userId }: { userId: string }) {
   const { userBookId = '' } = useParams()
-  return <BookDetail key={userBookId} userBookId={userBookId} />
+  return <BookDetail key={userBookId} userBookId={userBookId} userId={userId} />
 }
 
-function BookDetail({ userBookId }: { userBookId: string }) {
+function BookDetail({ userBookId, userId }: { userBookId: string; userId: string }) {
   const navigate = useNavigate()
   const [book, setBook] = useState<LibraryBookDetail | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [needsRefresh, setNeedsRefresh] = useState(false)
+  const [timerBusy, setTimerBusy] = useState(false)
   const [form, setForm] = useState<RecordForm>({ rating: null, memo: '', stopReason: '', isReviewPublic: false })
   const [nextStatus, setNextStatus] = useState<ReadingStatus | null>(null)
   const [startedDate, setStartedDate] = useState('')
@@ -196,7 +198,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     done: string,
     options: { conflict?: string; refresh?: (result: WriteResult) => Promise<void> } = {},
   ): Promise<WriteResult> {
-    if (pendingRef.current || needsRefresh) return 'failed'
+    if (pendingRef.current || needsRefresh || timerBusy) return 'failed'
     pendingRef.current = kind
     setPending(kind)
     setNotice(null)
@@ -368,7 +370,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     )
   }
 
-  const busy = pending !== null || needsRefresh
+  const busy = pending !== null || needsRefresh || timerBusy
   // BE는 읽는 중·완독 상태에 같은 상태로 날짜를 보내면 날짜만 고친다.
   const canEditDates = book.status === 'reading' || book.status === 'completed'
 
@@ -445,6 +447,11 @@ function BookDetail({ userBookId }: { userBookId: string }) {
             <p className="result-note">읽는 중인 책만 오늘 체크할 수 있습니다.</p>
           ))}
       </div>
+
+      <ReadingTimer userId={userId} userBookId={book.id} status={book.status} blocked={pending !== null || needsRefresh} onBusyChange={setTimerBusy} onSaved={async () => {
+        const [, fresh] = await Promise.all([loadTodayLog(todayRef.current), reload()])
+        return fresh ? bookRef.current?.status ?? null : null
+      }} />
 
       <form className="detail-card" onSubmit={handleStatus} aria-labelledby="status-title">
         <h2 id="status-title">독서 상태</h2>
@@ -583,7 +590,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
 
       <div className="detail-card danger">
         <h2>서재에서 빼기</h2>
-        <p className="result-note">이 책과 연결된 독서 체크 기록과 공개 후기도 함께 삭제됩니다.</p>
+        <p className="result-note">이 책과 연결된 독서 체크·시간 기록과 공개 후기도 함께 삭제됩니다.</p>
         <button type="button" className="secondary" onClick={() => setConfirming('delete')} disabled={busy}>
           {pending === 'delete' ? '빼는 중…' : '서재에서 빼기'}
         </button>
@@ -604,7 +611,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       <ConfirmDialog
         open={confirming === 'delete'}
         title={`'${book.title}'을(를) 서재에서 뺄까요?`}
-        message="이 책에 남긴 독서 체크 기록과 공개 후기도 함께 삭제되며 되돌릴 수 없습니다."
+        message="이 책에 남긴 독서 체크·시간 기록과 공개 후기도 함께 삭제되며 되돌릴 수 없습니다."
         confirmLabel="서재에서 빼기"
         danger
         onConfirm={() => void submitDelete()}
