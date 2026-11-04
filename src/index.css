@@ -900,6 +900,87 @@ button.link-button:hover:not(:disabled) {
   line-height: 1.1;
 }
 
+.statistics-goals {
+  padding: var(--space-6) 0;
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.goal-list {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.goal-list li {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.goal-list li + li {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-rule);
+}
+
+.goal-list p {
+  margin: 0;
+}
+
+.goal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.goal-head h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.goal-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-value strong {
+  color: var(--color-accent);
+  font-size: 1.5rem;
+  overflow-wrap: anywhere;
+}
+
+.goal-done {
+  color: var(--color-accent);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.statistics-goals progress {
+  width: 100%;
+  height: 0.4rem;
+  accent-color: var(--color-accent);
+}
+
+.goal-form {
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+}
+
+.goal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.goal-actions button:not(.link-button) {
+  width: auto;
+}
+
 .statistics-library {
   margin-top: var(--space-6);
 }
