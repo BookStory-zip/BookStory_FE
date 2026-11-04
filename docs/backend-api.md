@@ -5,7 +5,7 @@ FE가 사용하는 BookStory BE API 계약과 FE 반영 방식, BE 전달 사항
 BE가 FE용으로 정리한 계약은 BE 저장소 `docs/frontend-api.md`에 있습니다.
 
 - 운영 API: https://bookstory-api-w31a.onrender.com · [Swagger](https://bookstory-api-w31a.onrender.com/docs)
-- 기준: BE main `2c2b6e7`(PR #12, 서재 순서 API·migration `57f75310c7d5` 포함). BE 유지보수 기록의 운영 migration 적용·Render Live와 사용자 완료 안내를 확인했습니다. FE main `a82c21a`는 2026-11-03 Vercel에 배포했고 운영 API·CORS·배포 번들·비로그인 화면을 확인했습니다. 개인 기록 쓰기는 별도 검증 환경을 사용하며 운영 수동 확인 범위는 plan.md에 기록합니다.
+- 기준: BE 2차 main `e48ee827`(PR #23), FE main `d066516`(PR #15, 2026-11-03 자동 운영 배포). BE 운영 반영 완료는 사용자 전달이며, FE가 Render 배포 SHA나 운영 DB를 직접 조회한 것은 아닙니다. 운영 API 계약·공개 알림 키·CORS와 FE 커밋 표식·정적 파일 제공은 직접 확인했습니다. 개인 기록 쓰기는 별도 검증 환경을 사용하며 실제 확인 범위는 plan.md에 기록합니다.
 
 ## 인증
 
@@ -34,13 +34,13 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `PATCH …/{id}/record` | 선택 `rating`(1~5)·`memo`(1만 자)·`stop_reason`(1천 자)·`is_review_public`(불리언, null 불가) | 바뀐 필드만 전송. 빈 값은 null(삭제), 별점 0은 보내지 않음. 공개 설정 생략은 현재 값 유지 |
 | `DELETE …/{id}` | 204. 연결된 독서 체크도 삭제 | 확인창 후 삭제 |
 | `PUT·DELETE …/{id}/reading-logs/today` | 체크는 읽는 중만, 취소는 상태 무관·기록 없어도 204. 날짜는 서버 KST | 오늘 체크 여부는 오늘 기록의 `user_book_id`로 판단 |
-| `PUT·DELETE …/{id}/reading-logs/{read_date}` | `YYYY-MM-DD`, 서버 KST 오늘 포함 최근 7일. PUT 200·DELETE 204. 검증 환경 제공, 운영 배포 전 | 달력 날짜별 체크·취소. 아래 계약 참고 |
+| `PUT·DELETE …/{id}/reading-logs/{read_date}` | `YYYY-MM-DD`, 서버 KST 오늘 포함 최근 7일. PUT 200·DELETE 204. 운영 제공 | 달력 날짜별 체크·취소. 아래 계약 참고 |
 | `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩. 항목의 `completed_at`·`status`·`has_completed`는 현재 기록(체크 당시 아님) | 마지막 페이지까지 전부 조회. 체크한 날 표시에만 사용 |
 | `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
 | `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`) | 기록 화면 통계 탭에서만 요청. 아래 통계 참고 |
-| `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 검증 환경 확인·운영 배포 전 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
+| `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 운영 제공 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
 | `DELETE /me` | 204. 비밀번호 인증 5분 이내 토큰만, 아니면 403 `recent_login_required`, 로그인 계정 삭제 실패 503 `account_deletion_failed`(재시도 가능) | 계정 화면 탈퇴. 비밀번호 재로그인 후 요청 |
-| `GET /push/public-key` | 공개. `{public_key}`(base64url), 발송 키 미설정이면 503. 검증 환경 제공 예정, 운영 배포 전 | 구독의 `applicationServerKey`. 아래 독서 알림 참고 |
+| `GET /push/public-key` | 공개. `{public_key}`(base64url), 발송 키 미설정이면 503. 운영 200 확인 | 구독의 `applicationServerKey`. 아래 독서 알림 참고 |
 | `PUT·DELETE /me/push-subscriptions` | PUT `{endpoint, keys: {p256dh, auth}}`, DELETE `{endpoint}`, 모두 204. endpoint는 https 푸시 서비스만, 형식 오류 422 | 알림 켜기·끄기·앱 시작 재등록·로그아웃 해제 |
 
 | 값 | 의미 |
@@ -84,9 +84,9 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 - `read_date`·`published_date`는 문자열 그대로 다뤄 시간대 변환으로 하루가 밀리지 않게 합니다.
 - 중단 7일 경과 포기와 도서 정보 갱신은 BE 배치 몫이며 FE 타이머로 처리하지 않습니다.
 
-## 지난 날짜 독서 체크 (검증 환경 제공)
+## 지난 날짜 독서 체크 (운영 반영)
 
-BE `feat/past-reading-check` `26903f5` 제공 안내와 로컬 코드·`docs/frontend-api.md`를 대조했습니다(2026-11-03). 운영 제공 여부와 실제 연동 결과는 plan.md에 별도로 기록합니다. 스키마 변경·DB migration은 없습니다.
+BE `feat/past-reading-check` `26903f5` 제공 안내와 로컬 코드·`docs/frontend-api.md`를 대조했습니다(2026-11-03). 운영 반영과 실제 연동 확인 범위는 plan.md에 별도로 기록합니다. 이 날짜 API 변경에는 스키마 변경·DB migration이 없습니다.
 
 - 날짜는 서버 KST 오늘부터 6일 전까지 포함합니다. PUT은 현재 읽는 중인 책만 가능하며 현재 시작일 이전 날짜면 409 `date_order`입니다. 이미 체크한 날짜는 시작일이 뒤로 바뀌어도 기존 기록을 200으로 돌려주지만, 현재 읽는 중이 아니면 기존 체크에도 PUT은 409입니다.
 - DELETE는 같은 날짜 범위에서 상태와 무관하게 가능하고 기록이 없어도 204입니다. 범위 검사는 상태보다 먼저 하며 미래는 422 `future_date`, 7일 전부터는 422 `date_too_old`, 형식 오류는 422 `validation_error`입니다. 실패는 기존 체크·상태·완독일을 바꾸지 않습니다.
@@ -95,9 +95,9 @@ BE `feat/past-reading-check` `26903f5` 제공 안내와 로컬 코드·`docs/fro
 - 저장·재조회 중 중복 변경을 잠그고 성공·409·404·결과 불명확 시 날짜별 목록과 월 달력을 다시 조회합니다. 재조회 실패 시 이전 결과를 유지하고 최신 체크 확인 전 쓰기를 막습니다. 통계는 탭을 열 때 새로 조회합니다.
 - FE 검증 → BE 병합·운영 배포 → FE 배포 순서입니다. 기존 `/today`는 유지하지만 날짜 경로·`last_read_date`를 쓰는 FE를 BE보다 먼저 배포하지 않습니다.
 
-## 독서 알림 (Web Push, 검증 완료·운영 배포 전)
+## 독서 알림 (Web Push, 운영 반영)
 
-BE `feat/reading-reminder` `affb334` 계약을 2026-11-03 확정했습니다. DB migration `0f24f6f3a7bc`가 필요하며 운영 반영 순서는 FE 검증 → BE 병합 → 운영 migration → Render·Actions 발송 키 등록 → BE 배포 → FE 배포입니다.
+BE `feat/reading-reminder` `affb334` 계약을 2026-11-03 확정했습니다. 필요한 DB migration `0f24f6f3a7bc`·발송 키를 포함한 BE 운영 반영 완료 안내를 받은 뒤 FE를 배포했습니다. 설정·migration 완료는 BE 전달 결과이며, 운영 공개 키 200과 서비스 워커·manifest 제공은 직접 확인했습니다. 실제 기기 수신·클릭 확인 범위는 plan.md에 둡니다.
 
 - BE: 매일 21:00 KST에 모든 사용자 공통으로 발송합니다. 구독이 있고 읽는 중인 책 중 오늘(KST) 체크하지 않은 책이 하나라도 있는 사용자에게 하루 한 번 보냅니다. 실행이 늦어져도 자정 전까지만 보내며, 알림 유효 시간도 자정까지입니다.
 - 내용은 `{"type": "reading_reminder", "date": "YYYY-MM-DD"}`입니다. 문구·이동 화면은 FE 서비스 워커(`public/sw.js`)가 정합니다: 제목 "BookStory", 본문 "오늘 아직 체크하지 않은 책이 있어요.", 클릭 시 새 창으로 `/records?check={date}`를 열어 그날 체크 편집기(읽는 중 책 체크·기존 체크 취소)를 바로 엽니다. 열린 창을 이동시키지 않아 작성 중인 입력이 사라지지 않습니다. 자정 뒤에 눌러도 알림 날짜를 쓰며, 최근 7일 밖이거나 형식이 틀리면 편집기 없이 기록 화면만 엽니다. 같은 날 알림은 `date`로 묶습니다.
@@ -109,9 +109,9 @@ BE `feat/reading-reminder` `affb334` 계약을 2026-11-03 확정했습니다. DB
 - 503은 "지금은 알림을 사용할 수 없어요"로 안내하고 로그아웃하지 않습니다. 지원하지 않는 브라우저는 버튼 대신 iOS 16.4 이상 홈 화면 추가 안내를 보여 줍니다. endpoint는 로그·화면에 출력하지 않습니다.
 - 서비스 워커는 요청을 가로채거나 캐시하지 않습니다. `/sw.js`는 `Cache-Control: no-cache`로 배포하고, manifest는 홈 화면 추가용 최소 구성입니다.
 
-## 계정·안정성 (공개 가입 전, 검증 완료·운영 배포 전)
+## 계정·안정성 (공개 가입 전, 운영 반영)
 
-BE와 2026-11-03 확정했습니다. BE 2차 배포(알림·상태 필터와 함께)에 포함되며 FE는 그 뒤 배포합니다.
+BE와 2026-11-03 확정했습니다. BE 2차 운영 반영 완료 안내 뒤 FE main `d066516`으로 배포했습니다. 검증 환경의 실제 데이터 쓰기와 운영 읽기 전용 확인은 plan.md에 구분해 기록합니다.
 
 - 탈퇴 `DELETE /me`: 서재·개인 기록·공개 후기·독서 체크·알림 구독/발송 기록·Supabase 로그인 계정을 바로 삭제하고 공통 책 정보는 남깁니다. 유예 기간은 없습니다. BE는 JWT `amr`의 password 인증 시각이 5분 이내인지 보며, 토큰 갱신으로는 바뀌지 않습니다. 서비스 데이터를 먼저 지우고 로그인 계정을 지우며, 같은 요청을 다시 보내면 이어서 처리합니다(여러 번 보내도 안전). 503 뒤 재시도하지 않고 다시 로그인하면 빈 계정으로 보입니다.
   - FE: `/settings` 탈퇴 → 영향 범위 안내·확인창 → 비밀번호 재입력 → 현재 계정 이메일로 `signInWithPassword` → 같은 계정인지 확인한 새 토큰으로 `DELETE /me`. 204면 알림 해제·로컬 로그아웃 후 로그인 화면에 완료 안내. 로그아웃이 늦거나 실패해도 계정 화면에 완료를 남기고 다시 보내지 않습니다. 403·503·비밀번호 오류는 로그아웃하지 않고 안내하며, 결과가 불명확하면 자동 재전송하지 않고 사용자가 다시 시도하게 합니다. 결과가 불명확했거나 재시도의 재로그인이 비밀번호 오류면 Supabase `getUser`의 `user_not_found`로 로그인 계정이 이미 지워졌는지 확인해 완료로 처리합니다.
