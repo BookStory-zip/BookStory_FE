@@ -54,7 +54,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 `GET /me/statistics?year=2026&month=10`은 월간, `month`를 생략하면 연간 합계입니다.
 
 - `library`: 기간과 무관한 현재 서재 현황(`total_books`, 5개 상태의 `status_counts`, `completed_books`). 완독 경험은 재독 중인 책도 포함하고 회독 횟수를 세지 않습니다.
-- `period`: 선택 기간 활동(`year`, 연간이면 null인 `month`, `start_date`, `end_date`, `reading_days`). 같은 날 여러 책을 체크해도 1일이며, 체크 취소·서재 삭제 후 수치가 달라질 수 있습니다.
+- `period`: 선택 기간 활동(`year`, 연간이면 null인 `month`, `start_date`, `end_date`, `reading_days`). 같은 날 여러 책을 체크해도 1일이며, 체크 취소·서재 삭제 후 수치가 달라질 수 있습니다. 타이머 API 반영 버전에는 `reading_minutes`가 추가됩니다(아래 독서 타이머 계약 참고).
 - FE: 통계 탭은 달력과 선택 월을 공유하고, 연간·월간 전환과 이전 기간 이동을 지원합니다. 기간을 바꾸거나 화면을 떠나면 이전 응답을 버리고, 오류·로딩·실제 0일을 구분합니다. 12개월 추이 그래프는 없습니다.
 - 상태: BE main `290da3e` 배포 후 사용자가 연간·월간 통계 조회 200과 서재 합계를 확인했습니다. FE 실제 운영 브라우저 통합 검증은 별도입니다.
 
@@ -94,6 +94,24 @@ BE `feat/past-reading-check` `26903f5` 제공 안내와 로컬 코드·`docs/fro
 - FE는 선택한 날짜의 실제 로그와 모든 서재 페이지를 조회합니다. 체크된 책에는 상태와 무관하게 취소 버튼, 미체크인 읽는 중 책에는 체크 버튼을 보여 줍니다. 시작일 검사를 FE에 복제하지 않습니다. 완료 기록만 있는 책은 체크된 것으로 간주하지 않습니다.
 - 저장·재조회 중 중복 변경을 잠그고 성공·409·404·결과 불명확 시 날짜별 목록과 월 달력을 다시 조회합니다. 재조회 실패 시 이전 결과를 유지하고 최신 체크 확인 전 쓰기를 막습니다. 통계는 탭을 열 때 새로 조회합니다.
 - FE 검증 → BE 병합·운영 배포 → FE 배포 순서입니다. 기존 `/today`는 유지하지만 날짜 경로·`last_read_date`를 쓰는 FE를 BE보다 먼저 배포하지 않습니다.
+
+## 독서 타이머 (2026-11-04 확정, 운영 반영 전)
+
+BE PR #25의 `docs/frontend-api.md`·구현과 사용자 회신을 대조했습니다. 시계 오차 5분 허용·계정 내 세션 겹침 거부까지 반영한 계약입니다.
+
+| API | 계약 |
+| --- | --- |
+| `POST /library/books/{user_book_id}/reading-sessions` | `{client_session_id: UUID, started_at: 시간대 포함 ISO, duration_seconds: 정수 60~3600}`. 신규 201, 같은 책·시각·시간의 같은 ID 재전송 200 |
+| `GET /library/books/{user_book_id}/reading-sessions?limit=20&offset=0` | 배열, 시작 시각 DESC·id DESC. limit 1~100 |
+| `DELETE /reading-sessions/{session_id}` | 204, 독서 체크는 남김 |
+
+- 세션 응답은 `{id, user_book_id, client_session_id, started_at, duration_seconds, read_date, created_at}`. 시작 시각의 KST 날짜를 사용하며 자정을 넘겨도 나누지 않습니다.
+- 세션과 해당 날짜 독서 체크는 같은 트랜잭션입니다. 읽는 중·최근 7일·독서 시작일 이후 규칙을 통과해야 저장하며, 이미 체크돼 있으면 유지합니다. 서재 삭제·탈퇴는 연결된 세션도 삭제합니다.
+- 동일 ID·동일 내용의 재전송은 책 상태가 바뀐 뒤에도 200입니다. 내용이나 책이 다르면 409 `session_conflict`. 다른 세션과 `[started_at, started_at + duration_seconds)`가 겹치면 다른 책도 409 `session_overlap`이며 세션·체크 모두 저장하지 않습니다. 끝 시각에 바로 이어지는 구간은 허용하고, 정확한 재전송은 겹침 검사를 하지 않습니다.
+- 시작·끝 시각이 서버 현재 시각보다 5분을 넘게 앞서면 각각 422 `future_date`·`invalid_duration`. 그 밖에 422 `date_too_old`·`validation_error`, 409 `reading_check_not_allowed`·`date_order`, 미인증 401·없는/타인 항목 404입니다.
+- `/me/statistics.period.reading_minutes`는 선택 기간에 시작한 세션 초를 모두 합한 뒤 분으로 내림합니다(90초 두 개는 3분). FE는 서버 값을 사용합니다.
+- FE는 계정당 로컬 측정 하나를 보관하며 일시정지를 빼고 시각 차이로 시간을 복원합니다. 1시간에서 멈추고 직접 계속 읽기를 누르면 이전 구간을 저장한 뒤 새 시각·새 ID로 시작합니다. 확인 대기·서버 저장 대기는 새 구간에 포함하지 않습니다. 자동 서버 저장은 없습니다.
+- 저장 전 종료 시간과 ID를 고정합니다. 결과 불명확·409 등 실패 시 보관하고 직접 재시도하게 하며 자동 재전송하지 않습니다. 겹침은 "이미 기록된 시간과 겹칩니다"로 안내합니다. 로그아웃·계정 변경은 측정을 정리하고 늦은 응답으로 복원하지 않습니다. 다른 책의 측정도 확인 후 버릴 수 있어 삭제된 책의 측정 때문에 막히지 않습니다.
 
 ## 독서 알림 (Web Push, 운영 반영)
 

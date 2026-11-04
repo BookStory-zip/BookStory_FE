@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getReadingLogs: vi.fn(),
   checkReadingToday: vi.fn(),
   cancelReadingToday: vi.fn(),
+  getReadingSessions: vi.fn(),
 }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
@@ -72,7 +73,7 @@ function renderDetail() {
   render(
     <MemoryRouter initialEntries={['/books/user-book-1']}>
       <Routes>
-        <Route path="/books/:userBookId" element={<BookDetail />} />
+        <Route path="/books/:userBookId" element={<BookDetail userId="user-a" />} />
         <Route path="/" element={<p>서재 화면</p>} />
       </Routes>
     </MemoryRouter>,
@@ -134,6 +135,7 @@ test('공개 설정만 수정해도 책 정보로 이동하기 전에 미저장 
 
 beforeEach(() => {
   vi.resetAllMocks()
+  mocks.getReadingSessions.mockResolvedValue([])
   mocks.getReadingLogs.mockResolvedValue([])
   // 한국 시간 2026-10-28 12:00으로 고정해 '오늘' 계산을 안정시킨다.
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -357,7 +359,7 @@ test('읽고 싶음 전환과 삭제는 확인창에서 취소하면 요청하�
 
   fireEvent.click(screen.getByRole('button', { name: '서재에서 빼기' }))
   const remove = screen.getByRole('dialog', { name: /서재에서 뺄까요/ })
-  expect(remove.textContent).toContain('독서 체크 기록과 공개 후기도 함께 삭제')
+  expect(remove.textContent).toContain('독서 체크·시간 기록과 공개 후기도 함께 삭제')
   fireEvent.click(within(remove).getByRole('button', { name: '취소' }))
 
   expect(mocks.updateLibraryStatus).not.toHaveBeenCalled()

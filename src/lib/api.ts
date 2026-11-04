@@ -1,3 +1,5 @@
+import { kstDateOf } from './record'
+
 export class ApiError extends Error {
   status: number
   // BE가 409·422·429·5xx에 붙이는 원인 코드(예: invalid_transition). 없으면 undefined.
@@ -551,6 +553,7 @@ export type ReadingStatistics = {
     start_date: string
     end_date: string
     reading_days: number
+    reading_minutes: number
   }
 }
 
@@ -573,7 +576,7 @@ function isReadingStatistics(value: unknown): value is ReadingStatistics {
     (selected.month === null || (typeof selected.month === 'number' && Number.isInteger(selected.month))) &&
     typeof selected.start_date === 'string' && DATE_PATTERN.test(selected.start_date) &&
     typeof selected.end_date === 'string' && DATE_PATTERN.test(selected.end_date) &&
-    isCount(selected.reading_days)
+    isCount(selected.reading_days) && isCount(selected.reading_minutes)
   )
 }
 
@@ -610,6 +613,41 @@ export async function updateNickname(accessToken: string, nickname: string | nul
 // 로그인 후 5분 이내 토큰만 받는다(403 recent_login_required). 여러 번 보내도 안전하다.
 export async function deleteMe(accessToken: string): Promise<void> {
   await apiRequest('/me', accessToken, { method: 'DELETE' })
+}
+
+export type ReadingSessionInput = { client_session_id: string; started_at: string; duration_seconds: number }
+export type ReadingSession = ReadingSessionInput & { id: string; user_book_id: string; read_date: string; created_at: string }
+
+function isReadingSession(value: unknown, userBookId: string): value is ReadingSession {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Record<string, unknown>
+  if (typeof item.started_at !== 'string' || !Number.isFinite(Date.parse(item.started_at))) return false
+  const date = kstDateOf(item.started_at)
+  return typeof item.id === 'string' && item.user_book_id === userBookId &&
+    typeof item.client_session_id === 'string' && typeof item.created_at === 'string' &&
+    Number.isFinite(Date.parse(item.created_at)) && item.read_date === date &&
+    typeof item.duration_seconds === 'number' && Number.isInteger(item.duration_seconds) &&
+    item.duration_seconds >= 60 && item.duration_seconds <= 3600
+}
+
+export async function saveReadingSession(accessToken: string, userBookId: string, body: ReadingSessionInput): Promise<ReadingSession> {
+  const data = await apiRequest(`${libraryBookPath(userBookId)}/reading-sessions`, accessToken, { method: 'POST', body })
+  if (!isReadingSession(data, userBookId) || data.client_session_id !== body.client_session_id ||
+    Date.parse(data.started_at) !== Date.parse(body.started_at) || data.duration_seconds !== body.duration_seconds) {
+    throw new Error('시간 기록 응답 형식이 올바르지 않습니다.')
+  }
+  return data
+}
+
+export async function getReadingSessions(accessToken: string, userBookId: string, limit: number, offset: number): Promise<ReadingSession[]> {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  const data = await apiRequest(`${libraryBookPath(userBookId)}/reading-sessions?${query}`, accessToken)
+  if (!Array.isArray(data) || !data.every((item) => isReadingSession(item, userBookId))) throw new Error('시간 기록 응답 형식이 올바르지 않습니다.')
+  return data
+}
+
+export async function deleteReadingSession(accessToken: string, sessionId: string): Promise<void> {
+  await apiRequest(`/reading-sessions/${encodeURIComponent(sessionId)}`, accessToken, { method: 'DELETE' })
 }
 
 // 발송 키가 설정되지 않은 서버는 503을 돌려준다.
