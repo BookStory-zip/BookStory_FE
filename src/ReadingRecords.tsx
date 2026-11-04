@@ -6,6 +6,7 @@ import { commonErrorMessage } from './lib/errors'
 import { addMonths, calendarDays, isEditableDate, monthOf, monthRange, spokenDate, spokenMonth } from './lib/dates'
 import { useKstToday } from './useKstToday'
 import CabinIcon from './CabinIcon'
+import NoteTimeline from './NoteTimeline'
 import ReadingStatistics from './ReadingStatistics'
 import ReadingDayEditor from './ReadingDayEditor'
 import ReadingReminder from './ReadingReminder'
@@ -36,7 +37,7 @@ export default function ReadingRecords() {
     return isEditableDate(date, today) ? date : null
   })
   const [month, setMonth] = useState(() => monthOf(checkDate ?? today))
-  const [view, setView] = useState<'calendar' | 'statistics'>('calendar')
+  const [view, setView] = useState<'calendar' | 'statistics' | 'notes'>('calendar')
   const [statisticsMode, setStatisticsMode] = useState<'month' | 'year'>('month')
   const [days, setDays] = useState<Map<string, DayBook[]> | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -127,12 +128,15 @@ export default function ReadingRecords() {
       <div className="records-switch" role="group" aria-label="독서 기록 보기">
         <button type="button" disabled={editingBusy} aria-pressed={view === 'calendar'} onClick={() => { if (view !== 'calendar') { setView('calendar'); setDays(null); setError(null) } }}>달력</button>
         <button type="button" disabled={editingBusy} aria-pressed={view === 'statistics'} onClick={() => setView('statistics')}>통계</button>
+        <button type="button" disabled={editingBusy} aria-pressed={view === 'notes'} onClick={() => setView('notes')}>노트</button>
       </div>
 
-      {view === 'statistics' ? (
+      {view === 'notes' ? (
+        <NoteTimeline key={month} month={month} today={today} onMove={moveMonth} />
+      ) : view === 'statistics' ? (
         <ReadingStatistics
           month={month} today={today} mode={statisticsMode}
-          onModeChange={setStatisticsMode} onMove={moveMonth}
+          onModeChange={setStatisticsMode} onMove={moveMonth} onBusyChange={setEditingBusy}
         />
       ) : (
         <>

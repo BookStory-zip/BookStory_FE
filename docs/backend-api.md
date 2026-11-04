@@ -5,7 +5,7 @@ FE가 사용하는 BookStory BE API 계약과 FE 반영 방식, BE 전달 사항
 BE가 FE용으로 정리한 계약은 BE 저장소 `docs/frontend-api.md`에 있습니다.
 
 - 운영 API: https://bookstory-api-w31a.onrender.com · [Swagger](https://bookstory-api-w31a.onrender.com/docs)
-- 기준: BE main `2c2b6e7`(PR #12, 서재 순서 API·migration `57f75310c7d5` 포함). BE 유지보수 기록의 운영 migration 적용·Render Live와 사용자 완료 안내를 확인했습니다. FE main `a82c21a`는 2026-11-03 Vercel에 배포했고 운영 API·CORS·배포 번들·비로그인 화면을 확인했습니다. 개인 기록 쓰기는 별도 검증 환경을 사용하며 운영 수동 확인 범위는 plan.md에 기록합니다.
+- 기준: BE 2차 main `e48ee827`(PR #23), FE main `d066516`(PR #15, 2026-11-03 자동 운영 배포). BE 운영 반영 완료는 사용자 전달이며, FE가 Render 배포 SHA나 운영 DB를 직접 조회한 것은 아닙니다. 운영 API 계약·공개 알림 키·CORS와 FE 커밋 표식·정적 파일 제공은 직접 확인했습니다. 개인 기록 쓰기는 별도 검증 환경을 사용하며 실제 확인 범위는 plan.md에 기록합니다.
 
 ## 인증
 
@@ -27,20 +27,22 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `GET /books/{isbn13}/reviews?limit&offset` | Bearer 필수. 기본 20·최대 100. `id`, `author_name`, `memo`, nullable `rating`, `published_at`, `updated_at`, `is_mine` 배열 | 20개씩 더 보기, 오류 시 기존 페이지 보존. 내 후기만 수정 링크. 사용자 ID·이메일 없음 |
 | `GET /library/books/by-isbn/{isbn13}` | Bearer 필수. 내 상세와 같은 응답, 미등록은 404 | 404만 미등록으로 처리. 다른 오류에는 담기 버튼을 표시하지 않음 |
 | `POST /library/books` | `{isbn13}` → `{id, book_id, status}`. 새로 담으면 201, 이미 있으면 200과 기존 기록 | 201 "담았습니다", 200 "이미 서재에 있는 책(상태)". ISBN13 없는 결과는 담기 막음 |
-| `GET /library/books?limit&offset` | 배열, 기본 20·최대 100, 서버 순서. 전체 건수 없음. 순서 API 반영 후 저장된 순서, 초기값은 최신 등록순 | 20개씩 더 보기. 부분 목록으로 통계를 만들지 않음 |
+| `GET /library/books?limit&offset&q&field&status` | 배열, 기본 20·최대 100, 서버 순서. 전체 건수 없음. 순서 API 반영 후 저장된 순서, 초기값은 최신 등록순. 검색·상태는 아래 서재 검색 참고 | 20개씩 더 보기. 부분 목록으로 통계를 만들지 않음 |
 | `PATCH /library/books/{user_book_id}/position` | 필수 `{after_user_book_id: UUID 또는 null}`, 204·빈 본문. 운영 제공 | 개인 서재 ID로 드래그·앞/뒤 이동. 성공·결과 불명확 시 불러온 범위(최대 100개) 재조회 |
 | `GET /library/books/{id}` | 상세. 날짜·별점·메모 등 null 가능. `allowed_statuses`(현재 상태 재요청 포함) | 고를 수 있는 상태를 `allowed_statuses`로 결정. 없는 값을 채우지 않음. 404는 타인 항목과 구분하지 않음 |
 | `PATCH …/{id}/status` | `status` + 선택 `started_date`·`completed_date`(`YYYY-MM-DD`). 시각 필드도 받지만 같은 필드에 둘 다 보내면 422 | 고른 날짜만 날짜 필드로 전송. 아래 날짜 규칙 |
 | `PATCH …/{id}/record` | 선택 `rating`(1~5)·`memo`(1만 자)·`stop_reason`(1천 자)·`is_review_public`(불리언, null 불가) | 바뀐 필드만 전송. 빈 값은 null(삭제), 별점 0은 보내지 않음. 공개 설정 생략은 현재 값 유지 |
 | `DELETE …/{id}` | 204. 연결된 독서 체크도 삭제 | 확인창 후 삭제 |
 | `PUT·DELETE …/{id}/reading-logs/today` | 체크는 읽는 중만, 취소는 상태 무관·기록 없어도 204. 날짜는 서버 KST | 오늘 체크 여부는 오늘 기록의 `user_book_id`로 판단 |
-| `PUT·DELETE …/{id}/reading-logs/{read_date}` | `YYYY-MM-DD`, 서버 KST 오늘 포함 최근 7일. PUT 200·DELETE 204. 검증 환경 제공, 운영 배포 전 | 달력 날짜별 체크·취소. 아래 계약 참고 |
+| `PUT·DELETE …/{id}/reading-logs/{read_date}` | `YYYY-MM-DD`, 서버 KST 오늘 포함 최근 7일. PUT 200·DELETE 204. 운영 제공 | 달력 날짜별 체크·취소. 아래 계약 참고 |
 | `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩. 항목의 `completed_at`·`status`·`has_completed`는 현재 기록(체크 당시 아님) | 마지막 페이지까지 전부 조회. 체크한 날 표시에만 사용 |
 | `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
-| `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`) | 기록 화면 통계 탭에서만 요청. 아래 통계 참고 |
-| `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 검증 환경 확인·운영 배포 전 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
+| `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`·`reading_minutes`·`goals`) | 기록 화면 통계 탭에서만 요청. 아래 통계·독서 목표 참고 |
+| `PUT·DELETE /me/goals` | JSON 본문, `month` 필수(연은 null), 204 | 통계 탭 목표 설정·끄기·이어받기·합계 복귀. 아래 독서 목표 참고 |
+| 독서 노트 5개 API | 책별 작성·목록·수정·삭제, 기간 타임라인. BE 미배포 | 책 상세 노트 카드·기록 노트 탭. 아래 독서 노트 참고 |
+| `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 운영 제공 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
 | `DELETE /me` | 204. 비밀번호 인증 5분 이내 토큰만, 아니면 403 `recent_login_required`, 로그인 계정 삭제 실패 503 `account_deletion_failed`(재시도 가능) | 계정 화면 탈퇴. 비밀번호 재로그인 후 요청 |
-| `GET /push/public-key` | 공개. `{public_key}`(base64url), 발송 키 미설정이면 503. 검증 환경 제공 예정, 운영 배포 전 | 구독의 `applicationServerKey`. 아래 독서 알림 참고 |
+| `GET /push/public-key` | 공개. `{public_key}`(base64url), 발송 키 미설정이면 503. 운영 200 확인 | 구독의 `applicationServerKey`. 아래 독서 알림 참고 |
 | `PUT·DELETE /me/push-subscriptions` | PUT `{endpoint, keys: {p256dh, auth}}`, DELETE `{endpoint}`, 모두 204. endpoint는 https 푸시 서비스만, 형식 오류 422 | 알림 켜기·끄기·앱 시작 재등록·로그아웃 해제 |
 
 | 값 | 의미 |
@@ -54,7 +56,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 `GET /me/statistics?year=2026&month=10`은 월간, `month`를 생략하면 연간 합계입니다.
 
 - `library`: 기간과 무관한 현재 서재 현황(`total_books`, 5개 상태의 `status_counts`, `completed_books`). 완독 경험은 재독 중인 책도 포함하고 회독 횟수를 세지 않습니다.
-- `period`: 선택 기간 활동(`year`, 연간이면 null인 `month`, `start_date`, `end_date`, `reading_days`). 같은 날 여러 책을 체크해도 1일이며, 체크 취소·서재 삭제 후 수치가 달라질 수 있습니다.
+- `period`: 선택 기간 활동(`year`, 연간이면 null인 `month`, `start_date`, `end_date`, `reading_days`). 같은 날 여러 책을 체크해도 1일이며, 체크 취소·서재 삭제 후 수치가 달라질 수 있습니다. 타이머 API 반영 버전에는 `reading_minutes`가 추가됩니다(아래 독서 타이머 계약 참고).
 - FE: 통계 탭은 달력과 선택 월을 공유하고, 연간·월간 전환과 이전 기간 이동을 지원합니다. 기간을 바꾸거나 화면을 떠나면 이전 응답을 버리고, 오류·로딩·실제 0일을 구분합니다. 12개월 추이 그래프는 없습니다.
 - 상태: BE main `290da3e` 배포 후 사용자가 연간·월간 통계 조회 200과 서재 합계를 확인했습니다. FE 실제 운영 브라우저 통합 검증은 별도입니다.
 
@@ -84,9 +86,9 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 - `read_date`·`published_date`는 문자열 그대로 다뤄 시간대 변환으로 하루가 밀리지 않게 합니다.
 - 중단 7일 경과 포기와 도서 정보 갱신은 BE 배치 몫이며 FE 타이머로 처리하지 않습니다.
 
-## 지난 날짜 독서 체크 (검증 환경 제공)
+## 지난 날짜 독서 체크 (운영 반영)
 
-BE `feat/past-reading-check` `26903f5` 제공 안내와 로컬 코드·`docs/frontend-api.md`를 대조했습니다(2026-11-03). 운영 제공 여부와 실제 연동 결과는 plan.md에 별도로 기록합니다. 스키마 변경·DB migration은 없습니다.
+BE `feat/past-reading-check` `26903f5` 제공 안내와 로컬 코드·`docs/frontend-api.md`를 대조했습니다(2026-11-03). 운영 반영과 실제 연동 확인 범위는 plan.md에 별도로 기록합니다. 이 날짜 API 변경에는 스키마 변경·DB migration이 없습니다.
 
 - 날짜는 서버 KST 오늘부터 6일 전까지 포함합니다. PUT은 현재 읽는 중인 책만 가능하며 현재 시작일 이전 날짜면 409 `date_order`입니다. 이미 체크한 날짜는 시작일이 뒤로 바뀌어도 기존 기록을 200으로 돌려주지만, 현재 읽는 중이 아니면 기존 체크에도 PUT은 409입니다.
 - DELETE는 같은 날짜 범위에서 상태와 무관하게 가능하고 기록이 없어도 204입니다. 범위 검사는 상태보다 먼저 하며 미래는 422 `future_date`, 7일 전부터는 422 `date_too_old`, 형식 오류는 422 `validation_error`입니다. 실패는 기존 체크·상태·완독일을 바꾸지 않습니다.
@@ -95,9 +97,86 @@ BE `feat/past-reading-check` `26903f5` 제공 안내와 로컬 코드·`docs/fro
 - 저장·재조회 중 중복 변경을 잠그고 성공·409·404·결과 불명확 시 날짜별 목록과 월 달력을 다시 조회합니다. 재조회 실패 시 이전 결과를 유지하고 최신 체크 확인 전 쓰기를 막습니다. 통계는 탭을 열 때 새로 조회합니다.
 - FE 검증 → BE 병합·운영 배포 → FE 배포 순서입니다. 기존 `/today`는 유지하지만 날짜 경로·`last_read_date`를 쓰는 FE를 BE보다 먼저 배포하지 않습니다.
 
-## 독서 알림 (Web Push, 검증 완료·운영 배포 전)
+## 독서 타이머 (2026-11-04 확정, 운영 반영 전)
 
-BE `feat/reading-reminder` `affb334` 계약을 2026-11-03 확정했습니다. DB migration `0f24f6f3a7bc`가 필요하며 운영 반영 순서는 FE 검증 → BE 병합 → 운영 migration → Render·Actions 발송 키 등록 → BE 배포 → FE 배포입니다.
+BE PR #25의 `docs/frontend-api.md`·구현과 사용자 회신을 대조했습니다. 시계 오차 5분 허용·계정 내 세션 겹침 거부까지 반영한 계약입니다.
+
+| API | 계약 |
+| --- | --- |
+| `POST /library/books/{user_book_id}/reading-sessions` | `{client_session_id: UUID, started_at: 시간대 포함 ISO, duration_seconds: 정수 60~3600}`. 신규 201, 같은 책·시각·시간의 같은 ID 재전송 200 |
+| `GET /library/books/{user_book_id}/reading-sessions?limit=20&offset=0` | 배열, 시작 시각 DESC·id DESC. limit 1~100 |
+| `DELETE /reading-sessions/{session_id}` | 204, 독서 체크는 남김 |
+
+- 세션 응답은 `{id, user_book_id, client_session_id, started_at, duration_seconds, read_date, created_at}`. 시작 시각의 KST 날짜를 사용하며 자정을 넘겨도 나누지 않습니다.
+- 세션과 해당 날짜 독서 체크는 같은 트랜잭션입니다. 읽는 중·최근 7일·독서 시작일 이후 규칙을 통과해야 저장하며, 이미 체크돼 있으면 유지합니다. 서재 삭제·탈퇴는 연결된 세션도 삭제합니다.
+- 동일 ID·동일 내용의 재전송은 책 상태가 바뀐 뒤에도 200입니다. 내용이나 책이 다르면 409 `session_conflict`. 다른 세션과 `[started_at, started_at + duration_seconds)`가 겹치면 다른 책도 409 `session_overlap`이며 세션·체크 모두 저장하지 않습니다. 끝 시각에 바로 이어지는 구간은 허용하고, 정확한 재전송은 겹침 검사를 하지 않습니다.
+- 시작·끝 시각이 서버 현재 시각보다 5분을 넘게 앞서면 각각 422 `future_date`·`invalid_duration`. 그 밖에 422 `date_too_old`·`validation_error`, 409 `reading_check_not_allowed`·`date_order`, 미인증 401·없는/타인 항목 404입니다.
+- `/me/statistics.period.reading_minutes`는 선택 기간에 시작한 세션 초를 모두 합한 뒤 분으로 내림합니다(90초 두 개는 3분). FE는 서버 값을 사용합니다.
+- FE는 계정당 로컬 측정 하나를 보관하며 일시정지를 빼고 시각 차이로 시간을 복원합니다. 1시간에서 멈추고 직접 계속 읽기를 누르면 이전 구간을 저장한 뒤 새 시각·새 ID로 시작합니다. 확인 대기·서버 저장 대기는 새 구간에 포함하지 않습니다. 자동 서버 저장은 없습니다.
+- 저장 전 종료 시간과 ID를 고정합니다. 결과 불명확·409 등 실패 시 보관하고 직접 재시도하게 하며 자동 재전송하지 않습니다. 겹침은 "이미 기록된 시간과 겹칩니다"로 안내합니다. 로그아웃·계정 변경은 측정을 정리하고 늦은 응답으로 복원하지 않습니다. 다른 책의 측정도 확인 후 버릴 수 있어 삭제된 책의 측정 때문에 막히지 않습니다.
+
+## 독서 목표 (2026-11-04 BE PR #26, 운영 반영 전)
+
+BE PR #26(`110e215`)의 `app/schemas.py`·`app/reading_goals.py`·`docs/frontend-api.md` "독서 목표"와 BE 회신을 대조했습니다. 운영 OpenAPI에 `/me/goals`가 있음을 읽기 전용으로 확인했으며, 운영 DB의 migration `d4426d74f2e1` 적용은 확인하지 않았습니다.
+
+| API | 계약 |
+| --- | --- |
+| `PUT /me/goals` | JSON `{metric, year, month, target}` → 204. 같은 기간은 덮어씀. `target: 0`은 그 기간부터 목표 끄기 |
+| `DELETE /me/goals` | JSON `{metric, year, month}` → 204(대상 없어도). 월은 그 달 직접 설정 제거(이전 달 값을 다시 이어받음), 연(`month: null`)은 월 목표 합계로 복귀 |
+
+- `metric`: `reading_days`·`completed_books`·`reading_minutes`(분). `month` 키는 필수이며 1~12 또는 null(연)이고, 빠지면 422 `validation_error`입니다. `year` 1~9999.
+- 직접 입력 상한: `reading_days`는 그 달·해 일수(윤년 반영), `reading_minutes`는 일수 × 1440, `completed_books`는 9999. 넘거나 음수·소수면 422 `validation_error`이며 기존 목표는 유지됩니다.
+- `GET /me/statistics`의 필수 `period.goals`: `[{metric, target, current, source}]`, 순서는 위 `metric` 순. `source`는 `set`, 월 응답의 `inherited`, 연 응답의 `sum`. 한 번도 정하지 않은 지표는 빠지고, 끈 목표는 `target: 0`으로 포함됩니다.
+- 월 목표는 직접 설정이 없으면 가장 최근 이전 달(이전 해 포함) 값을 이어받고, 일수·분 목표는 그 달 상한으로 줄여 응답합니다. 연 목표는 직접 설정이 우선이며 없으면 12개월 적용 목표의 합계입니다. 응답 `target`에는 입력 상한을 적용하지 않으므로 연 완독 합계는 9999를 넘을 수 있습니다.
+- `current`: 일수·분은 같은 응답의 `period` 값, 완독은 그 기간(KST)에 `completed_at`이 있는 완독 경험 책 수로 `library.completed_books`와 다릅니다.
+- FE: 기록 화면 통계 탭의 기존 월간·연간 선택에 붙입니다. 지표별 `current / target`, 100%에서 멈추는 진행 막대(실제 수치 유지), 출처(직접 설정·이전 달에서 이어받음·월 목표 합계), "목표 꺼짐"·"목표를 설정해보세요"를 구분합니다. 한 번에 한 지표만 편집하며 입력 상한만 FE에서 계산하고(`src/lib/goals.ts`) 상속·합계는 서버 응답을 씁니다. 빈 입력은 0으로 바꾸지 않고, 끄기(`target: 0`)·"이전 목표 이어받기"(월 DELETE)·"월 목표 합계로 전환"(연 DELETE)은 별도 버튼입니다. 저장 중에는 기간·탭 이동을 막고 성공 후 통계를 다시 조회합니다. 422·결과 불명확(자동 재전송 없음)·저장 후 재조회 실패("설정은 저장됐지만 최신 상태를 확인하지 못했습니다")에서 입력과 기존 통계를 보존하고 최신 상태 확인을 제공합니다. 화면을 떠난 뒤 늦게 끝난 저장은 재조회하지 않습니다.
+
+## 서재 검색·상태 필터 (D-1, 2026-11-04 합의, BE 미배포)
+
+BE 사전 합의 확정 회신(2026-11-04) 기준이며 BE `9ca25e1`에서 실제 연동을 확인했습니다(plan.md). BE는 D-1을 D-2(책장)와 따로 먼저 검증 환경에 올리고, 운영 반영은 C·D-1·D-2를 함께 합니다.
+
+- `GET /library/books?q=&field=title|author&status=&limit=20&offset=0`. 대소문자를 구분하지 않는 포함 검색이며 `%`·`_`도 글자 그대로 찾습니다. 저자는 이름 하나하나에서 찾고, `field` 생략 시 title입니다.
+- q는 앞뒤 공백 제거·NFC 정규화 뒤 코드 포인트 최대 200자(넘으면 422 `validation_error`, detail 배열), 정규화 전 원문도 1000자까지(BE 추가 통보), 공백만이면 422 `blank_query`(문자열 detail). 검색어를 지우면 q를 빼고 보냅니다. q 없는 field는 무시하고 허용하지 않는 field 값은 422입니다.
+- q·field·status(·D-2의 shelf_id)는 함께 적용되고 정렬은 저장된 서재 순서, 전체 개수 헤더는 없습니다. 대소문자 무시는 DB 기준(영문·악센트 등 유니코드 대소문자, ß↔ss 같은 확장 변환 없음, 운영 DB 확인 후 확정).
+- FE: 서재 화면에 제목/저자 선택·검색어·검색 버튼·검색 해제·읽기 상태 선택을 둡니다. 서버가 조건을 422로 거부하면 이전 조건으로 돌아가 입력란에 안내합니다. q를 모르는 BE는 전체 서재를 돌려주므로 FE는 BE 운영 반영 뒤에 배포합니다. q는 FE도 같은 규칙으로 먼저 검사해 공백만·200자 초과를 요청 전에 막고, 검색어가 있을 때만 field를 보냅니다. 조건이 바뀌면 offset 0부터 다시 조회하고 이전 조건의 늦은 응답을 버립니다. 결과 0건과 오류를 구분하고, 더 보기 실패 시 결과와 다음 offset을 유지합니다. 필터가 있으면 서재 순서 편집을 막고, 편집 중에는 조건을 바꾸지 않습니다. 불러온 일부 책으로 로컬 검색하지 않습니다.
+
+## 서브 책장 (D-2, 2026-11-04 합의, BE 미배포)
+
+BE 사전 합의 확정 회신(2026-11-04)과 BE PR #29 `c58af9b` 구현을 대조했고 검증 환경에서 실제 연동을 확인했습니다(plan.md). 이름의 제어 문자·보이지 않는 서식 문자·보이는 글자 없음은 422 `validation_error`(ZWJ 허용), 형식이 잘못된 `shelf_id`는 422입니다.
+
+| API | 계약 |
+| --- | --- |
+| `GET /shelves` | 200 `[{id, name, book_count, position}]`, 책장 순서 |
+| `POST /shelves {name}` | 201 같은 형식, 맨 뒤에 추가 |
+| `PATCH /shelves/{id} {name}` | 200 같은 형식 |
+| `PATCH /shelves/{id}/position {after_shelf_id}` | 204. 필수 키, null이면 맨 앞, 자기 자신이면 422 `invalid_position` |
+| `DELETE /shelves/{id}` | 204. 책은 서재에 남음 |
+| `PUT·DELETE /shelves/{id}/books/{user_book_id}` | 204. 이미 있어도·없어도 204 |
+| `GET /library/books?...&shelf_id=` | 검색·상태와 함께 적용. 타인·없는 책장 404 |
+
+- 사용자당 30개(초과 409 `shelf_limit_exceeded`). 이름은 앞뒤 공백 제거·NFC 뒤 1~30 코드 포인트, NFC·유니코드 casefold 중복은 409 `shelf_name_conflict`(자기 이름의 대소문자만 바꾸기는 허용). 책장당 책 수 상한 없음. `book_count`는 필터와 무관한 그 책장의 전체 권수입니다.
+- 책 상세·by-isbn 응답에 필수 `shelves: [{id, name}]`(책장 순서, 없으면 []). 서재 목록 항목에는 없습니다. 서재에서 책을 삭제하면 연결이 정리되고 탈퇴하면 책장도 삭제됩니다.
+- FE: 서재 화면 "책장" 선택(이름·서버 권수)과 "책장 관리"(만들기·이름 바꾸기·앞/뒤 순서·삭제 확인창의 책 보존 안내), 책 상세 "책장" 카드(체크로 여러 책장 넣기·빼기, 서버 상세 기준 표시). 책장 필터가 있으면 순서 편집을 막습니다. 쓰기 성공 뒤 책장 목록·상세를 다시 조회하고 `book_count`를 계산하지 않습니다. 결과 불명확·404는 다시 보내지 않고 목록만 재조회하며, 선택한 책장이 없어지면 책장 목록을 다시 받고 전체 책장으로 돌아갑니다. 상세 `shelves`를 필수로 검사하므로 FE는 BE 운영 반영 뒤에 배포합니다.
+
+## 독서 노트 (2026-11-04 합의, BE 미배포)
+
+BE와 사전 합의(2026-11-04 확정 회신)한 계약입니다. BE `feat/reading-notes` `411347f` 구현과 대조했고 검증 환경에서 실제 연동을 확인했습니다(plan.md). 운영 반영 전입니다.
+
+| API | 계약 |
+| --- | --- |
+| `POST /library/books/{user_book_id}/notes` | `{note_date, quote, thought, page}` → 201 노트. `note_date` 필수(생략 422) |
+| `GET /library/books/{user_book_id}/notes?limit=20&offset=0` | 배열, limit 1~100(기본 20) |
+| `PATCH /notes/{note_id}` | 200 노트. 생략은 유지, `quote`·`thought`·`page`의 null은 삭제, `note_date: null`은 422 |
+| `DELETE /notes/{note_id}` | 204 |
+| `GET /notes?start_date&end_date&limit&offset` | 기간 필수·최대 366일. 노트 필드에 `title`·`authors`·`thumbnail_url` 추가 |
+
+- 노트: `id`, `user_book_id`, `note_date`(KST 날짜, 미래 422 `future_date`·과거 제한 없음), `quote`(1000자), `thought`(2000자), `page`(null 또는 1~99999), `created_at`, `updated_at`. 앞뒤 공백을 지워 저장하고 공백만 있으면 null이며, 결과적으로 둘 다 비면 422 `validation_error`(빈 노트 PATCH의 `detail`은 문자열)입니다.
+- 목록은 `note_date`·`created_at`·`id` 내림차순의 평평한 배열이며 전체 개수는 없습니다. 상태와 무관하게 서재의 모든 책에 쓸 수 있고 독서 체크를 만들지 않습니다. 서재 삭제·탈퇴 시 함께 삭제됩니다. 없는/타인 책·노트는 404, 기간 역전·초과는 422 `date_order`·`date_range`입니다.
+- FE: 책 상세의 "독서 노트" 카드(공개 후기 "나의 기록"과 별도)에서 20개씩 더 보기·작성·수정·삭제합니다. 입력 규칙을 같은 기준으로 먼저 검사하고(글자 수는 코드 포인트), PATCH는 바뀐 항목만 보냅니다. 저장 중 중복 요청을 막고, 실패 시 입력을 보존합니다. 결과 불명확·404는 다시 보내지 않고 목록만 재조회합니다. 기록 화면 "노트" 탭은 선택한 달을 기간으로 요청하고 서버 순서 그대로 같은 날짜끼리만 묶어 보여 주며, 달 변경·화면 이탈 뒤 늦은 응답을 버립니다.
+
+## 독서 알림 (Web Push, 운영 반영)
+
+BE `feat/reading-reminder` `affb334` 계약을 2026-11-03 확정했습니다. 필요한 DB migration `0f24f6f3a7bc`·발송 키를 포함한 BE 운영 반영 완료 안내를 받은 뒤 FE를 배포했습니다. 설정·migration 완료는 BE 전달 결과이며, 운영 공개 키 200과 서비스 워커·manifest 제공은 직접 확인했습니다. 실제 기기 수신·클릭 확인 범위는 plan.md에 둡니다.
 
 - BE: 매일 21:00 KST에 모든 사용자 공통으로 발송합니다. 구독이 있고 읽는 중인 책 중 오늘(KST) 체크하지 않은 책이 하나라도 있는 사용자에게 하루 한 번 보냅니다. 실행이 늦어져도 자정 전까지만 보내며, 알림 유효 시간도 자정까지입니다.
 - 내용은 `{"type": "reading_reminder", "date": "YYYY-MM-DD"}`입니다. 문구·이동 화면은 FE 서비스 워커(`public/sw.js`)가 정합니다: 제목 "BookStory", 본문 "오늘 아직 체크하지 않은 책이 있어요.", 클릭 시 새 창으로 `/records?check={date}`를 열어 그날 체크 편집기(읽는 중 책 체크·기존 체크 취소)를 바로 엽니다. 열린 창을 이동시키지 않아 작성 중인 입력이 사라지지 않습니다. 자정 뒤에 눌러도 알림 날짜를 쓰며, 최근 7일 밖이거나 형식이 틀리면 편집기 없이 기록 화면만 엽니다. 같은 날 알림은 `date`로 묶습니다.
@@ -109,9 +188,9 @@ BE `feat/reading-reminder` `affb334` 계약을 2026-11-03 확정했습니다. DB
 - 503은 "지금은 알림을 사용할 수 없어요"로 안내하고 로그아웃하지 않습니다. 지원하지 않는 브라우저는 버튼 대신 iOS 16.4 이상 홈 화면 추가 안내를 보여 줍니다. endpoint는 로그·화면에 출력하지 않습니다.
 - 서비스 워커는 요청을 가로채거나 캐시하지 않습니다. `/sw.js`는 `Cache-Control: no-cache`로 배포하고, manifest는 홈 화면 추가용 최소 구성입니다.
 
-## 계정·안정성 (공개 가입 전, 검증 완료·운영 배포 전)
+## 계정·안정성 (공개 가입 전, 운영 반영)
 
-BE와 2026-11-03 확정했습니다. BE 2차 배포(알림·상태 필터와 함께)에 포함되며 FE는 그 뒤 배포합니다.
+BE와 2026-11-03 확정했습니다. BE 2차 운영 반영 완료 안내 뒤 FE main `d066516`으로 배포했습니다. 검증 환경의 실제 데이터 쓰기와 운영 읽기 전용 확인은 plan.md에 구분해 기록합니다.
 
 - 탈퇴 `DELETE /me`: 서재·개인 기록·공개 후기·독서 체크·알림 구독/발송 기록·Supabase 로그인 계정을 바로 삭제하고 공통 책 정보는 남깁니다. 유예 기간은 없습니다. BE는 JWT `amr`의 password 인증 시각이 5분 이내인지 보며, 토큰 갱신으로는 바뀌지 않습니다. 서비스 데이터를 먼저 지우고 로그인 계정을 지우며, 같은 요청을 다시 보내면 이어서 처리합니다(여러 번 보내도 안전). 503 뒤 재시도하지 않고 다시 로그인하면 빈 계정으로 보입니다.
   - FE: `/settings` 탈퇴 → 영향 범위 안내·확인창 → 비밀번호 재입력 → 현재 계정 이메일로 `signInWithPassword` → 같은 계정인지 확인한 새 토큰으로 `DELETE /me`. 204면 알림 해제·로컬 로그아웃 후 로그인 화면에 완료 안내. 로그아웃이 늦거나 실패해도 계정 화면에 완료를 남기고 다시 보내지 않습니다. 403·503·비밀번호 오류는 로그아웃하지 않고 안내하며, 결과가 불명확하면 자동 재전송하지 않고 사용자가 다시 시도하게 합니다. 결과가 불명확했거나 재시도의 재로그인이 비밀번호 오류면 Supabase `getUser`의 `user_not_found`로 로그인 계정이 이미 지워졌는지 확인해 완료로 처리합니다.

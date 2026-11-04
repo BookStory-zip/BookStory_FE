@@ -1,3 +1,5 @@
+import { kstDateOf } from './record'
+
 export class ApiError extends Error {
   status: number
   // BE가 409·422·429·5xx에 붙이는 원인 코드(예: invalid_transition). 없으면 undefined.
@@ -150,18 +152,29 @@ function isLibraryBookItem(value: unknown): value is LibraryBookItem {
   )
 }
 
+// 검색·상태 조건은 서버가 함께 적용한다. 정렬은 저장된 서재 순서이고 전체 개수는 없다.
+export type LibraryFilter = { q?: string; field?: 'title' | 'author'; status?: ReadingStatus; shelf_id?: string }
+
 export async function getLibraryBooks(
   accessToken: string,
   limit: number,
   offset: number,
-  status?: ReadingStatus,
+  filter: LibraryFilter = {},
 ): Promise<LibraryBookItem[]> {
   const query = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   })
-  // 필터를 모르는 서버는 전체를 돌려줄 수 있으므로 호출하는 쪽에서도 상태를 거른다.
-  if (status) query.set('status', status)
+  // 검색어를 지우면 q를 빼고 보낸다(공백만 있는 q는 422). 기준은 검색어가 있을 때만 의미가 있다.
+  if (filter.q) {
+    query.set('q', filter.q)
+    if (filter.field) query.set('field', filter.field)
+  }
+  // 서버가 조건을 적용한다고 믿는다. 체크 편집기만 체크 대상 보호를 위해 화면에서 한 번 더 읽는 중을 고른다.
+  // 조건을 모르는 BE는 전체를 돌려주므로 FE는 BE 운영 반영 뒤에 배포한다.
+  if (filter.status) query.set('status', filter.status)
+  // 타인·없는 책장은 404다.
+  if (filter.shelf_id) query.set('shelf_id', filter.shelf_id)
   const data = await apiRequest(`/library/books?${query}`, accessToken)
 
   if (!Array.isArray(data) || !data.every(isLibraryBookItem)) {
@@ -268,6 +281,8 @@ export type LibraryBookDetail = LibraryBookItem & {
   updated_at: string
   // 지금 요청할 수 있는 상태(현재 상태 재요청 포함). 날짜 검증은 요청 시점에 서버가 따로 한다.
   allowed_statuses: ReadingStatus[]
+  // 이 책이 속한 책장(책장 순서). 서재 목록 항목에는 없다.
+  shelves: { id: string; name: string }[]
 }
 
 function isNullableString(value: unknown) {
@@ -299,7 +314,10 @@ function isLibraryBookDetail(value: unknown): value is LibraryBookDetail {
     typeof item.is_review_public === 'boolean' &&
     typeof item.updated_at === 'string' &&
     Array.isArray(item.allowed_statuses) &&
-    item.allowed_statuses.every((status) => readingStatuses.includes(status as ReadingStatus))
+    item.allowed_statuses.every((status) => readingStatuses.includes(status as ReadingStatus)) &&
+    Array.isArray(item.shelves) &&
+    item.shelves.every((shelf: unknown) => typeof shelf === 'object' && shelf !== null &&
+      typeof (shelf as Record<string, unknown>).id === 'string' && typeof (shelf as Record<string, unknown>).name === 'string')
   )
 }
 
@@ -551,11 +569,28 @@ export type ReadingStatistics = {
     start_date: string
     end_date: string
     reading_days: number
+    reading_minutes: number
+    goals: GoalProgress[]
   }
 }
 
+export const goalMetrics = ['reading_days', 'completed_books', 'reading_minutes'] as const
+export type GoalMetric = (typeof goalMetrics)[number]
+// month null은 연 목표다. 빠뜨리면 422이므로 선택 속성으로 두지 않는다.
+export type GoalKey = { metric: GoalMetric; year: number; month: number | null }
+// target 0은 목표 꺼짐. 한 번도 정하지 않은 지표는 goals에서 빠진다.
+export type GoalProgress = { metric: GoalMetric; target: number; current: number; source: 'set' | 'inherited' | 'sum' }
+
 const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0
+
+// inherited는 월 응답, sum은 연 응답에만 나온다. 응답 target에는 입력 상한을 적용하지 않는다.
+function isGoalProgress(value: unknown, yearly: boolean): value is GoalProgress {
+  if (typeof value !== 'object' || value === null) return false
+  const goal = value as Record<string, unknown>
+  return goalMetrics.includes(goal.metric as GoalMetric) && isCount(goal.target) && isCount(goal.current) &&
+    (goal.source === 'set' || goal.source === (yearly ? 'sum' : 'inherited'))
+}
 
 function isReadingStatistics(value: unknown): value is ReadingStatistics {
   if (typeof value !== 'object' || value === null) return false
@@ -573,7 +608,8 @@ function isReadingStatistics(value: unknown): value is ReadingStatistics {
     (selected.month === null || (typeof selected.month === 'number' && Number.isInteger(selected.month))) &&
     typeof selected.start_date === 'string' && DATE_PATTERN.test(selected.start_date) &&
     typeof selected.end_date === 'string' && DATE_PATTERN.test(selected.end_date) &&
-    isCount(selected.reading_days)
+    isCount(selected.reading_days) && isCount(selected.reading_minutes) &&
+    Array.isArray(selected.goals) && selected.goals.every((goal) => isGoalProgress(goal, selected.month === null))
   )
 }
 
@@ -589,6 +625,16 @@ export async function getReadingStatistics(
     throw new Error('통계 응답 형식이 올바르지 않습니다.')
   }
   return data
+}
+
+// 같은 기간에 다시 보내면 덮어쓴다. 0은 그 기간부터 목표를 끈다.
+export async function updateGoal(accessToken: string, body: GoalKey & { target: number }): Promise<void> {
+  await apiRequest('/me/goals', accessToken, { method: 'PUT', body })
+}
+
+// 월은 이전 달 목표를 다시 이어받고, 연은 월 목표 합계로 돌아간다. 대상이 없어도 204다.
+export async function deleteGoal(accessToken: string, body: GoalKey): Promise<void> {
+  await apiRequest('/me/goals', accessToken, { method: 'DELETE', body })
 }
 
 // 공개 후기에 표시할 닉네임. null이면 공통 이름 '독서가'로 표시된다.
@@ -610,6 +656,147 @@ export async function updateNickname(accessToken: string, nickname: string | nul
 // 로그인 후 5분 이내 토큰만 받는다(403 recent_login_required). 여러 번 보내도 안전하다.
 export async function deleteMe(accessToken: string): Promise<void> {
   await apiRequest('/me', accessToken, { method: 'DELETE' })
+}
+
+export type ReadingSessionInput = { client_session_id: string; started_at: string; duration_seconds: number }
+export type ReadingSession = ReadingSessionInput & { id: string; user_book_id: string; read_date: string; created_at: string }
+
+function isReadingSession(value: unknown, userBookId: string): value is ReadingSession {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Record<string, unknown>
+  if (typeof item.started_at !== 'string' || !Number.isFinite(Date.parse(item.started_at))) return false
+  const date = kstDateOf(item.started_at)
+  return typeof item.id === 'string' && item.user_book_id === userBookId &&
+    typeof item.client_session_id === 'string' && typeof item.created_at === 'string' &&
+    Number.isFinite(Date.parse(item.created_at)) && item.read_date === date &&
+    typeof item.duration_seconds === 'number' && Number.isInteger(item.duration_seconds) &&
+    item.duration_seconds >= 60 && item.duration_seconds <= 3600
+}
+
+export async function saveReadingSession(accessToken: string, userBookId: string, body: ReadingSessionInput): Promise<ReadingSession> {
+  const data = await apiRequest(`${libraryBookPath(userBookId)}/reading-sessions`, accessToken, { method: 'POST', body })
+  if (!isReadingSession(data, userBookId) || data.client_session_id !== body.client_session_id ||
+    Date.parse(data.started_at) !== Date.parse(body.started_at) || data.duration_seconds !== body.duration_seconds) {
+    throw new Error('시간 기록 응답 형식이 올바르지 않습니다.')
+  }
+  return data
+}
+
+export async function getReadingSessions(accessToken: string, userBookId: string, limit: number, offset: number): Promise<ReadingSession[]> {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  const data = await apiRequest(`${libraryBookPath(userBookId)}/reading-sessions?${query}`, accessToken)
+  if (!Array.isArray(data) || !data.every((item) => isReadingSession(item, userBookId))) throw new Error('시간 기록 응답 형식이 올바르지 않습니다.')
+  return data
+}
+
+export async function deleteReadingSession(accessToken: string, sessionId: string): Promise<void> {
+  await apiRequest(`/reading-sessions/${encodeURIComponent(sessionId)}`, accessToken, { method: 'DELETE' })
+}
+
+// 서브 책장. 전체 서재 위의 필터이며 한 책이 여러 책장에 속할 수 있다. 사용자당 최대 30개.
+export type Shelf = { id: string; name: string; book_count: number; position: number }
+
+function readShelf(data: unknown): Shelf {
+  if (typeof data !== 'object' || data === null) throw new Error('책장 응답 형식이 올바르지 않습니다.')
+  const item = data as Record<string, unknown>
+  if (typeof item.id !== 'string' || typeof item.name !== 'string' || !isCount(item.book_count) ||
+    typeof item.position !== 'number' || !Number.isInteger(item.position)) throw new Error('책장 응답 형식이 올바르지 않습니다.')
+  return item as Shelf
+}
+
+// 책장 순서대로 전체(최대 30개)를 한 번에 받는다. book_count는 필터와 무관한 그 책장의 전체 권수다.
+export async function getShelves(accessToken: string): Promise<Shelf[]> {
+  const data = await apiRequest('/shelves', accessToken)
+  if (!Array.isArray(data)) throw new Error('책장 응답 형식이 올바르지 않습니다.')
+  return data.map(readShelf)
+}
+
+export async function createShelf(accessToken: string, name: string): Promise<Shelf> {
+  return readShelf(await apiRequest('/shelves', accessToken, { method: 'POST', body: { name } }))
+}
+
+export async function renameShelf(accessToken: string, shelfId: string, name: string): Promise<Shelf> {
+  return readShelf(await apiRequest(`/shelves/${encodeURIComponent(shelfId)}`, accessToken, { method: 'PATCH', body: { name } }))
+}
+
+// after_shelf_id는 필수 키다. null이면 맨 앞으로 옮긴다.
+export async function moveShelf(accessToken: string, shelfId: string, afterShelfId: string | null): Promise<void> {
+  await apiRequest(`/shelves/${encodeURIComponent(shelfId)}/position`, accessToken, { method: 'PATCH', body: { after_shelf_id: afterShelfId } })
+}
+
+// 책장만 지우고 책은 서재에 남는다.
+export async function deleteShelf(accessToken: string, shelfId: string): Promise<void> {
+  await apiRequest(`/shelves/${encodeURIComponent(shelfId)}`, accessToken, { method: 'DELETE' })
+}
+
+const shelfBookPath = (shelfId: string, userBookId: string) =>
+  `/shelves/${encodeURIComponent(shelfId)}/books/${encodeURIComponent(userBookId)}`
+
+// 이미 있으면 그대로 204다.
+export async function addBookToShelf(accessToken: string, shelfId: string, userBookId: string): Promise<void> {
+  await apiRequest(shelfBookPath(shelfId, userBookId), accessToken, { method: 'PUT' })
+}
+
+// 책장에 없어도 204다.
+export async function removeBookFromShelf(accessToken: string, shelfId: string, userBookId: string): Promise<void> {
+  await apiRequest(shelfBookPath(shelfId, userBookId), accessToken, { method: 'DELETE' })
+}
+
+// 비공개 독서 노트. 공개 후기 memo와 별개이며 저장해도 독서 체크를 만들지 않는다.
+export type NoteInput = { note_date: string; quote: string | null; thought: string | null; page: number | null }
+export type ReadingNote = NoteInput & { id: string; user_book_id: string; created_at: string; updated_at: string }
+export type ReadingNoteEntry = ReadingNote & { title: string; authors: string[]; thumbnail_url: string | null }
+
+const NOTE_INVALID = '노트 응답 형식이 올바르지 않습니다.'
+
+function isReadingNote(value: unknown): value is ReadingNote {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Record<string, unknown>
+  return typeof item.id === 'string' && typeof item.user_book_id === 'string' &&
+    typeof item.note_date === 'string' && DATE_PATTERN.test(item.note_date) &&
+    isNullableString(item.quote) && isNullableString(item.thought) && (item.quote !== null || item.thought !== null) &&
+    (item.page === null || (Number.isInteger(item.page) && Number(item.page) >= 1)) &&
+    typeof item.created_at === 'string' && typeof item.updated_at === 'string'
+}
+
+function isReadingNoteEntry(value: unknown): value is ReadingNoteEntry {
+  if (!isReadingNote(value)) return false
+  const item = value as Record<string, unknown>
+  return typeof item.title === 'string' && Array.isArray(item.authors) &&
+    item.authors.every((author) => typeof author === 'string') && isNullableString(item.thumbnail_url)
+}
+
+function readNote(data: unknown, userBookId?: string): ReadingNote {
+  if (!isReadingNote(data) || (userBookId !== undefined && data.user_book_id !== userBookId)) throw new Error(NOTE_INVALID)
+  return data
+}
+
+export async function createReadingNote(accessToken: string, userBookId: string, body: NoteInput): Promise<ReadingNote> {
+  return readNote(await apiRequest(`${libraryBookPath(userBookId)}/notes`, accessToken, { method: 'POST', body }), userBookId)
+}
+
+export async function getReadingNotes(accessToken: string, userBookId: string, limit: number, offset: number): Promise<ReadingNote[]> {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  const data = await apiRequest(`${libraryBookPath(userBookId)}/notes?${query}`, accessToken)
+  if (!Array.isArray(data) || !data.every((item) => isReadingNote(item) && item.user_book_id === userBookId)) throw new Error(NOTE_INVALID)
+  return data
+}
+
+// 생략한 항목은 유지되고 null로 보낸 항목은 지워진다. note_date는 null로 보내지 않는다.
+export async function updateReadingNote(accessToken: string, noteId: string, patch: Partial<NoteInput>): Promise<ReadingNote> {
+  return readNote(await apiRequest(`/notes/${encodeURIComponent(noteId)}`, accessToken, { method: 'PATCH', body: patch }))
+}
+
+export async function deleteReadingNote(accessToken: string, noteId: string): Promise<void> {
+  await apiRequest(`/notes/${encodeURIComponent(noteId)}`, accessToken, { method: 'DELETE' })
+}
+
+// 기간(최대 366일)의 모든 책 노트. note_date·created_at·id 내림차순의 평평한 목록이다.
+export async function getNoteTimeline(accessToken: string, startDate: string, endDate: string, limit: number, offset: number): Promise<ReadingNoteEntry[]> {
+  const query = new URLSearchParams({ start_date: startDate, end_date: endDate, limit: String(limit), offset: String(offset) })
+  const data = await apiRequest(`/notes?${query}`, accessToken)
+  if (!Array.isArray(data) || !data.every(isReadingNoteEntry)) throw new Error(NOTE_INVALID)
+  return data
 }
 
 // 발송 키가 설정되지 않은 서버는 503을 돌려준다.

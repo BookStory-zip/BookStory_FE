@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
-import type { ReadingLogEntry } from './lib/api'
+import type { GoalProgress, ReadingLogEntry, ReadingNoteEntry } from './lib/api'
 import ReadingRecords from './ReadingRecords'
 
-const mocks = vi.hoisted(() => ({ getReadingLogs: vi.fn(), getReadingCompletions: vi.fn(), getReadingStatistics: vi.fn(), getLibraryBooks: vi.fn(), checkReadingDate: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getReadingLogs: vi.fn(), getReadingCompletions: vi.fn(), getReadingStatistics: vi.fn(), getLibraryBooks: vi.fn(), checkReadingDate: vi.fn(), updateGoal: vi.fn(), deleteGoal: vi.fn(), getNoteTimeline: vi.fn() }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),
@@ -15,6 +15,9 @@ vi.mock('./lib/api', async (importOriginal) => ({
   getReadingStatistics: mocks.getReadingStatistics,
   getLibraryBooks: mocks.getLibraryBooks,
   checkReadingDate: mocks.checkReadingDate,
+  updateGoal: mocks.updateGoal,
+  deleteGoal: mocks.deleteGoal,
+  getNoteTimeline: mocks.getNoteTimeline,
 }))
 // 환경변수 없는 CI에서도 실제 Supabase 클라이언트를 만들지 않는다.
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
@@ -64,7 +67,7 @@ test('독서 알림으로 들어오면 알림 날짜의 체크 편집기를 읽�
   // 체크한 책은 편집기 카드에만 나오고 아래 목록에 다시 나오지 않는다.
   await waitFor(() => expect(screen.getAllByRole('link', { name: /이미 읽은 책/ })).toHaveLength(1))
   expect(screen.getByRole('button', { name: '2026년 10월 27일, 1권: 이미 읽은 책', pressed: true })).toBeTruthy()
-  expect(mocks.getLibraryBooks).toHaveBeenCalledWith('test-token', 100, 0, 'reading')
+  expect(mocks.getLibraryBooks).toHaveBeenCalledWith('test-token', 100, 0, { status: 'reading' })
   await waitFor(() => expect(document.activeElement?.textContent).toBe('2026년 10월 27일'))
 })
 
@@ -183,7 +186,7 @@ const monthlyStatistics = {
     completed_books: 2,
   },
   period: {
-    year: 2026, month: 10, start_date: '2026-10-01', end_date: '2026-10-31', reading_days: 3,
+    year: 2026, month: 10, start_date: '2026-10-01', end_date: '2026-10-31', reading_days: 3, reading_minutes: 42, goals: [] as GoalProgress[],
   },
 }
 
@@ -196,6 +199,7 @@ test('통계는 탭을 열 때 조회하고 연간 합계와 현재 서재를 �
 
   fireEvent.click(screen.getByRole('button', { name: '통계' }))
   await screen.findByText('3')
+  expect(screen.getByRole('heading', { name: '독서 시간' }).parentElement?.textContent).toContain('42분')
   expect(mocks.getReadingStatistics).toHaveBeenLastCalledWith('test-token', 2026, 10)
   expect(screen.getByRole('heading', { name: '현재 서재' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: /2026년 10월 3일/ })).toBeNull()
@@ -203,7 +207,7 @@ test('통계는 탭을 열 때 조회하고 연간 합계와 현재 서재를 �
   mocks.getReadingStatistics.mockResolvedValueOnce({
     ...monthlyStatistics,
     period: {
-      year: 2026, month: null, start_date: '2026-01-01', end_date: '2026-12-31', reading_days: 17,
+      year: 2026, month: null, start_date: '2026-01-01', end_date: '2026-12-31', reading_days: 17, reading_minutes: 300, goals: [],
     },
   })
   fireEvent.click(screen.getByRole('button', { name: '연간' }))
@@ -315,4 +319,275 @@ test('체크 없이 완독한 날도 표시하고, 같은 날 체크·완독한 
 
   fireEvent.click(screen.getByRole('button', { name: /10월 15일/ }))
   expect(screen.getByText('읽은 날 · 완독한 날')).toBeTruthy()
+})
+
+const withGoals = (goals: GoalProgress[], period: object = {}) =>
+  ({ ...monthlyStatistics, period: { ...monthlyStatistics.period, ...period, goals } })
+const goalItem = (label: string) => screen.getByRole('heading', { name: `${label} 목표` }).closest('li') as HTMLElement
+
+async function openStatistics() {
+  mocks.getReadingLogs.mockResolvedValue([])
+  renderRecords()
+  fireEvent.click(screen.getByRole('button', { name: '통계' }))
+  await screen.findByRole('heading', { name: '독서 목표' })
+}
+
+test('목표는 출처·꺼짐·미설정을 구분하고 초과 달성 수치를 그대로 보여 준다', async () => {
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
+    { metric: 'reading_days', target: 12, current: 15, source: 'inherited' },
+    { metric: 'completed_books', target: 2, current: 1, source: 'set' },
+  ]))
+  await openStatistics()
+
+  expect(goalItem('읽은 날').textContent).toContain('15 / 12일')
+  expect(goalItem('읽은 날').textContent).toContain('이전 달에서 이어받음')
+  expect(goalItem('읽은 날').textContent).toContain('목표 달성')
+  expect(within(goalItem('읽은 날')).getByRole('progressbar')).toMatchObject({ value: 12, max: 12 })
+  // 기간 완독은 현재 서재의 완독 경험(2권)이 아니라 응답 current다.
+  expect(goalItem('완독 권수').textContent).toContain('1 / 2권')
+  expect(goalItem('완독 권수').textContent).toContain('직접 설정')
+  expect(goalItem('독서 시간').textContent).toContain('목표를 설정해보세요')
+  expect(within(goalItem('독서 시간')).queryByRole('progressbar')).toBeNull()
+
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
+    { metric: 'reading_days', target: 0, current: 17, source: 'set' },
+    { metric: 'completed_books', target: 119988, current: 4, source: 'sum' },
+  ], { month: null, start_date: '2026-01-01', end_date: '2026-12-31' }))
+  fireEvent.click(screen.getByRole('button', { name: '연간' }))
+  await screen.findByText('월 목표 합계')
+  expect(goalItem('읽은 날').textContent).toContain('목표 꺼짐')
+  expect(within(goalItem('읽은 날')).queryByRole('progressbar')).toBeNull()
+  expect(goalItem('완독 권수').textContent).toContain('4 / 119988권')
+})
+
+test('월 목표는 입력을 검사하고 저장 중 기간 변경을 막은 뒤 통계를 다시 조회한다', async () => {
+  let finish!: () => void
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([]))
+  mocks.updateGoal.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve }))
+  await openStatistics()
+
+  fireEvent.click(within(goalItem('읽은 날')).getByRole('button', { name: '읽은 날 목표 설정' }))
+  expect(screen.getByText(/다음 달에도 이어집니다/)).toBeTruthy()
+  const input = screen.getByLabelText('2026년 10월 읽은 날 목표(일)')
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  expect(screen.getByRole('alert').textContent).toBe('목표를 입력해주세요.')
+  fireEvent.change(input, { target: { value: '32' } })
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  expect(screen.getByRole('alert').textContent).toBe('최대 31까지 정할 수 있어요.')
+  expect(mocks.updateGoal).not.toHaveBeenCalled()
+  // 다른 지표는 동시에 편집하지 않는다.
+  expect(within(goalItem('완독 권수')).getByRole('button', { name: '완독 권수 목표 설정' })).toHaveProperty('disabled', true)
+
+  fireEvent.change(input, { target: { value: '12' } })
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  fireEvent.click(screen.getByRole('button', { name: '저장하는 중…' }))
+  expect(mocks.updateGoal).toHaveBeenCalledTimes(1)
+  expect(mocks.updateGoal).toHaveBeenCalledWith('test-token', { metric: 'reading_days', year: 2026, month: 10, target: 12 })
+  for (const name of ['이전 달', '연간', '월간', '달력']) {
+    expect(screen.getByRole('button', { name })).toHaveProperty('disabled', true)
+  }
+
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_days', target: 12, current: 3, source: 'set' }]))
+  await act(async () => { finish() })
+  await waitFor(() => expect(goalItem('읽은 날').textContent).toContain('3 / 12일'))
+  expect(mocks.getReadingStatistics).toHaveBeenCalledTimes(2)
+  expect(screen.queryByLabelText(/읽은 날 목표\(일\)/)).toBeNull()
+  expect(screen.getByRole('button', { name: '이전 달' })).toHaveProperty('disabled', false)
+})
+
+test('월 목표 끄기는 0을 보내고, 이전 목표 이어받기는 그 달 설정을 지운다', async () => {
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_minutes', target: 600, current: 42, source: 'set' }]))
+  mocks.updateGoal.mockResolvedValue(undefined)
+  mocks.deleteGoal.mockResolvedValue(undefined)
+  await openStatistics()
+
+  fireEvent.click(screen.getByRole('button', { name: '독서 시간 목표 수정' }))
+  expect(screen.getByLabelText('2026년 10월 독서 시간 목표(분)')).toHaveProperty('value', '600')
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_minutes', target: 0, current: 42, source: 'set' }]))
+  fireEvent.click(screen.getByRole('button', { name: '목표 끄기' }))
+  await waitFor(() => expect(goalItem('독서 시간').textContent).toContain('목표 꺼짐'))
+  expect(mocks.updateGoal).toHaveBeenCalledWith('test-token', { metric: 'reading_minutes', year: 2026, month: 10, target: 0 })
+
+  fireEvent.click(screen.getByRole('button', { name: '독서 시간 목표 수정' }))
+  // 꺼진 목표의 0을 입력값으로 채워 바로 저장되지 않게 한다.
+  expect(screen.getByLabelText('2026년 10월 독서 시간 목표(분)')).toHaveProperty('value', '')
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_minutes', target: 300, current: 42, source: 'inherited' }]))
+  fireEvent.click(screen.getByRole('button', { name: '이전 목표 이어받기' }))
+  await waitFor(() => expect(goalItem('독서 시간').textContent).toContain('이전 달에서 이어받음'))
+  expect(mocks.deleteGoal).toHaveBeenCalledWith('test-token', { metric: 'reading_minutes', year: 2026, month: 10 })
+})
+
+test('연 목표는 그 해 일수로 검사하고 월 목표 합계로 되돌릴 수 있다', async () => {
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getReadingStatistics.mockResolvedValue(withGoals([]))
+  renderRecords()
+  fireEvent.click(screen.getByRole('button', { name: '통계' }))
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
+    { metric: 'reading_days', target: 150, current: 17, source: 'set' },
+  ], { month: null, start_date: '2026-01-01', end_date: '2026-12-31' }))
+  fireEvent.click(screen.getByRole('button', { name: '연간' }))
+  await waitFor(() => expect(goalItem('읽은 날').textContent).toContain('17 / 150일'))
+
+  fireEvent.click(screen.getByRole('button', { name: '읽은 날 목표 수정' }))
+  expect(screen.queryByText(/다음 달에도 이어집니다/)).toBeNull()
+  fireEvent.change(screen.getByLabelText('2026년 읽은 날 목표(일)'), { target: { value: '366' } })
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  expect(screen.getByRole('alert').textContent).toBe('최대 365까지 정할 수 있어요.')
+  expect(screen.queryByRole('button', { name: '이전 목표 이어받기' })).toBeNull()
+
+  mocks.deleteGoal.mockResolvedValueOnce(undefined)
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
+    { metric: 'reading_days', target: 24, current: 17, source: 'sum' },
+  ], { month: null, start_date: '2026-01-01', end_date: '2026-12-31' }))
+  fireEvent.click(screen.getByRole('button', { name: '월 목표 합계로 전환' }))
+  await waitFor(() => expect(goalItem('읽은 날').textContent).toContain('월 목표 합계'))
+  expect(mocks.deleteGoal).toHaveBeenCalledWith('test-token', { metric: 'reading_days', year: 2026, month: null })
+})
+
+test('목표 저장 422는 입력과 기존 통계를 보존하고 다시 조회하지 않는다', async () => {
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_days', target: 10, current: 3, source: 'set' }]))
+  mocks.updateGoal.mockRejectedValueOnce(new ApiError(422, 'invalid', 'validation_error'))
+  await openStatistics()
+  fireEvent.click(screen.getByRole('button', { name: '읽은 날 목표 수정' }))
+  fireEvent.change(screen.getByLabelText('2026년 10월 읽은 날 목표(일)'), { target: { value: '20' } })
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+
+  expect((await screen.findByRole('alert')).textContent).toContain('최대 31')
+  expect(screen.getByLabelText('2026년 10월 읽은 날 목표(일)')).toHaveProperty('value', '20')
+  expect(goalItem('읽은 날').textContent).toContain('3 / 10일')
+  expect(mocks.getReadingStatistics).toHaveBeenCalledTimes(1)
+})
+
+test('결과가 불명확하면 다시 보내지 않고 최신 상태 확인만 제공한다', async () => {
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([]))
+  mocks.updateGoal.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  await openStatistics()
+  fireEvent.click(screen.getByRole('button', { name: '완독 권수 목표 설정' }))
+  fireEvent.change(screen.getByLabelText('2026년 10월 완독 권수 목표(권)'), { target: { value: '3' } })
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+
+  expect((await screen.findByRole('alert')).textContent).toContain('저장됐는지 확인하지 못했습니다')
+  expect(mocks.updateGoal).toHaveBeenCalledTimes(1)
+  expect(screen.getByLabelText('2026년 10월 완독 권수 목표(권)')).toHaveProperty('value', '3')
+
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'completed_books', target: 3, current: 0, source: 'set' }]))
+  fireEvent.click(screen.getByRole('button', { name: '최신 상태 확인' }))
+  await waitFor(() => expect(goalItem('완독 권수').textContent).toContain('0 / 3권'))
+  expect(mocks.updateGoal).toHaveBeenCalledTimes(1)
+})
+
+test('저장 후 재조회가 실패하면 저장 실패와 구분하고 편집 입력을 남긴 채 재조회를 제공한다', async () => {
+  mocks.getReadingStatistics
+    .mockResolvedValueOnce(withGoals([{ metric: 'reading_days', target: 10, current: 3, source: 'set' }]))
+    .mockRejectedValueOnce(new ApiError(503))
+  mocks.updateGoal.mockResolvedValueOnce(undefined)
+  await openStatistics()
+  fireEvent.click(screen.getByRole('button', { name: '읽은 날 목표 수정' }))
+  fireEvent.change(screen.getByLabelText('2026년 10월 읽은 날 목표(일)'), { target: { value: '20' } })
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+
+  expect((await screen.findByRole('alert')).textContent).toBe('설정은 저장됐지만 최신 상태를 확인하지 못했습니다.')
+  expect(screen.getByLabelText('2026년 10월 읽은 날 목표(일)')).toHaveProperty('value', '20')
+  expect(goalItem('읽은 날').textContent).toContain('3 / 10일')
+  expect(screen.getByRole('heading', { name: '현재 서재' })).toBeTruthy()
+
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_days', target: 20, current: 3, source: 'set' }]))
+  fireEvent.click(screen.getByRole('button', { name: '최신 상태 확인' }))
+  await waitFor(() => expect(goalItem('읽은 날').textContent).toContain('3 / 20일'))
+  expect(mocks.updateGoal).toHaveBeenCalledTimes(1)
+})
+
+test('목표 저장 중 화면을 떠나면 늦은 성공 응답으로 다시 조회하지 않는다', async () => {
+  let finish!: () => void
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([]))
+  mocks.updateGoal.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve }))
+  await openStatistics()
+  fireEvent.click(screen.getByRole('button', { name: '읽은 날 목표 설정' }))
+  fireEvent.change(screen.getByLabelText('2026년 10월 읽은 날 목표(일)'), { target: { value: '5' } })
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+
+  cleanup()
+  await act(async () => { finish() })
+  expect(mocks.getReadingStatistics).toHaveBeenCalledTimes(1)
+})
+
+const timelineNote = (id: string, date: string, userBookId: string, title: string, patch: Partial<ReadingNoteEntry> = {}): ReadingNoteEntry => ({
+  id, user_book_id: userBookId, note_date: date, quote: `문구 ${id}`, thought: null, page: null,
+  created_at: `${date}T01:00:00Z`, updated_at: `${date}T01:00:00Z`, title, authors: ['저자'], thumbnail_url: null, ...patch,
+})
+
+test('노트 탭은 선택한 달의 노트를 서버 순서대로 날짜별로 묶어 보여 준다', async () => {
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getNoteTimeline.mockResolvedValueOnce([
+    timelineNote('a', '2026-10-27', 'ub-a', '소년이 온다', { thought: '생각 a', page: 41 }),
+    timelineNote('b', '2026-10-27', 'ub-b', '데미안'),
+    timelineNote('c', '2026-10-03', 'ub-a', '소년이 온다'),
+  ])
+  renderRecords()
+  fireEvent.click(screen.getByRole('button', { name: '노트' }))
+
+  await screen.findByText('문구 a')
+  expect(mocks.getNoteTimeline).toHaveBeenCalledWith('test-token', '2026-10-01', '2026-10-31', 20, 0)
+  const days = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)
+  expect(days).toEqual(['2026년 10월 27일', '2026년 10월 3일'])
+  const first = screen.getByRole('heading', { name: '2026년 10월 27일' }).closest('section') as HTMLElement
+  expect(within(first).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(['/books/ub-a', '/books/ub-b'])
+  expect(within(first).getByText('생각 a')).toBeTruthy()
+  expect(within(first).getByText('41쪽')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: '노트 더 보기' })).toBeNull()
+})
+
+test('노트 더 보기는 이어서 조회하고, 실패하면 기존 노트와 다음 위치를 유지한다', async () => {
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getNoteTimeline
+    .mockResolvedValueOnce(Array.from({ length: 20 }, (_, index) => timelineNote(`n${index}`, '2026-10-20', 'ub-a', '책')))
+    .mockRejectedValueOnce(new ApiError(503))
+    .mockResolvedValueOnce([timelineNote('n20', '2026-10-02', 'ub-a', '책')])
+  renderRecords()
+  fireEvent.click(screen.getByRole('button', { name: '노트' }))
+  await screen.findByText('문구 n19')
+  fireEvent.click(screen.getByRole('button', { name: '노트 더 보기' }))
+  expect((await screen.findByRole('alert')).textContent).toContain('잠시 응답할 수 없습니다')
+  expect(screen.getByText('문구 n0')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+  await screen.findByText('문구 n20')
+  expect(mocks.getNoteTimeline).toHaveBeenLastCalledWith('test-token', '2026-10-01', '2026-10-31', 20, 20)
+  expect(screen.getAllByText(/문구 n/)).toHaveLength(21)
+})
+
+test('노트 조회 오류는 빈 달과 구분하고, 달을 바꾸면 이전 달의 늦은 응답을 버린다', async () => {
+  let resolveOctober!: (notes: ReadingNoteEntry[]) => void
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getNoteTimeline
+    .mockReturnValueOnce(new Promise((resolve) => { resolveOctober = resolve }))
+    .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    .mockResolvedValueOnce([])
+  renderRecords()
+  fireEvent.click(screen.getByRole('button', { name: '노트' }))
+  fireEvent.click(screen.getByRole('button', { name: '이전 달' }))
+  expect((await screen.findByRole('alert')).textContent).toContain('서버에 연결하지 못했습니다')
+  expect(screen.queryByText('이 달에 남긴 노트가 없습니다.')).toBeNull()
+  expect(mocks.getNoteTimeline).toHaveBeenLastCalledWith('test-token', '2026-09-01', '2026-09-30', 20, 0)
+
+  await act(async () => { resolveOctober([timelineNote('late', '2026-10-27', 'ub-a', '책')]) })
+  expect(screen.queryByText('문구 late')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+  await screen.findByText('이 달에 남긴 노트가 없습니다.')
+  expect(screen.getByRole('heading', { name: '2026년 9월' })).toBeTruthy()
+})
+
+test('새 달 노트를 받은 뒤 늦게 온 이전 달 노트가 화면을 덮지 않는다', async () => {
+  let resolveOctober!: (notes: ReadingNoteEntry[]) => void
+  mocks.getReadingLogs.mockResolvedValue([])
+  mocks.getNoteTimeline
+    .mockReturnValueOnce(new Promise((resolve) => { resolveOctober = resolve }))
+    .mockResolvedValueOnce([timelineNote('sep', '2026-09-10', 'ub-a', '책')])
+  renderRecords()
+  fireEvent.click(screen.getByRole('button', { name: '노트' }))
+  fireEvent.click(screen.getByRole('button', { name: '이전 달' }))
+  await screen.findByText('문구 sep')
+
+  await act(async () => { resolveOctober([timelineNote('late', '2026-10-27', 'ub-a', '책')]) })
+  expect(screen.getByText('문구 sep')).toBeTruthy()
+  expect(screen.queryByText('문구 late')).toBeNull()
 })

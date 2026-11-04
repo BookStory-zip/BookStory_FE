@@ -6,6 +6,7 @@ import { withAccessToken } from './lib/auth'
 import { monthOf, spokenMonth } from './lib/dates'
 import { commonErrorMessage } from './lib/errors'
 import CabinIcon from './CabinIcon'
+import ReadingGoals from './ReadingGoals'
 
 type Props = {
   month: string
@@ -13,9 +14,11 @@ type Props = {
   mode: 'month' | 'year'
   onModeChange: (mode: 'month' | 'year') => void
   onMove: (months: number) => void
+  // 목표 저장 중에는 달력 전환도 막는다.
+  onBusyChange: (busy: boolean) => void
 }
 
-export default function ReadingStatistics({ month, today, mode, onModeChange, onMove }: Props) {
+export default function ReadingStatistics({ month, today, mode, onModeChange, onMove, onBusyChange }: Props) {
   const year = Number(month.slice(0, 4))
   const selectedMonth = mode === 'month' ? Number(month.slice(5)) : undefined
   const key = `${year}-${selectedMonth ?? 'year'}`
@@ -37,10 +40,29 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
     )
   }, [key, year, selectedMonth])
 
+  // 목표 저장 뒤 재조회. 실패해도 기존 통계와 목표 편집 입력을 지우지 않는다.
+  const refresh = useCallback(() => {
+    const current = ++version.current
+    return withAccessToken((token) => getReadingStatistics(token, year, selectedMonth)).then(
+      (data) => {
+        if (version.current !== current) return false
+        setResult({ key, data, error: null })
+        return true
+      },
+      () => false,
+    )
+  }, [key, year, selectedMonth])
+
   useEffect(() => {
     load()
     return () => { version.current += 1 }
   }, [load])
+
+  const [goalBusy, setGoalBusy] = useState(false)
+  const changeGoalBusy = useCallback((busy: boolean) => {
+    setGoalBusy(busy)
+    onBusyChange(busy)
+  }, [onBusyChange])
 
   const current = result?.key === key ? result : null
   const data = current?.data
@@ -50,19 +72,19 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
   return (
     <div className="reading-statistics">
       <div className="records-switch statistics-period" role="group" aria-label="통계 기간">
-        <button type="button" aria-pressed={mode === 'month'} onClick={() => onModeChange('month')}>월간</button>
-        <button type="button" aria-pressed={mode === 'year'} onClick={() => onModeChange('year')}>연간</button>
+        <button type="button" disabled={goalBusy} aria-pressed={mode === 'month'} onClick={() => onModeChange('month')}>월간</button>
+        <button type="button" disabled={goalBusy} aria-pressed={mode === 'year'} onClick={() => onModeChange('year')}>연간</button>
       </div>
       <div className="records-month">
         <button
           type="button" className="calendar-nav" aria-label={mode === 'month' ? '이전 달' : '이전 해'}
-          disabled={mode === 'month' ? month <= '0001-01' : year <= 1}
+          disabled={goalBusy || (mode === 'month' ? month <= '0001-01' : year <= 1)}
           onClick={() => onMove(mode === 'month' ? -1 : -12)}
         >‹</button>
         <h2 aria-live="polite">{mode === 'month' ? spokenMonth(month) : `${year}년`}</h2>
         <button
           type="button" className="calendar-nav" aria-label={mode === 'month' ? '다음 달' : '다음 해'}
-          disabled={atLatest} onClick={() => onMove(mode === 'month' ? 1 : 12)}
+          disabled={goalBusy || atLatest} onClick={() => onMove(mode === 'month' ? 1 : 12)}
         >›</button>
       </div>
 
@@ -87,6 +109,15 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
                 : '같은 날 여러 권을 읽어도 하루로 셉니다.'}
             </p>
           </div>
+          <div className="statistics-activity">
+            <h3>독서 시간</h3>
+            <p className="statistics-days"><strong>{data.period.reading_minutes}</strong><span>분</span></p>
+            <p className="result-note">저장한 타이머 기록을 시작한 날짜 기준으로 합산합니다.</p>
+          </div>
+          <ReadingGoals
+            key={key} year={year} month={selectedMonth ?? null} goals={data.period.goals}
+            refresh={refresh} onBusyChange={changeGoalBusy}
+          />
           <section className="statistics-library" aria-labelledby="statistics-library-title">
             <h3 id="statistics-library-title">현재 서재</h3>
             <p className="result-note">선택한 기간과 관계없는 현재 현황입니다.</p>

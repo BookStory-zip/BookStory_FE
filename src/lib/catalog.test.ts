@@ -17,7 +17,7 @@ const ownBook = {
   ...book, id: 'own-1', book_id: 'book-1', status: 'reading', created_at: '2026-11-02T00:00:00Z',
   started_at: null, last_read_at: null, last_read_date: null, completed_at: null, stopped_at: null, stop_reason: null,
   memo: '개인 메모', rating: null, has_completed: false, updated_at: '2026-11-02T00:00:00Z',
-  allowed_statuses: ['reading'], is_review_public: false, review_published_at: null, review_updated_at: null,
+  allowed_statuses: ['reading'], is_review_public: false, review_published_at: null, review_updated_at: null, shelves: [],
 }
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })

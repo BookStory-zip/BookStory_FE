@@ -50,7 +50,7 @@ test('읽는 중 필터로 100권 뒤까지 가져오고, 필터를 무시한 �
   setup()
   await screen.findByRole('button', { name: '채식주의자 체크' })
   expect(screen.getAllByRole('button', { name: /체크$/ })).toHaveLength(1)
-  expect(mocks.getLibraryBooks.mock.calls.map((call) => call.slice(1))).toEqual([[100, 0, 'reading'], [100, 100, 'reading']])
+  expect(mocks.getLibraryBooks.mock.calls.map((call) => call.slice(1))).toEqual([[100, 0, { status: 'reading' }], [100, 100, { status: 'reading' }]])
 })
 
 test.each(['2026-10-22', '2026-10-28'])('오늘 포함 최근 7일 경계 %s는 편집할 수 있다', async (date) => {

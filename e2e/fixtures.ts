@@ -31,9 +31,12 @@ export async function mockBackend(page: Page, handle: Handler) {
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
     const url = new URL(request.url())
     if (await handle(route, url, request.method())) return
-    if (url.pathname === '/me') return json(route, { user_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' })
+    if (url.pathname === '/me') return json(route, { user_id: '11111111-1111-4111-8111-111111111111' })
     // 따로 다루지 않는 테스트에서는 완독 기록이 없는 것으로 본다.
     if (url.pathname === '/reading-completions') return json(route, [])
+    if (url.pathname.endsWith('/reading-sessions')) return json(route, [])
+    if (url.pathname.endsWith('/notes') && request.method() === 'GET') return json(route, [])
+    if (url.pathname === '/shelves' && request.method() === 'GET') return json(route, [])
     return json(route, { detail: 'not mocked' }, 404)
   })
 }
