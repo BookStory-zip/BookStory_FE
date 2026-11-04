@@ -298,7 +298,8 @@ test('서브 책장: 만들기·필터·상세에서 넣기·이름 변경·순�
   await page.screenshot({ path: testInfo.outputPath('book-shelves-mobile.png'), fullPage: true })
 
   await page.getByRole('link', { name: '서재', exact: true }).click()
-  await page.getByLabel('책장', { exact: true }).selectOption({ label: 'SF (1권)' })
+  await expect(page.getByRole('heading', { name: '내 서재' })).toBeVisible()
+  await page.getByRole('combobox', { name: '책장', exact: true }).selectOption({ label: 'SF (1권)' })
   await expect(page.locator('ul.shelf > li')).toHaveCount(1)
   await expect(page.getByRole('button', { name: '순서 편집' })).toBeDisabled()
 

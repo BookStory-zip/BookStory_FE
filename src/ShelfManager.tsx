@@ -47,8 +47,11 @@ export default function ShelfManager({ shelves, refresh, onBusyChange }: Props) 
     try {
       await withAccessToken(request)
       if (!active.current) return false
-      setNotice(done)
-      if (!await refresh() && active.current) setError('저장했지만 최신 책장 목록을 확인하지 못했습니다. 잠시 후 다시 확인해주세요.')
+      // 안내는 목록을 다시 받은 뒤에 띄워 화면과 어긋나지 않게 한다.
+      const refreshed = await refresh()
+      if (!active.current) return true
+      if (refreshed) setNotice(done)
+      else setError('저장했지만 최신 책장 목록을 확인하지 못했습니다. 잠시 후 다시 확인해주세요.')
       return true
     } catch (writeError) {
       if (!active.current) return false
