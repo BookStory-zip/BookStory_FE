@@ -22,7 +22,8 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 - [x] 닉네임의 공개 후기 이름 반영: 위 새 계정의 계정 화면에서 닉네임 저장 후 공개 후기 API의 `author_name`이 새 이름으로 바뀜을 직접 확인. BE는 `tests/test_nickname.py::test_public_reviews_show_each_authors_nickname_or_default` CI 통과도 회신함. 같은 Chrome 계정 화면 390·1440px 스크린샷을 확인하고 가로 넘침 없음 검사
 - [x] 최종 self-review·별도 코드 리뷰(에이전트, 2026-11-03): 검색 응답 대기 중 화면을 나갔다 돌아온 뒤 늦게 받은 429가 새 화면을 막지 못하는 문제 발견. 공유 차단 시각 변경을 현재 화면이 구독하도록 수정. 별도 Chrome의 가짜 응답으로 기존 동작 재현·회귀 검사 선실패와 수정 후 통과를 확인했고 수정 재검토에서 추가 중요 지적 없음. 최종 단위 298개·lint·타입 검사/빌드·e2e 9개(`--workers=2`, 25.3초)·`git diff --check` 통과. 앞선 e2e는 9개 시나리오 통과 뒤 테스트용 Vite 종료가 지연돼 해당 프로세스만 종료 후 exit 0을 확인했으며 최종 재실행은 정상 종료
 - 알려진 한계(사용자 수용): 탈퇴 진행 중 상단 로그아웃을 누르면 탈퇴 완료 대신 로그아웃 안내가 표시될 수 있음. 데이터 삭제에는 영향 없음
-- 운영 반영 순서: FE 검증 → BE 2차 운영 반영 완료 → FE develop → main 병합(자동 배포)
+- [x] 운영 반영: BE 전체 운영 반영 완료·FE main 병합 가능 안내(사용자 전달) 후 PR #15를 merge commit으로 병합, FE main `d066516` 자동 배포·사후 검증 통과(2026-11-03 18:03 KST). 상세 기록은 아래 운영 배포 표와 읽기 전용 확인을 따름
+- [ ] 운영 닉네임 저장·탈퇴·429의 실제 사용자 화면 확인. 운영 계정/DB를 자동 테스트에 사용하지 않았으며 검증 환경 확인과 구분
 
 ## 21시 독서 알림 (2026-11-03)
 
@@ -41,7 +42,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 - 검증 환경 재발송 테스트는 사용자 결정으로 취소(2026-11-03). BE 상태 필터는 확정 계약대로 2차 배포에 포함하되 FE 검증 환경 확인은 하지 않는다. 준비했던 검증 책 2건은 삭제(A 21권·B 2권)
 - [ ] 운영 배포 후 확인(미검증): 새 서비스 워커의 알림 클릭 → 새 창 `/records?check={date}` 편집기 열림, 운영 BE `status=reading` 필터 응답이 읽는 중만인지·잘못된 값 422
 - [ ] 실제 iPhone(iOS 16.4+, 홈 화면 추가)·macOS Safari·Android 확인은 HTTPS가 필요해 운영 배포 후 진행하고 못 하면 미검증으로 기록. 사용자가 홈 화면에 추가해 둔 아이콘은 manifest 배포 전에 만든 것이므로 FE 배포 후 지우고 다시 추가해 확인한다. Safari의 `applicationServerKey` 비교·SVG 알림 아이콘 표시는 미검증
-- 운영 반영 순서: FE 검증 → BE PR 병합 → 운영 migration `0f24f6f3a7bc` → Render·Actions 발송 키 등록 → BE 배포 → FE 배포(main 병합 = 자동 배포)
+- [x] 운영 반영(2026-11-03): BE migration·알림 설정을 포함한 전체 운영 완료는 사용자 전달로 확인하고 FE PR #15 main `d066516`을 자동 배포. 운영 OpenAPI의 알림·상태 필터 계약과 공개 키 200은 직접 확인. 실제 기기 발송·수신·클릭과 인증된 상태 필터 조회는 위 미검증 항목으로 유지
 
 ## 다음에 이어서 시작할 순서
 
@@ -73,6 +74,9 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 | 2026-11-03 KST | main `a82c21a` ([PR #5](https://github.com/BookStory-zip/BookStory_FE/pull/5), [main CI 41417329233](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41417329233) 통과) | https://bookstory-fe.vercel.app · `dpl_AtHZiqTumHoAmz3xZJQAJ3fpBNZe` · [배포 URL](https://bookstory-a8tlcrua6-honey-0a33.vercel.app) · Vercel CLI `64.0.2` 수동 배포·READY | main `2c2b6e7`(PR #12), migration `57f75310c7d5` 적용·Render Live 완료(BE 유지보수 기록·사용자 안내). FE에서 운영 순서 API·health/ready 200·PATCH CORS 확인 |
 | 2026-11-03 12:21 KST | main `85c36a0` ([PR #9](https://github.com/BookStory-zip/BookStory_FE/pull/9), [main CI 41571461514](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41571461514)) | https://bookstory-fe.vercel.app · `dpl_6JzDV4srrZpRqRYBGA6nYKNSDEbc` · [배포 URL](https://bookstory-8s7yfgfav-honey-0a33.vercel.app) · 첫 Actions 자동 배포·READY. 사후 검증 단계만 실패(아래 무료 자동 배포 참고) | 운영 OpenAPI에서 날짜 경로 PUT/DELETE·`last_read_date` 확인(에이전트). BE 배포 SHA는 새로 검증하지 않음 |
 | 2026-11-03 12:39 KST | main `9cd08f2` ([PR #11](https://github.com/BookStory-zip/BookStory_FE/pull/11), [main CI 41573468541](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41573468541) 통과) | https://bookstory-fe.vercel.app · `dpl_3Xw8UvZ5ZQYpugFNWsPoNrBYat4c` · [배포 URL](https://bookstory-q5dwiygq5-honey-0a33.vercel.app) · Actions 자동 배포·사후 검증 통과 | 변경 없음(배포 검증 스크립트·문서만 변경) |
+| 2026-11-03 18:03 KST | main `d066516` ([PR #15](https://github.com/BookStory-zip/BookStory_FE/pull/15), [main CI 41607470999](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41607470999) check·e2e·Deploy production 통과) | https://bookstory-fe.vercel.app · `dpl_6oATSREex2nVonaR8AMrMaSSSNUX` · [배포 URL](https://bookstory-qer4vejzu-honey-0a33.vercel.app) · Actions 자동 배포·사후 검증 통과 | 기준 main `e48ee827`(PR #23). BE 전체 운영 반영 완료·FE 병합 가능은 사용자 전달. 운영 새 API 계약·공개 알림 키 200·CORS는 FE 직접 확인, Render SHA·DB는 직접 조회하지 않음 |
+
+2026-11-04 09:01 KST 읽기 전용 사후 확인(에이전트): 운영 `deployment.json`의 커밋이 `d066516`과 일치, 기존 SPA 7개 경로·보안 헤더와 추가 `/settings` 200, manifest 내용·서비스 워커 본문이 배포 소스와 일치, `/sw.js`의 `Cache-Control: no-cache`, BE ready·운영 PATCH CORS 통과. 알림 클릭의 새 창·편집기, 운영 계정의 데이터 쓰기와 실제 기기 수신은 이 검사에 포함하지 않음.
 
 배포 후 확인: 모든 SPA 경로 200, 공개 환경변수 3개 번들 반영, 운영·로컬 origin CORS 허용(에이전트). 운영 주소에서 로그인부터 기록까지 통합 동작(사용자, 2026-10-28). 배포 방법은 [docs/maintenance.md](./docs/maintenance.md)를 따른다.
 
