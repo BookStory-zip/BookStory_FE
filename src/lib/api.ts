@@ -152,18 +152,26 @@ function isLibraryBookItem(value: unknown): value is LibraryBookItem {
   )
 }
 
+// 검색·상태 조건은 서버가 함께 적용한다. 정렬은 저장된 서재 순서이고 전체 개수는 없다.
+export type LibraryFilter = { q?: string; field?: 'title' | 'author'; status?: ReadingStatus }
+
 export async function getLibraryBooks(
   accessToken: string,
   limit: number,
   offset: number,
-  status?: ReadingStatus,
+  filter: LibraryFilter = {},
 ): Promise<LibraryBookItem[]> {
   const query = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   })
-  // 필터를 모르는 서버는 전체를 돌려줄 수 있으므로 호출하는 쪽에서도 상태를 거른다.
-  if (status) query.set('status', status)
+  // 검색어를 지우면 q를 빼고 보낸다(공백만 있는 q는 422). 기준은 검색어가 있을 때만 의미가 있다.
+  if (filter.q) {
+    query.set('q', filter.q)
+    if (filter.field) query.set('field', filter.field)
+  }
+  // 필터를 모르는 서버는 전체를 돌려줄 수 있으므로 체크 편집기는 화면에서도 상태를 거른다.
+  if (filter.status) query.set('status', filter.status)
   const data = await apiRequest(`/library/books?${query}`, accessToken)
 
   if (!Array.isArray(data) || !data.every(isLibraryBookItem)) {

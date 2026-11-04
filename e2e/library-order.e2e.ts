@@ -152,3 +152,63 @@ test('손잡이 드래그: 화면 가장자리에서 자동 스크롤해 보이�
   await expect(page.getByRole('listitem').first()).toContainText('스크롤 책 19')
   expect(anchors).toEqual([null])
 })
+
+test('서재 검색·상태 필터: 서버 조건 조합, 더 보기, 해제 후 순서 편집 재활성화', async ({ page }, testInfo) => {
+  const books = Array.from({ length: 30 }, (_, i) => ({
+    id: `personal-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598',
+    title: i % 2 ? `숲의 노래 ${i}` : `바다 이야기 ${i}`, authors: [i < 25 ? '한강' : '김작가'], thumbnail_url: cover('#48594b'),
+    status: i % 3 ? 'reading' : 'completed', created_at: '2026-11-02T00:00:00Z',
+  }))
+  const requests: string[] = []
+  await mockBackend(page, async (route, url, method) => {
+    if (url.pathname !== '/library/books' || method !== 'GET') return false
+    const params = url.searchParams
+    requests.push([...params].filter(([key]) => key !== 'limit').map(([key, value]) => `${key}=${value}`).join('&'))
+    const q = params.get('q')?.toLowerCase()
+    const matched = books.filter((book) =>
+      (!q || (params.get('field') === 'author' ? book.authors.some((name) => name.toLowerCase().includes(q)) : book.title.toLowerCase().includes(q))) &&
+      (!params.get('status') || book.status === params.get('status')))
+    const offset = Number(params.get('offset'))
+    await json(route, matched.slice(offset, offset + Number(params.get('limit'))))
+    return true
+  })
+  await signInWithMockSession(page)
+  await page.goto('/')
+  await expect(page.getByRole('listitem')).toHaveCount(20)
+
+  await page.getByLabel('검색 기준').selectOption('author')
+  await page.getByLabel('서재 검색어').fill('한강')
+  await page.getByLabel('서재 검색어').press('Enter')
+  await expect(page.getByText('저자 ‘한강’ 검색 결과')).toBeVisible()
+  await expect(page.getByRole('button', { name: '순서 편집' })).toBeDisabled()
+  await page.getByRole('button', { name: '더 보기' }).click()
+  await expect(page.getByRole('listitem')).toHaveCount(25)
+
+  await page.getByLabel('읽기 상태').selectOption('completed')
+  await expect(page.getByRole('listitem')).toHaveCount(9)
+  await page.screenshot({ path: testInfo.outputPath('library-search-mobile.png'), fullPage: true })
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  }
+  await page.screenshot({ path: testInfo.outputPath('library-search-desktop.png') })
+
+  await page.getByLabel('서재 검색어').fill('없는 책')
+  await page.getByRole('button', { name: '검색', exact: true }).click()
+  await expect(page.getByText('조건에 맞는 책이 없습니다.')).toBeVisible()
+
+  await page.getByRole('button', { name: '검색 해제' }).click()
+  await page.getByLabel('읽기 상태').selectOption('')
+  await expect(page.getByRole('listitem')).toHaveCount(20)
+  await expect(page.getByRole('button', { name: '순서 편집' })).toBeEnabled()
+  // 개발 모드 StrictMode는 첫 조회를 두 번 보내므로(앞 응답은 버림) 연속 중복만 합쳐 비교한다.
+  expect(requests.filter((request, index) => request !== requests[index - 1])).toEqual([
+    'offset=0',
+    'offset=0&q=한강&field=author',
+    'offset=20&q=한강&field=author',
+    'offset=0&q=한강&field=author&status=completed',
+    'offset=0&q=없는 책&field=author&status=completed',
+    'offset=0&status=completed',
+    'offset=0',
+  ])
+})

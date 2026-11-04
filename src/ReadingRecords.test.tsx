@@ -67,7 +67,7 @@ test('독서 알림으로 들어오면 알림 날짜의 체크 편집기를 읽�
   // 체크한 책은 편집기 카드에만 나오고 아래 목록에 다시 나오지 않는다.
   await waitFor(() => expect(screen.getAllByRole('link', { name: /이미 읽은 책/ })).toHaveLength(1))
   expect(screen.getByRole('button', { name: '2026년 10월 27일, 1권: 이미 읽은 책', pressed: true })).toBeTruthy()
-  expect(mocks.getLibraryBooks).toHaveBeenCalledWith('test-token', 100, 0, 'reading')
+  expect(mocks.getLibraryBooks).toHaveBeenCalledWith('test-token', 100, 0, { status: 'reading' })
   await waitFor(() => expect(document.activeElement?.textContent).toBe('2026년 10월 27일'))
 })
 
