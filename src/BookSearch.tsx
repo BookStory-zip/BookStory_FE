@@ -2,13 +2,14 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { SubmitEvent } from 'react'
 import { Link } from 'react-router'
 import { addLibraryBook, ApiError, SEARCH_LAST_PAGE, searchBooks, statusLabels } from './lib/api'
-import type { SearchBook } from './lib/api'
+import type { SearchBook, SearchOptions, SearchSort, SearchTarget } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { ADD_RATE_LIMITED, codeMessage, commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
 
 // ISBN13이 없는 책은 담을 수 없어 결과에서 뺀다.
 type AddableBook = SearchBook & { isbn13: string }
 const isAddable = (book: SearchBook): book is AddableBook => book.isbn13 !== null
+const targetLabels: Record<SearchTarget, string> = { title: '제목', person: '저자', publisher: '출판사' }
 
 type SaveState = { phase: 'saving' | 'saved' | 'error'; message: string }
 
@@ -61,8 +62,10 @@ export default function BookSearch() {
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saves, setSaves] = useState<Record<string, SaveState>>({})
-  // 더 보기는 마지막으로 검색한 검색어의 다음 페이지를 이어 붙인다.
-  const [paging, setPaging] = useState<{ query: string; page: number; isEnd: boolean } | null>(null)
+  const [options, setOptions] = useState<SearchOptions>({})
+  // 더 보기는 입력 중인 값 대신 마지막 요청의 검색어·조건을 이어 쓴다.
+  const [paging, setPaging] = useState<{ query: string; options: SearchOptions; page: number; isEnd: boolean } | null>(null)
+  const lastQuery = useRef('')
   const [loadingMore, setLoadingMore] = useState(false)
   const [moreError, setMoreError] = useState<string | null>(null)
   const blockedUntil = useSyncExternalStore(subscribeSearchBlock, getSearchBlockedUntil)
@@ -89,8 +92,11 @@ export default function BookSearch() {
   async function handleSearch(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     const query = new FormData(event.currentTarget).get('query')
+    await runSearch(typeof query === 'string' ? query : '', options)
+  }
 
-    if (typeof query !== 'string' || !query.trim()) {
+  async function runSearch(query: string, searchOptions: SearchOptions) {
+    if (!query.trim()) {
       setError('검색어를 입력해주세요.')
       return
     }
@@ -100,6 +106,7 @@ export default function BookSearch() {
     }
 
     if (coolingDown) return
+    lastQuery.current = query.trim()
     // 새 검색을 보내면 이전 검색·더 보기의 늦은 응답은 버린다.
     const version = ++searchVersion.current
     setSearching(true)
@@ -107,12 +114,12 @@ export default function BookSearch() {
     setError(null)
     setMoreError(null)
     try {
-      const { books, isEnd } = await searchBooks(query.trim())
+      const { books, isEnd } = await searchBooks(query.trim(), 1, searchOptions)
       if (version !== searchVersion.current) return
       const addable = books.filter(isAddable)
       setResults(addable)
       setHidden(books.length - addable.length)
-      setPaging({ query: query.trim(), page: 1, isEnd })
+      setPaging({ query: query.trim(), options: searchOptions, page: 1, isEnd })
     } catch (searchError) {
       if (version !== searchVersion.current) return
       setResults(null)
@@ -123,20 +130,27 @@ export default function BookSearch() {
     }
   }
 
+  function changeOptions(target?: SearchTarget, sort?: SearchSort) {
+    if (coolingDown) return
+    const next: SearchOptions = { ...(target && { target }), ...(sort && sort !== 'accuracy' && { sort }) }
+    setOptions(next)
+    if (lastQuery.current) void runSearch(lastQuery.current, next)
+  }
+
   async function handleMore() {
     // 새 검색 응답 전에는 paging이 이전 검색어라 더 보기를 막는다.
-    if (!paging || searching || loadingMore || coolingDown) return
+    if (!paging || paging.isEnd || paging.page >= SEARCH_LAST_PAGE || searching || loadingMore || coolingDown) return
     const version = searchVersion.current
     const nextPage = paging.page + 1
     setLoadingMore(true)
     setMoreError(null)
     try {
-      const { books, isEnd } = await searchBooks(paging.query, nextPage)
+      const { books, isEnd } = await searchBooks(paging.query, nextPage, paging.options)
       if (version !== searchVersion.current) return
       const addable = books.filter(isAddable)
       setResults((current) => [...(current ?? []), ...addable])
       setHidden((current) => current + books.length - addable.length)
-      setPaging({ query: paging.query, page: nextPage, isEnd })
+      setPaging({ ...paging, page: nextPage, isEnd })
     } catch (moreLoadError) {
       if (version !== searchVersion.current) return
       // 이미 보이는 결과는 그대로 두고 더 보기만 다시 시도하게 한다.
@@ -173,9 +187,29 @@ export default function BookSearch() {
       <h1 id="search-title">책 찾기</h1>
       <p className="library-sub">숲길에서 만난 책을 오두막 책장에 담아 보세요</p>
 
-      <form className="search-form" role="search" onSubmit={handleSearch}>
+      <form className="search-form book-search-form" role="search" onSubmit={handleSearch}>
+        <div className="search-options">
+          <div className="search-option">
+            <label htmlFor="search-target">검색 기준</label>
+            <select id="search-target" value={options.target ?? ''} disabled={coolingDown}
+              onChange={(event) => changeOptions((event.target.value || undefined) as SearchTarget | undefined, options.sort)}>
+              <option value="">전체</option>
+              <option value="title">제목</option>
+              <option value="person">저자</option>
+              <option value="publisher">출판사</option>
+            </select>
+          </div>
+          <div className="search-option">
+            <label htmlFor="search-sort">검색 결과 정렬</label>
+            <select id="search-sort" value={options.sort ?? 'accuracy'} disabled={coolingDown}
+              onChange={(event) => changeOptions(options.target, event.target.value as SearchSort)}>
+              <option value="accuracy">정확도순</option>
+              <option value="latest">출간일 최신순</option>
+            </select>
+          </div>
+        </div>
         <label htmlFor="search-query" className="visually-hidden">
-          책 제목, 저자 또는 ISBN
+          책 제목, 저자, 출판사 또는 ISBN
         </label>
         <input
           id="search-query"
@@ -190,6 +224,9 @@ export default function BookSearch() {
           {searching ? '찾는 중…' : '검색'}
         </button>
       </form>
+      {results !== null && paging && <p className="result-note" aria-live="polite">
+        ‘{paging.query}’ · {paging.options.target ? targetLabels[paging.options.target] : '전체'} · {paging.options.sort === 'latest' ? '출간일 최신순' : '정확도순'}
+      </p>}
 
       {error && (
         <p className="library-note" role="alert">{error}</p>

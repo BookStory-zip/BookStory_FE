@@ -389,6 +389,32 @@ main.app {
   width: auto;
 }
 
+.book-search-form {
+  flex-wrap: wrap;
+}
+
+.search-options {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.search-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+
+.search-option label {
+  flex-shrink: 0;
+}
+
+.search-option select {
+  min-width: 0;
+}
+
 .library-search {
   margin-bottom: var(--space-3);
 }

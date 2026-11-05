@@ -255,6 +255,22 @@ test('검색 meta에 is_end가 없으면 더 보기를 막는다', async () => {
   await expect(searchBooks('책')).resolves.toMatchObject({ isEnd: true })
 })
 
+test('책 찾기는 검색 기준·정렬을 공개 API에 보내고 생략 시 기존 기본 동작을 유지한다', async () => {
+  const fetchMock = vi.fn().mockImplementation(async () => Response.json({ documents: [], meta: { is_end: true } }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await searchBooks('한강', 2, { target: 'person', sort: 'latest' })
+  expect(Object.fromEntries(new URL(fetchMock.mock.calls[0][0]).searchParams)).toEqual({ query: '한강', page: '2', target: 'person', sort: 'latest' })
+  expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Authorization')
+  await searchBooks('책', 1, { target: 'title', sort: 'accuracy' })
+  await searchBooks('창비', 1, { target: 'publisher' })
+  expect(new URL(fetchMock.mock.calls[1][0]).searchParams.get('target')).toBe('title')
+  expect(new URL(fetchMock.mock.calls[1][0]).searchParams.get('sort')).toBe('accuracy')
+  expect(new URL(fetchMock.mock.calls[2][0]).searchParams.get('target')).toBe('publisher')
+  await searchBooks('책')
+  expect(fetchMock.mock.calls[3][0]).toBe('https://api.example.test/books/search?query=%EC%B1%85&page=1')
+})
+
 test('서재 등록은 isbn13만 JSON으로 보내고, 201·200으로 신규·기존을 구분한다', async () => {
   const fetchMock = vi.fn()
     .mockResolvedValueOnce(Response.json({ id: 'user-book-1', book_id: 'book-1', status: 'want_to_read' }, { status: 201 }))

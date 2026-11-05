@@ -38,12 +38,81 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+test('검색 전에 고른 기준·정렬을 첫 요청부터 보내고 더 보기에도 유지한다', async () => {
+  mocks.searchBooks.mockResolvedValueOnce({ books: [book('첫 결과', '9788936433598')], isEnd: false })
+    .mockResolvedValueOnce({ books: [book('다음 결과', '9788936434120')], isEnd: true })
+  fireEvent.change(screen.getByLabelText('검색 기준'), { target: { value: 'person' } })
+  fireEvent.change(screen.getByLabelText('검색 결과 정렬'), { target: { value: 'latest' } })
+  expect(mocks.searchBooks).not.toHaveBeenCalled()
+  search('  한강  ')
+  await screen.findByText('첫 결과')
+  expect(mocks.searchBooks).toHaveBeenLastCalledWith('한강', 1, { target: 'person', sort: 'latest' })
+  fireEvent.click(screen.getByRole('button', { name: '결과 더 보기' }))
+  await screen.findByText('다음 결과')
+  expect(mocks.searchBooks).toHaveBeenLastCalledWith('한강', 2, { target: 'person', sort: 'latest' })
+})
+
+test('기준·정렬 변경은 마지막 검색어로 첫 페이지부터 다시 조회하며 전체·정확도순으로 복구할 수 있다', async () => {
+  mocks.searchBooks.mockResolvedValueOnce({ books: [book('이전 결과', '9788936433598')], isEnd: false })
+    .mockResolvedValueOnce({ books: [book('저자 결과', '9788936434120')], isEnd: false })
+    .mockResolvedValueOnce({ books: [book('최신 결과', '9788936434120')], isEnd: true })
+    .mockResolvedValueOnce({ books: [book('전체 최신 결과', '9788936434120')], isEnd: true })
+    .mockResolvedValueOnce({ books: [book('기본 결과', '9788936434120')], isEnd: true })
+  search('한강')
+  await screen.findByText('이전 결과')
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '아직 제출하지 않은 검색어' } })
+  fireEvent.change(screen.getByLabelText('검색 기준'), { target: { value: 'person' } })
+  await screen.findByText('저자 결과')
+  expect(mocks.searchBooks).toHaveBeenLastCalledWith('한강', 1, { target: 'person' })
+  expect(screen.queryByText('이전 결과')).toBeNull()
+  fireEvent.change(screen.getByLabelText('검색 결과 정렬'), { target: { value: 'latest' } })
+  await screen.findByText('최신 결과')
+  expect(mocks.searchBooks).toHaveBeenLastCalledWith('한강', 1, { target: 'person', sort: 'latest' })
+  expect(screen.getByText('‘한강’ · 저자 · 출간일 최신순')).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('검색 기준'), { target: { value: '' } })
+  await screen.findByText('전체 최신 결과')
+  expect(mocks.searchBooks).toHaveBeenLastCalledWith('한강', 1, { sort: 'latest' })
+  fireEvent.change(screen.getByLabelText('검색 결과 정렬'), { target: { value: 'accuracy' } })
+  await screen.findByText('기본 결과')
+  expect(mocks.searchBooks).toHaveBeenLastCalledWith('한강', 1, {})
+})
+
+test('첫 검색 중 기준을 바꾸면 이전 기준의 늦은 결과를 버린다', async () => {
+  let finishOld!: (result: { books: SearchBook[]; isEnd: boolean }) => void
+  mocks.searchBooks.mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve }))
+    .mockResolvedValueOnce({ books: [book('출판사 결과', '9788936434120')], isEnd: true })
+  search('창비')
+  fireEvent.change(screen.getByLabelText('검색 기준'), { target: { value: 'publisher' } })
+  await screen.findByText('출판사 결과')
+  await act(async () => finishOld({ books: [book('늦은 전체 결과', '9788936433598')], isEnd: true }))
+  expect(screen.queryByText('늦은 전체 결과')).toBeNull()
+  expect(mocks.searchBooks).toHaveBeenLastCalledWith('창비', 1, { target: 'publisher' })
+})
+
+test('기준을 바꾸면 누적 결과와 숨긴 권수를 초기화하고 이전 더 보기 응답을 버린다', async () => {
+  let finishMore!: (result: { books: SearchBook[]; isEnd: boolean }) => void
+  mocks.searchBooks.mockResolvedValueOnce({ books: [book('처음 책', '9788936433598'), book('상품', null)], isEnd: false })
+    .mockReturnValueOnce(new Promise((resolve) => { finishMore = resolve }))
+    .mockResolvedValueOnce({ books: [book('새 조건 책', '9788936434120')], isEnd: true })
+  search('책')
+  fireEvent.click(await screen.findByRole('button', { name: '결과 더 보기' }))
+  fireEvent.change(screen.getByLabelText('검색 기준'), { target: { value: 'title' } })
+  await screen.findByText('새 조건 책')
+  await act(async () => finishMore({ books: [book('늦은 다음 책', '9788936433598'), book('상품', null)], isEnd: true }))
+  expect(screen.queryByText('처음 책')).toBeNull()
+  expect(screen.queryByText('늦은 다음 책')).toBeNull()
+  expect(screen.queryByText(/표시하지 않았어요/)).toBeNull()
+  expect(screen.queryByRole('button', { name: '결과 더 보기' })).toBeNull()
+})
+
 test('검색 429는 Retry-After 동안 다시 검색·더 보기를 막고 자동으로 다시 보내지 않는다', async () => {
   mocks.searchBooks.mockRejectedValueOnce(new ApiError(429, 'Too many requests', 'rate_limited', 1))
   search('소년이 온다')
   expect((await screen.findByRole('alert')).textContent).toBe('검색 요청이 많습니다. 1초 뒤에 다시 시도해주세요.')
   const button = screen.getByRole('button', { name: '검색' })
   expect(button).toHaveProperty('disabled', true)
+  expect(screen.getByLabelText('검색 기준')).toHaveProperty('disabled', true)
+  expect(screen.getByLabelText('검색 결과 정렬')).toHaveProperty('disabled', true)
   search('소년이 온다')
   expect(mocks.searchBooks).toHaveBeenCalledTimes(1)
   // 화면을 떠났다 돌아와도 남은 시간 동안 막는다.
@@ -127,7 +196,7 @@ test('표시 가능한 책이 없는 페이지에서도 다음 페이지를 조�
   expect(screen.queryByText('검색 결과가 없습니다.')).toBeNull()
   // 더 보기로 받은 페이지의 숨긴 권수도 더한다.
   expect(screen.getByText('ISBN13이 없어 서재에 담을 수 없는 책 2권은 표시하지 않았어요.')).toBeTruthy()
-  expect(mocks.searchBooks).toHaveBeenLastCalledWith('책', 3)
+  expect(mocks.searchBooks).toHaveBeenLastCalledWith('책', 3, {})
 })
 
 test('담는 중에는 다시 누를 수 없고, 이미 있던 책이면 기존 상태를 알린다', async () => {
@@ -183,7 +252,7 @@ test('결과 더 보기는 다음 페이지를 이어 붙이고 마지막 페이
   fireEvent.click(await screen.findByRole('button', { name: '결과 더 보기' }))
   await screen.findByText('2쪽 책')
   expect(screen.getByText('1쪽 책')).toBeTruthy()
-  expect(mocks.searchBooks).toHaveBeenLastCalledWith('책', 2)
+  expect(mocks.searchBooks).toHaveBeenLastCalledWith('책', 2, {})
   expect(screen.queryByRole('button', { name: '결과 더 보기' })).toBeNull()
 })
 
