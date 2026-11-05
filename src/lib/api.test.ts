@@ -10,17 +10,37 @@ import {
   getLibraryBooks,
   getMe,
   getProfile,
+  getReminderSettings,
   getReadingCompletions,
   getReadingLogs,
   moveLibraryBook,
   searchBooks,
   updateLibraryRecord,
   updateNickname,
+  updateReminderSettings,
 } from './api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
+})
+
+test('계정 알림은 boolean을 읽고 설정 PUT의 빈 204를 처리한다', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ enabled: false })).mockResolvedValueOnce(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getReminderSettings('token')).resolves.toBe(false)
+  await expect(updateReminderSettings('token', true)).resolves.toBeUndefined()
+  expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    ['https://api.example.test/me/reminder-settings', undefined, undefined],
+    ['https://api.example.test/me/reminder-settings', 'PUT', '{"enabled":true}'],
+  ])
+})
+
+test.each([null, {}, { enabled: null }, { enabled: 'false' }])('알림 설정 응답 %j를 꺼짐으로 해석하지 않는다', async (body) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(body)))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getReminderSettings('token')).rejects.toThrow('알림 설정 응답 형식')
 })
 
 test('지난 날짜 체크·취소는 개인 id와 날짜를 경로로 보내고 본문을 생략한다', async () => {

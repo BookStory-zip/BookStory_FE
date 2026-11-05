@@ -114,13 +114,26 @@ function AuthScreen() {
     }
   }, [])
 
-  // 확인된 계정으로 열 때 알림 구독을 서버와 맞춘다. 실패해도 화면을 막지 않고 다음 시작 때 다시 맞춘다.
+  // 로그인·앱 복귀 시 켜진 계정의 허용된 기기만 구독한다.
   useEffect(() => {
     if (userId === null) return
     let active = true
-    void syncReminder(() => active).catch(() => undefined)
+    let syncing = false
+    const sync = () => {
+      if (syncing || document.visibilityState !== 'visible') return
+      syncing = true
+      void syncReminder(() => active).catch(() => undefined).finally(() => {
+        syncing = false
+        if (active) window.dispatchEvent(new Event('reminder-sync'))
+      })
+    }
+    sync()
+    window.addEventListener('focus', sync)
+    document.addEventListener('visibilitychange', sync)
     return () => {
       active = false
+      window.removeEventListener('focus', sync)
+      document.removeEventListener('visibilitychange', sync)
     }
   }, [userId])
 
