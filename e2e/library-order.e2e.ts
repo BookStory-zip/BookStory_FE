@@ -152,8 +152,10 @@ test('손잡이 드래그: 화면 가장자리에서 자동 스크롤해 보이�
   await page.mouse.down()
   await page.mouse.move(from.x + from.width / 2, 5, { steps: 8 })
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
-  const to = (await first.boundingBox())!
-  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 4 })
+  // 첫 카드 손잡이는 화면 아래 자동 스크롤 영역에 걸려 놓기 전에 목록이 움직이므로 카드 윗부분에 놓는다.
+  // 맨 위에서는 위쪽 자동 스크롤이 움직이지 않는다.
+  const to = (await page.getByRole('listitem').first().boundingBox())!
+  await page.mouse.move(to.x + to.width / 2, to.y + 10, { steps: 4 })
   await page.mouse.up()
   await expect(page.getByRole('listitem').first()).toContainText('스크롤 책 19')
   expect(anchors).toEqual([null])

@@ -253,7 +253,27 @@ test.each([100, 101, 123])('%i권을 끝까지 불러온 뒤 이동해도 재조
   expect(screen.getAllByRole('listitem')).toHaveLength(count)
   expect(screen.getAllByRole('listitem').map((item) => item.querySelector('.book-title')?.textContent)).toEqual(books.map((book) => book.title))
   expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
-})
+  // 100권 넘게 그리는 테스트라 전체 병렬 실행에서는 기본 5초를 넘을 수 있다.
+}, 20_000)
+
+test('재조회 앞 구간이 짧게 오면 그 사이 바뀐 뒤 구간을 붙이지 않는다', async () => {
+  const books = makeBooks(120, 'A')
+  let reloading = false
+  mocks.getLibraryBooks.mockImplementation((_token: string, limit: number, offset: number) =>
+    // 재조회 중 다른 곳에서 한 권이 빠져 앞 구간이 짧아진 상황.
+    Promise.resolve(reloading && offset === 0 ? books.slice(1, 100) : books.slice(offset, offset + limit)))
+  mocks.moveLibraryBook.mockImplementation(() => { reloading = true; return Promise.resolve() })
+  renderInRouter(<Library />)
+  await screen.findByText('A 책 0')
+  for (let offset = PAGE_SIZE; offset < 120; offset += PAGE_SIZE) {
+    fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(offset + PAGE_SIZE))
+  }
+  fireEvent.click(screen.getByRole('button', { name: '순서 편집' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 1 이동 손잡이' }), { key: 'ArrowLeft' })
+  await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(99))
+  expect(screen.getAllByRole('listitem').at(-1)?.textContent).toContain('A 책 99')
+}, 20_000)
 
 test.each([new TypeError('network'), new DOMException('timeout', 'TimeoutError'), new ApiError(504)])('불명확한 실패 %s는 한 번만 쓰고 서버 순서로 복구한다', async (error) => {
   const books = makeBooks(2, 'A')
