@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { addBookToShelf, removeBookFromShelf } from './lib/api'
+import { addBookToShelf, ApiError, removeBookFromShelf } from './lib/api'
 import type { LibraryBookItem, Shelf } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { commonErrorMessage, isUnclearWrite } from './lib/errors'
@@ -50,7 +50,7 @@ export default function LibraryShelfActions({ books, shelves, currentShelfId, bl
     const successfulIds: string[] = []
     const messages: string[] = []
     try {
-      for (const book of books) {
+      for (const [index, book] of books.entries()) {
         if (!active.current) return
         try {
           await withAccessToken((token) => remove
@@ -61,6 +61,12 @@ export default function LibraryShelfActions({ books, shelves, currentShelfId, bl
           messages.push(`${book.title}: ${isUnclearWrite(error)
             ? '저장 여부를 확인하지 못했습니다. 책장에서 확인해주세요.'
             : `처리하지 못했습니다. ${commonErrorMessage(error, '책장 변경에 실패했습니다')}`}`)
+          // 책마다 다른 404·409·422가 아니면(인증·서버 기동·요청 제한·연결) 남은 책도 같으므로 보내지 않는다.
+          const bookSpecific = error instanceof ApiError && [404, 409, 422].includes(error.status)
+          if (!bookSpecific && index < books.length - 1) {
+            messages.push(`남은 ${books.length - index - 1}권은 보내지 않았습니다. 잠시 후 다시 시도해주세요.`)
+            break
+          }
         }
       }
       if (!active.current) return

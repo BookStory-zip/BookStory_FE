@@ -572,7 +572,7 @@ export default function Library() {
           type="button"
           className="secondary more"
           onClick={loadMore}
-          disabled={locked || dragging}
+          disabled={locked || dragging || shelfBusy}
         >
           {loadingMore ? (slow ? '서버 응답을 기다리는 중…' : '불러오는 중…') : error ? '다시 불러오기' : '더 보기'}
         </button>

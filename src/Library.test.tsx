@@ -533,6 +533,32 @@ test('선택한 책을 책장에 담고 일부 실패하면 성공을 유지하�
   expect(mocks.getShelves).toHaveBeenCalledTimes(2)
 })
 
+test.each([new ApiError(503), new ApiError(401), new TypeError('network')])('책마다 같은 실패 %s면 남은 책은 보내지 않는다', async (failure) => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 0)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(3, 'A'))
+  mocks.addBookToShelf.mockRejectedValue(failure)
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '책 선택' }))
+  for (const index of [0, 1, 2]) fireEvent.click(screen.getByRole('checkbox', { name: `A 책 ${index} 선택` }))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  await screen.findByText('남은 2권은 보내지 않았습니다. 잠시 후 다시 시도해주세요.')
+  expect(mocks.addBookToShelf).toHaveBeenCalledTimes(1)
+})
+
+test('책별 404는 다음 책을 계속 보낸다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 0)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(2, 'A'))
+  mocks.addBookToShelf.mockRejectedValueOnce(new ApiError(404)).mockResolvedValueOnce(undefined)
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '책 선택' }))
+  for (const index of [0, 1]) fireEvent.click(screen.getByRole('checkbox', { name: `A 책 ${index} 선택` }))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  await screen.findByText('1권을 책장에 담았습니다.')
+  expect(mocks.addBookToShelf).toHaveBeenCalledTimes(2)
+})
+
 test('책장 변경 뒤 재조회가 실패했다가 다시 확인에 성공하면 이전 오류와 잠금을 지운다', async () => {
   mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 0)])
   mocks.getLibraryBooks.mockResolvedValueOnce(makeBooks(PAGE_SIZE, 'A')).mockRejectedValueOnce(new ApiError(503))
@@ -543,7 +569,10 @@ test('책장 변경 뒤 재조회가 실패했다가 다시 확인에 성공하�
   fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
   fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
   fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
-  fireEvent.click(await screen.findByRole('button', { name: '책장 정보 다시 확인' }))
+  const recheck = await screen.findByRole('button', { name: '책장 정보 다시 확인' })
+  // 재확인 전에는 눌러도 동작하지 않는 다시 불러오기를 막는다.
+  expect(screen.getByRole('button', { name: '다시 불러오기' })).toHaveProperty('disabled', true)
+  fireEvent.click(recheck)
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   expect(screen.queryByRole('button', { name: '다시 불러오기' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '더 보기' }))

@@ -43,7 +43,8 @@ export default function TimerPage({ userId }: { userId: string }) {
     try {
       const [items, restored] = await withAccessToken((token) => Promise.all([
         getAllLibraryBooks(token, mode === 'reading' ? { status: 'reading' } : {}),
-        restoreBook(token, timerBookId(userId), requestedBookId),
+        // 다시 확인할 때는 사용자가 고른 책을 주소의 책보다 먼저 유지한다.
+        restoreBook(token, timerBookId(userId), selectedId.current ?? requestedBookId),
       ]))
       if (!active.current || run !== version.current) return
       setBooks(items)
@@ -59,8 +60,6 @@ export default function TimerPage({ userId }: { userId: string }) {
 
   useEffect(() => {
     active.current = true
-    // load의 상태 변경은 모두 첫 await 뒤라 동기 setState가 아니다.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
     const unsubscribe = subscribeTimer(() => {
       const id = timerBookId(userId)
@@ -85,8 +84,9 @@ export default function TimerPage({ userId }: { userId: string }) {
       return fresh.status
     } catch (failure) {
       if (active.current && run === version.current) {
-        setError(commonErrorMessage(failure, '책 상태를 다시 확인하지 못했습니다'))
+        // 서재에서 지워진 책은 측정을 버릴 수 있도록 화면을 잠그지 않고 측정만 막는다.
         if (failure instanceof ApiError && failure.status === 404) setSelected({ ...selected, status: 'want_to_read' })
+        else setError(commonErrorMessage(failure, '책 상태를 다시 확인하지 못했습니다'))
       }
       return null
     }
@@ -95,7 +95,7 @@ export default function TimerPage({ userId }: { userId: string }) {
   return <section className="timer-page" aria-labelledby="timer-page-title">
     <h1 id="timer-page-title">타이머</h1>
     <p className="library-sub">읽는 시간을 기록하고, 저장한 시간을 확인하세요.</p>
-    <div className="timer-modes" aria-label="타이머 화면">
+    <div className="timer-modes" role="group" aria-label="타이머 화면">
       <button type="button" className="secondary" aria-pressed={mode === 'reading'} disabled={busy || !!draftBookId}
         onClick={() => { if (mode !== 'reading') { selectedId.current = null; setSelected(null); setLoading(true); setError(''); setMode('reading') } }}>측정</button>
       <button type="button" className="secondary" aria-pressed={mode === 'history'} disabled={busy || !!draftBookId}

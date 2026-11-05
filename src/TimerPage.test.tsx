@@ -7,7 +7,7 @@ import type { LibraryBookItem } from './lib/api'
 import { readTimer, startTimer, writeTimer } from './lib/timer'
 import TimerPage from './TimerPage'
 
-const mocks = vi.hoisted(() => ({ getAllLibraryBooks: vi.fn(), getLibraryBook: vi.fn(), getReadingSessions: vi.fn(), deleteReadingSession: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getAllLibraryBooks: vi.fn(), getLibraryBook: vi.fn(), getReadingSessions: vi.fn(), deleteReadingSession: vi.fn(), saveReadingSession: vi.fn() }))
 vi.mock('./lib/api', async (original) => ({ ...await original<typeof import('./lib/api')>(), ...mocks }))
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
 vi.mock('./lib/auth', async (original) => ({ ...await original<typeof import('./lib/auth')>(), withAccessToken: (request: (token: string) => Promise<unknown>) => request('token') }))
@@ -64,6 +64,33 @@ test.each(['completed', 'deleted'])('이전에 측정한 책이 %s이어도 측�
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '측정 버리기' }))
   await waitFor(() => expect(screen.getByLabelText('어떤 책을 읽으시나요?')).toHaveProperty('disabled', false))
   expect(readTimer('user-a')).toBeNull()
+})
+
+test('저장 중 측정한 책이 서재에서 지워져도 화면을 잠그지 않고 측정을 버릴 수 있다', async () => {
+  writeTimer(startTimer('user-a', 'old', Date.now() - 90_000, crypto.randomUUID()))
+  mocks.getAllLibraryBooks.mockResolvedValue([book('old')])
+  mocks.getLibraryBook.mockResolvedValueOnce(book('old')).mockRejectedValue(new ApiError(404))
+  mocks.saveReadingSession.mockRejectedValue(new ApiError(404))
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: '종료·저장' }))
+  await waitFor(() => expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2))
+  expect(screen.queryByRole('button', { name: '책 목록 다시 확인' })).toBeNull()
+  fireEvent.click(await screen.findByRole('button', { name: '측정 버리기' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '측정 버리기' }))
+  await waitFor(() => expect(readTimer('user-a')).toBeNull())
+})
+
+test('책 상태 재확인 실패 뒤 다시 확인해도 고른 책을 유지한다', async () => {
+  mocks.getAllLibraryBooks.mockResolvedValue([book('a'), book('b')])
+  mocks.getLibraryBook.mockRejectedValueOnce(new TypeError('network')).mockResolvedValue(book('b'))
+  mocks.saveReadingSession.mockResolvedValue({ id: 'saved' })
+  show()
+  fireEvent.change(await screen.findByLabelText('어떤 책을 읽으시나요?'), { target: { value: 'b' } })
+  writeTimer(startTimer('user-a', 'b', Date.now() - 90_000, crypto.randomUUID()))
+  act(() => writeTimer(readTimer('user-a')!))
+  fireEvent.click(await screen.findByRole('button', { name: '종료·저장' }))
+  fireEvent.click(await screen.findByRole('button', { name: '책 목록 다시 확인' }))
+  await waitFor(() => expect(screen.getByLabelText('어떤 책을 읽으시나요?')).toHaveProperty('value', 'b'))
 })
 
 test.each([new ApiError(404), new ApiError(422), new ApiError(503)])('주소의 책 조회 실패 %s는 목록을 막지 않고 선택하지 않는다', async (failure) => {
