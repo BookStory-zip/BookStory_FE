@@ -103,7 +103,7 @@ export default function BookSearch() {
     try {
       const { books, isEnd } = await searchBooks(query.trim())
       if (version !== searchVersion.current) return
-      setResults(books)
+      setResults(books.filter((book) => book.isbn13 !== null))
       setPaging({ query: query.trim(), page: 1, isEnd })
     } catch (searchError) {
       if (version !== searchVersion.current) return
@@ -125,7 +125,7 @@ export default function BookSearch() {
     try {
       const { books, isEnd } = await searchBooks(paging.query, nextPage)
       if (version !== searchVersion.current) return
-      setResults((current) => [...(current ?? []), ...books])
+      setResults((current) => [...(current ?? []), ...books.filter((book) => book.isbn13 !== null)])
       setPaging({ query: paging.query, page: nextPage, isEnd })
     } catch (moreLoadError) {
       if (version !== searchVersion.current) return
@@ -189,7 +189,9 @@ export default function BookSearch() {
       )}
 
       {results !== null && results.length === 0 && (
-        <p className="library-note">검색 결과가 없습니다. 다른 검색어로 찾아보세요.</p>
+        <p className="library-note">{paging && !paging.isEnd && paging.page < SEARCH_LAST_PAGE
+          ? '담을 수 있는 책이 이 페이지에 없습니다. 더 보기를 눌러 주세요.'
+          : '검색 결과가 없습니다.'}</p>
       )}
 
       {results !== null && results.length > 0 && (
@@ -214,14 +216,11 @@ export default function BookSearch() {
                   </div>
                 )}
                 <div className="result-body">
-                  <p className="book-title">{book.isbn13
-                    ? <Link to={`/catalog/${book.isbn13}`}>{book.title || '제목 정보 없음'}</Link>
-                    : book.title || '제목 정보 없음'}</p>
+                  <p className="book-title"><Link to={`/catalog/${book.isbn13}`}>{book.title || '제목 정보 없음'}</Link></p>
                   <p className="book-authors">
                     {[book.authors.join(', '), book.publisher].filter(Boolean).join(' · ') ||
                       '저자 정보 없음'}
                   </p>
-                  {book.isbn13 ? (
                     <button
                       type="button"
                       className="secondary compact"
@@ -234,11 +233,6 @@ export default function BookSearch() {
                           ? '담김'
                           : '서재에 담기'}
                     </button>
-                  ) : (
-                    <p className="result-note">
-                      13자리 ISBN이 없어 서재에 담을 수 없습니다.
-                    </p>
-                  )}
                   {save && save.phase !== 'saving' && (
                     <p
                       className={`result-note ${save.phase === 'error' ? 'is-error' : ''}`}
@@ -262,7 +256,7 @@ export default function BookSearch() {
 
       {moreError && <p className="library-note" role="alert">{moreError}</p>}
 
-      {results !== null && results.length > 0 && paging && !paging.isEnd && paging.page < SEARCH_LAST_PAGE && (
+      {results !== null && paging && !paging.isEnd && paging.page < SEARCH_LAST_PAGE && (
         <button type="button" className="secondary more" onClick={() => void handleMore()} disabled={loadingMore || searching || coolingDown}>
           {loadingMore ? '불러오는 중…' : '결과 더 보기'}
         </button>

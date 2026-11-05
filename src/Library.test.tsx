@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   moveLibraryBook: vi.fn(),
   getShelves: vi.fn(),
   deleteShelf: vi.fn(),
+  addBookToShelf: vi.fn(),
+  removeBookFromShelf: vi.fn(),
 }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
@@ -20,6 +22,8 @@ vi.mock('./lib/api', async (importOriginal) => ({
   moveLibraryBook: mocks.moveLibraryBook,
   getShelves: mocks.getShelves,
   deleteShelf: mocks.deleteShelf,
+  addBookToShelf: mocks.addBookToShelf,
+  removeBookFromShelf: mocks.removeBookFromShelf,
 }))
 // 환경변수 없는 CI에서도 실제 Supabase 클라이언트를 만들지 않는다.
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
@@ -50,6 +54,48 @@ beforeEach(() => {
   mocks.getShelves.mockResolvedValue([])
 })
 afterEach(cleanup)
+
+test('서재 카드의 끝 괄호만 정리하고 숫자 권 번호와 원문을 보존한다', async () => {
+  const titles = ['해리 포터 (스페셜 에디션)', '1Q84 (1)', '(부록)', '제목 (설명) (한정판)']
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(4, 'A').map((book, index) => ({ ...book, title: titles[index] })))
+  renderInRouter(<Library />)
+  await screen.findByText('해리 포터')
+  expect(screen.getByText('해리 포터').getAttribute('title')).toBe(titles[0])
+  expect(screen.getByText('1Q84 (1)')).toBeTruthy()
+  expect(screen.getByText('(부록)')).toBeTruthy()
+  expect(screen.getByText('제목 (설명)')).toBeTruthy()
+  const options = screen.getByLabelText('읽기 상태').querySelectorAll('option')
+  expect([...options].map(option => option.value)).toEqual(['', 'want_to_read', 'reading', 'completed'])
+})
+
+test('목록 끝이 화면에 남으면 다음 페이지를 이어 불러오고 오류 뒤에는 자동 반복하지 않는다', async () => {
+  const callbacks: IntersectionObserverCallback[] = []
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: IntersectionObserverCallback) { callbacks.push(callback) }
+    observe() {}
+    disconnect() {}
+  })
+  try {
+    mocks.getLibraryBooks.mockResolvedValueOnce(makeBooks(PAGE_SIZE, 'A'))
+      .mockResolvedValueOnce(makeBooks(PAGE_SIZE, 'B'))
+      .mockRejectedValueOnce(new TypeError('network'))
+      .mockResolvedValueOnce(makeBooks(1, 'C'))
+    renderInRouter(<Library />)
+    await screen.findByText('A 책 0')
+    await waitFor(() => expect(callbacks.length).toBeGreaterThan(0))
+    expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
+    const intersect = async () => act(async () => callbacks.at(-1)!([{ isIntersecting: true }] as IntersectionObserverEntry[], {} as IntersectionObserver))
+    await intersect()
+    await screen.findByText('B 책 19')
+    await waitFor(() => expect(callbacks.length).toBeGreaterThan(1))
+    await intersect()
+    await screen.findByRole('alert')
+    expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(3)
+    fireEvent.click(screen.getByRole('button', { name: '다시 불러오기' }))
+    await screen.findByText('C 책 0')
+    expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, PAGE_SIZE * 2, {})
+  } finally { vi.unstubAllGlobals() }
+})
 
 test('더 보기는 받은 개수만큼 offset을 넘겨 다음 페이지를 이어 붙인다', async () => {
   mocks.getLibraryBooks
@@ -107,7 +153,7 @@ test('앞으로 이동은 새 선행 개인 id를 보내고 첫 페이지의 서
   mocks.moveLibraryBook.mockResolvedValue(undefined)
   renderInRouter(<Library />)
   fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
-  fireEvent.click(screen.getByRole('button', { name: 'A 책 2 앞으로' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 2 이동 손잡이' }), { key: 'ArrowLeft' })
   await waitFor(() => expect(mocks.moveLibraryBook).toHaveBeenCalledWith('test-token', books[2].id, books[0].id))
   await waitFor(() => expect(screen.getAllByRole('listitem').map((item) => item.querySelector('.book-title')?.textContent)).toEqual(['A 책 0', 'A 책 2', 'A 책 1']))
   expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0, {})
@@ -121,9 +167,9 @@ test('맨 앞으로 이동할 때 null을 보내고 저장과 재조회가 끝�
   mocks.moveLibraryBook.mockReturnValueOnce(new Promise<void>((resolve) => { finishMove = resolve }))
   renderInRouter(<Library />)
   fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
-  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 1 이동 손잡이' }), { key: 'ArrowLeft' })
   expect(mocks.moveLibraryBook).toHaveBeenCalledWith('test-token', books[1].id, null)
-  expect((screen.getByRole('button', { name: 'A 책 0 뒤로' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: 'A 책 0 이동 손잡이' }) as HTMLButtonElement).disabled).toBe(true)
   expect(screen.getByRole('status').textContent).toBe('순서를 저장하는 중…')
   finishMove()
   await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(2))
@@ -139,13 +185,13 @@ test('불명확한 이동 후 재조회도 실패하면 목록을 보존하고 �
   mocks.moveLibraryBook.mockRejectedValueOnce(new TypeError('Failed to fetch'))
   renderInRouter(<Library />)
   fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
-  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 1 이동 손잡이' }), { key: 'ArrowLeft' })
   const retry = await screen.findByRole('button', { name: '최신 순서 다시 확인' })
   await waitFor(() => expect(document.activeElement).toBe(retry))
   expect(screen.getAllByRole('listitem')).toHaveLength(2)
-  expect((screen.getByRole('button', { name: 'A 책 0 뒤로' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: 'A 책 0 이동 손잡이' }) as HTMLButtonElement).disabled).toBe(true)
   fireEvent.click(retry)
-  await waitFor(() => expect((screen.getByRole('button', { name: 'A 책 1 뒤로' }) as HTMLButtonElement).disabled).toBe(false))
+  await waitFor(() => expect((screen.getByRole('button', { name: 'A 책 1 이동 손잡이' }) as HTMLButtonElement).disabled).toBe(false))
   expect(mocks.moveLibraryBook).toHaveBeenCalledTimes(1)
 })
 
@@ -155,9 +201,10 @@ test('아래로 이동은 이동 대상을 뺀 뒤의 선행 id를 사용한다'
   mocks.moveLibraryBook.mockResolvedValue(undefined)
   renderInRouter(<Library />)
   fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
-  expect((screen.getByRole('button', { name: 'A 책 0 앞으로' }) as HTMLButtonElement).disabled).toBe(true)
-  expect((screen.getByRole('button', { name: 'A 책 2 뒤로' }) as HTMLButtonElement).disabled).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: 'A 책 0 뒤로' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 0 이동 손잡이' }), { key: 'ArrowLeft' })
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 2 이동 손잡이' }), { key: 'ArrowRight' })
+  expect(mocks.moveLibraryBook).not.toHaveBeenCalled()
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 0 이동 손잡이' }), { key: 'ArrowRight' })
   await waitFor(() => expect(mocks.moveLibraryBook).toHaveBeenCalledWith('test-token', books[0].id, books[1].id))
   await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('A 책 0 이동 손잡이'))
 })
@@ -172,7 +219,7 @@ test('추가 페이지에서 옮기면 불러온 범위를 한 번에 다시 읽
   fireEvent.click(await screen.findByRole('button', { name: '더 보기' }))
   await screen.findByText('A 책 22')
   fireEvent.click(screen.getByRole('button', { name: '순서 편집' }))
-  fireEvent.click(screen.getByRole('button', { name: 'A 책 19 뒤로' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 19 이동 손잡이' }), { key: 'ArrowRight' })
   await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('A 책 19 이동 손잡이'))
   expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', 23, 0, {})
   expect(screen.getAllByRole('listitem').map((item) => item.querySelector('.book-title')?.textContent)[20]).toBe('A 책 19')
@@ -198,17 +245,11 @@ test.each([100, 101, 123])('%i권을 끝까지 불러온 뒤 이동해도 재조
   await waitFor(() => expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull())
 
   fireEvent.click(screen.getByRole('button', { name: '순서 편집' }))
-  fireEvent.click(screen.getByRole('button', { name: 'A 책 0 뒤로' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 0 이동 손잡이' }), { key: 'ArrowRight' })
   await waitFor(() => expect((screen.getByRole('button', { name: '편집 마치기' }) as HTMLButtonElement).disabled).toBe(false))
-  expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', 100, 0, {})
-  expect(screen.getAllByRole('listitem')).toHaveLength(100)
-  for (let offset = 100; offset < count; offset += PAGE_SIZE) {
-    const more = screen.queryByRole('button', { name: '더 보기' })
-    expect(more).not.toBeNull()
-    fireEvent.click(more!)
-    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(Math.min(offset + PAGE_SIZE, count)))
-    expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, offset, {})
-  }
+  expect(mocks.getLibraryBooks).toHaveBeenCalledWith('test-token', Math.min(count, 100), 0, {})
+  if (count > 100) expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', count - 100, 100, {})
+  expect(screen.getAllByRole('listitem')).toHaveLength(count)
   expect(screen.getAllByRole('listitem').map((item) => item.querySelector('.book-title')?.textContent)).toEqual(books.map((book) => book.title))
   expect(screen.queryByRole('button', { name: '더 보기' })).toBeNull()
 })
@@ -219,7 +260,7 @@ test.each([new TypeError('network'), new DOMException('timeout', 'TimeoutError')
   mocks.moveLibraryBook.mockRejectedValueOnce(error)
   renderInRouter(<Library />)
   fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
-  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 1 이동 손잡이' }), { key: 'ArrowLeft' })
   await screen.findByText('최신 서재 순서를 불러왔습니다. 이동 결과를 확인해주세요.')
   expect(mocks.moveLibraryBook).toHaveBeenCalledTimes(1)
   expect(screen.getAllByRole('listitem')[0].textContent).toContain('A 책 1')
@@ -230,7 +271,7 @@ test('invalid_position은 한국어로 안내하고 기존 목록을 보존한�
   mocks.moveLibraryBook.mockRejectedValueOnce(new ApiError(422, 'English detail', 'invalid_position'))
   renderInRouter(<Library />)
   fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
-  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 1 이동 손잡이' }), { key: 'ArrowLeft' })
   expect((await screen.findByRole('alert')).textContent).toContain('책을 자기 자신 뒤로 옮길 수 없습니다')
   expect(screen.getAllByRole('listitem')[0].textContent).toContain('A 책 0')
   expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(1)
@@ -242,7 +283,7 @@ test('404는 삭제된 책을 추정하지 않고 최신 목록으로 다시 확
   mocks.moveLibraryBook.mockRejectedValueOnce(new ApiError(404))
   renderInRouter(<Library />)
   fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
-  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 1 이동 손잡이' }), { key: 'ArrowLeft' })
   await screen.findByText('최신 서재 순서를 불러왔습니다. 이동 결과를 확인해주세요.')
   expect(screen.queryByText('A 책 1')).toBeNull()
 })
@@ -253,7 +294,7 @@ test('계정 전환 뒤 이전 이동 응답은 재조회나 새 계정 목록�
   mocks.moveLibraryBook.mockReturnValueOnce(new Promise<void>((resolve) => { resolveMove = resolve }))
   const { rerender } = renderInRouter(<Library key="A" />)
   fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
-  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 1 이동 손잡이' }), { key: 'ArrowLeft' })
   rerender(<MemoryRouter><Library key="B" /></MemoryRouter>)
   await screen.findByText('B 책 0')
   resolveMove()
@@ -375,7 +416,7 @@ test('필터 결과 더 보기가 실패해도 결과를 유지하고 같은 조
   fireEvent.click(await screen.findByRole('button', { name: '더 보기' }))
   expect((await screen.findByRole('alert')).textContent).toContain('서버에 연결하지 못했습니다')
   expect(screen.getByText('S 책 19')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  fireEvent.click(screen.getByRole('button', { name: '다시 불러오기' }))
   await screen.findByText('T 책 1')
   expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, PAGE_SIZE, { q: '책', field: 'title' })
 })
@@ -424,6 +465,62 @@ test('검색 기준만 바꾸고 제출하지 않았으면 상태 변경은 적�
 })
 
 const shelfItem = (id: string, name: string, count: number) => ({ id, name, book_count: count, position: 0 })
+
+test('선택한 책을 책장에 담고 일부 실패하면 성공을 유지하며 실패한 책만 선택해 둔다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 0)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(3, 'A'))
+  mocks.addBookToShelf.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new ApiError(503))
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '책 선택' }))
+  expect(screen.getByRole('button', { name: '책장 관리' })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 2 선택' }))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  await screen.findByText(/A 책 2: 처리하지 못했습니다/)
+  expect(mocks.addBookToShelf.mock.calls).toEqual([
+    ['test-token', 's1', 'A-user-book-0'], ['test-token', 's1', 'A-user-book-2'],
+  ])
+  expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('checked', false)
+  expect(screen.getByRole('checkbox', { name: 'A 책 2 선택' })).toHaveProperty('checked', true)
+  expect(mocks.getShelves).toHaveBeenCalledTimes(2)
+})
+
+test('보고 있는 책장에서 여러 권을 빼고 불명확한 결과는 실패로 단정하거나 자동 재전송하지 않는다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 3)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(3, 'A'))
+  mocks.removeBookFromShelf.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new TypeError('network'))
+  renderInRouter(<Library />)
+  fireEvent.change(await screen.findByLabelText('책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(2))
+  fireEvent.click(screen.getByRole('button', { name: '책 선택' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 1 선택' }))
+  fireEvent.click(screen.getByRole('button', { name: '책장에서 빼기' }))
+  await screen.findByText(/A 책 1: 저장 여부를 확인하지 못했습니다/)
+  expect(mocks.removeBookFromShelf).toHaveBeenCalledTimes(2)
+  expect(mocks.removeBookFromShelf).toHaveBeenLastCalledWith('test-token', 's1', 'A-user-book-1')
+  expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(3)
+})
+
+test('선택 모드에서 보던 책장이 사라져도 전체 서재로 복귀한 뒤 잠금이 남지 않는다', async () => {
+  let finishLoad!: (books: LibraryBookItem[]) => void
+  mocks.getShelves.mockResolvedValueOnce([shelfItem('s1', 'SF', 1)]).mockResolvedValueOnce([])
+  mocks.getLibraryBooks.mockResolvedValueOnce(makeBooks(1, 'A')).mockResolvedValueOnce(makeBooks(1, 'A'))
+    .mockReturnValueOnce(new Promise((resolve) => { finishLoad = resolve }))
+  mocks.removeBookFromShelf.mockRejectedValueOnce(new ApiError(404))
+  renderInRouter(<Library />)
+  fireEvent.change(await screen.findByLabelText('책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(2))
+  fireEvent.click(screen.getByRole('button', { name: '책 선택' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
+  fireEvent.click(screen.getByRole('button', { name: '책장에서 빼기' }))
+  await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(3))
+  await screen.findByText('오두막 문을 여는 중…')
+  await act(async () => finishLoad(makeBooks(1, 'A')))
+  await waitFor(() => expect(screen.getByRole('button', { name: '선택 마치기' })).toHaveProperty('disabled', false))
+  expect(screen.queryByLabelText('책장')).toBeNull()
+})
 
 test('책장 필터는 검색·상태와 함께 서버에 보내고 서버 권수를 표시하며 순서 편집을 막는다', async () => {
   mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 12), shelfItem('s2', '에세이', 0)])

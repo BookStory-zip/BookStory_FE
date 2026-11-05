@@ -100,12 +100,31 @@ test('먼저 보낸 검색의 늦은 응답이 최신 결과를 덮지 않는다
   await waitFor(() => expect(screen.queryByText('첫 번째 결과')).toBeNull())
 })
 
-test('ISBN13이 없는 결과는 담기 버튼 대신 이유를 보여 준다', async () => {
+test('ISBN13이 없는 결과는 숨기고 마지막 페이지라면 빈 결과를 안내한다', async () => {
   mocks.searchBooks.mockResolvedValueOnce({ books: [book('ISBN10만 있는 책', null)], isEnd: true })
   search('책')
 
-  await screen.findByText('13자리 ISBN이 없어 서재에 담을 수 없습니다.')
+  await screen.findByText('검색 결과가 없습니다.')
+  expect(screen.queryByText('ISBN10만 있는 책')).toBeNull()
   expect(screen.queryByRole('button', { name: '서재에 담기' })).toBeNull()
+})
+
+test('표시 가능한 책이 없는 페이지에서도 다음 페이지를 조회하고 이전 결과를 유지한다', async () => {
+  mocks.searchBooks
+    .mockResolvedValueOnce({ books: [book('숨길 상품', null)], isEnd: false })
+    .mockResolvedValueOnce({ books: [book('표시할 책', '9788936433598')], isEnd: false })
+    .mockResolvedValueOnce({ books: [book('다른 상품', null)], isEnd: true })
+  search('책')
+  await screen.findByText('담을 수 있는 책이 이 페이지에 없습니다. 더 보기를 눌러 주세요.')
+  expect(screen.queryByText('숨길 상품')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '결과 더 보기' }))
+  await screen.findByText('표시할 책')
+  fireEvent.click(screen.getByRole('button', { name: '결과 더 보기' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: '결과 더 보기' })).toBeNull())
+  expect(screen.getByText('표시할 책')).toBeTruthy()
+  expect(screen.queryByText('다른 상품')).toBeNull()
+  expect(screen.queryByText('검색 결과가 없습니다.')).toBeNull()
+  expect(mocks.searchBooks).toHaveBeenLastCalledWith('책', 3)
 })
 
 test('담는 중에는 다시 누를 수 없고, 이미 있던 책이면 기존 상태를 알린다', async () => {

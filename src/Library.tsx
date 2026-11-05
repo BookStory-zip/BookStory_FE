@@ -7,6 +7,7 @@ import { codeMessage, commonErrorMessage, isUnclearWrite } from './lib/errors'
 import { Link } from 'react-router'
 import CabinIcon from './CabinIcon'
 import ShelfManager from './ShelfManager'
+import LibraryShelfActions from './LibraryShelfActions'
 
 export const PAGE_SIZE = 20
 const MAX_LIMIT = 100
@@ -52,6 +53,7 @@ export default function Library() {
   const dragRef = useRef<{ from: number; to: number; pointerId: number; x: number; y: number } | null>(null)
   const dragging = dragTarget !== null
   const shelf = useRef<HTMLUListElement>(null)
+  const listEnd = useRef<HTMLDivElement>(null)
   const title = useRef<HTMLHeadingElement>(null)
   const editButton = useRef<HTMLButtonElement>(null)
   const refreshButton = useRef<HTMLButtonElement>(null)
@@ -69,10 +71,24 @@ export default function Library() {
   const [shelvesError, setShelvesError] = useState('')
   const [managing, setManaging] = useState(false)
   const [shelfBusy, setShelfBusy] = useState(false)
+  const [selecting, setSelecting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const shelvesVersion = useRef(0)
   // 필터 결과의 순서를 전체 서재 순서로 오해해 저장하지 않도록 필터 중에는 순서 편집을 막는다.
   const filtered = Boolean(filter.q || filter.status || filter.shelf_id)
-  const filterLocked = editing || saving || needsRefresh || shelfBusy
+  const filterLocked = editing || selecting || saving || needsRefresh || shelfBusy
+
+  async function refreshShelfBooks(successfulIds: string[]) {
+    setSelectedIds((current) => current.filter((id) => !successfulIds.includes(id)))
+    const list = await loadShelves()
+    if (!list || !active.current) return false
+    if (filterRef.current.shelf_id && !list.some((item) => item.id === filterRef.current.shelf_id)) {
+      apply(makeFilter({ ...filterRef.current, shelf_id: undefined }))
+      setNotice('보던 책장이 목록에 없어 전체 책장으로 돌아왔어요.')
+      return true
+    }
+    return await load(0, true, Math.max(books.length, PAGE_SIZE)) === true
+  }
 
   // book_count는 서버 값만 쓴다. 실패하면 null, 더 새 요청에 밀렸으면 undefined(그 요청이 목록을 채운다).
   function loadShelves(): Promise<Shelf[] | null | undefined> {
@@ -103,7 +119,7 @@ export default function Library() {
 
   // 첫 조회는 초기 상태가 이미 loading이므로 화면 상태 전환은 버튼 핸들러에서만 한다.
   // 조건 조회를 서버가 거부하면 되돌아갈 조건과 안내를 돌려준다(되돌리기는 apply가 한다).
-  async function load(offset: number, preserve = false, limit = PAGE_SIZE, truncated = false): Promise<boolean | Fallback> {
+  async function load(offset: number, preserve = false, limit = PAGE_SIZE): Promise<boolean | Fallback> {
     busy.current = true
     const version = ++loadVersion.current
 
@@ -112,13 +128,21 @@ export default function Library() {
       if (active.current && version === loadVersion.current) setSlow(true)
     }, 4000)
     try {
-      const page = await withAccessToken((token) =>
-        getLibraryBooks(token, limit, offset, filterRef.current),
-      )
+      const requestFilter = filterRef.current
+      const page = await withAccessToken(async (token) => {
+        const items: LibraryBookItem[] = []
+        while (items.length < limit) {
+          const size = Math.min(MAX_LIMIT, limit - items.length)
+          const chunk = await getLibraryBooks(token, size, offset + items.length, requestFilter)
+          if (!active.current || version !== loadVersion.current) return items
+          items.push(...chunk)
+          if (chunk.length < size) break
+        }
+        return items
+      })
       if (!active.current || version !== loadVersion.current) return false
       setBooks((current) => (offset === 0 ? page : [...current, ...page]))
-      // 재조회 한도로 잘라낸 책이 있으면 끝까지 읽었던 서재도 더 보기로 이어 받는다.
-      setHasMore((previous) => page.length === limit && (limit === PAGE_SIZE || previous || truncated))
+      setHasMore((previous) => page.length === limit && (limit === PAGE_SIZE || previous))
       setPhase('ready')
       return true
     } catch (loadError) {
@@ -196,11 +220,21 @@ export default function Library() {
   }
 
   function loadMore() {
-    if (busy.current || locked || dragRef.current) return
+    if (!hasMore || busy.current || locked || dragRef.current || shelfBusy) return
     setError(null)
     setLoadingMore(true)
     void load(books.length)
   }
+
+  // 페이지가 바뀔 때 관찰을 다시 시작해 화면이 덜 찼으면 다음 페이지도 이어 받는다.
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined' || !listEnd.current || phase !== 'ready' || !hasMore || error || locked || dragging || shelfBusy) return
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMore()
+    }, { rootMargin: '240px' })
+    observer.observe(listEnd.current)
+    return () => observer.disconnect()
+  })
 
   useEffect(() => {
     active.current = true
@@ -252,8 +286,7 @@ export default function Library() {
     setNeedsRefresh(true)
     setError(null)
     // 더 보기로 불러온 범위까지 다시 읽어 옮긴 책이 화면에서 사라지지 않게 한다.
-    // ponytail: 100개(API 최대) 넘게 불러온 뒤 옮기면 100개까지만 다시 읽고 나머지는 더 보기로 이어 받는다.
-    if (await load(0, true, Math.min(Math.max(count, PAGE_SIZE), MAX_LIMIT), count > MAX_LIMIT)) {
+    if (await load(0, true, Math.max(count, PAGE_SIZE))) {
       if (!active.current) return
       setNeedsRefresh(false)
       setNotice(message)
@@ -348,7 +381,7 @@ export default function Library() {
             apply(makeFilter({ ...filter, status: (event.target.value || undefined) as ReadingStatus | undefined }))
           }}>
           <option value="">전체</option>
-          {readingStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
+          {readingStatuses.filter((status) => status !== 'paused' && status !== 'abandoned').map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
         </select>
         {shelves && shelves.length > 0 && <>
           <label htmlFor="library-shelf">책장</label>
@@ -361,7 +394,7 @@ export default function Library() {
             {shelves.map((shelf) => <option key={shelf.id} value={shelf.id}>{shelf.name} ({shelf.book_count}권)</option>)}
           </select>
         </>}
-        <button type="button" className="secondary compact" aria-expanded={managing} disabled={editing || saving || shelfBusy} onClick={() => setManaging(!managing)}>
+        <button type="button" className="secondary compact" aria-expanded={managing} disabled={editing || selecting || saving || shelfBusy} onClick={() => setManaging(!managing)}>
           {managing ? '책장 관리 닫기' : '책장 관리'}
         </button>
         {filter.q && (
@@ -385,16 +418,24 @@ export default function Library() {
       {phase === 'ready' && books.length > 0 && (
         <div className="library-order">
           <button ref={editButton} type="button" className="secondary compact" aria-pressed={editing}
-            disabled={filtered || saving || loadingMore || dragging} onClick={() => {
+            disabled={filtered || selecting || saving || loadingMore || dragging || shelfBusy} onClick={() => {
               setEditing(!editing)
               setNotice('')
             }}>
             {editing ? '편집 마치기' : '순서 편집'}
           </button>
           {filtered && <p>검색·상태·책장 필터를 해제하면 전체 서재 순서를 편집할 수 있어요.</p>}
-          {editing && <p id="order-help">손잡이를 끌거나 앞·뒤 버튼으로 옮겨요. 이동할 때마다 저장돼요. 불러온 책 사이에서만 옮길 수 있어요.</p>}
+          {editing && <p id="order-help">손잡이를 끌어 옮겨요. 키보드는 손잡이에 초점을 두고 방향키로 옮겨요. 이동할 때마다 저장돼요.</p>}
         </div>
       )}
+      {phase === 'ready' && (books.length > 0 || selecting) && <div className="library-selection">
+        <button type="button" className="secondary compact" aria-pressed={selecting} disabled={editing || saving || shelfBusy || needsRefresh}
+          onClick={() => { setSelecting(!selecting); setManaging(false); setSelectedIds([]) }}>
+          {selecting ? '선택 마치기' : '책 선택'}
+        </button>
+        {selecting && <LibraryShelfActions books={books.filter((book) => selectedIds.includes(book.id))} shelves={shelves}
+          currentShelfId={filter.shelf_id} blocked={loadingMore || saving || needsRefresh} onChanged={refreshShelfBooks} onBusyChange={setShelfBusy} />}
+      </div>}
       <p className="library-order-status" role="status">{saving ? (slow ? '서버를 깨우는 중입니다. 처음 접속하면 30초 정도 걸릴 수 있습니다.' : needsRefresh ? '최신 순서를 확인하는 중…' : '순서를 저장하는 중…') : notice}</p>
 
       {phase === 'loading' && (
@@ -433,8 +474,18 @@ export default function Library() {
         <ul ref={shelf} className={`shelf${editing ? ' shelf-editing' : ''}`} aria-busy={saving}>
           {books.map((book, index) => (
             <li key={book.id} data-book-index={index} className={dragTarget === index ? 'order-target' : undefined}>
+              {selecting && <label className="book-selection">
+                <input type="checkbox" aria-label={`${book.title} 선택`} checked={selectedIds.includes(book.id)} disabled={shelfBusy}
+                  onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, book.id] : current.filter((id) => id !== book.id))} />
+                선택
+              </label>}
               {/* 상세 경로에는 공통 책 id가 아닌 서재 id(user_book_id)를 쓴다 */}
-              <Link to={`/books/${book.id}`} className="book" draggable={false}>
+              <Link to={`/books/${book.id}`} className="book" draggable={false} tabIndex={selecting ? -1 : undefined}
+                onClick={(event) => {
+                  if (!selecting) return
+                  event.preventDefault()
+                  if (!shelfBusy) setSelectedIds((current) => current.includes(book.id) ? current.filter((id) => id !== book.id) : [...current, book.id])
+                }}>
               {book.thumbnail_url ? (
                 <img
                   className="cover"
@@ -451,7 +502,7 @@ export default function Library() {
                   {book.title.slice(0, 1)}
                 </div>
               )}
-              <p className="book-title">{book.title}</p>
+              <p className="book-title" title={book.title}>{book.title.replace(/\s*\((?!\s*\d+\s*\))[^()]*\)\s*$/, '').trim() || book.title}</p>
               {book.authors.length > 0 && (
                 <p className="book-authors">{book.authors.join(', ')}</p>
               )}
@@ -464,6 +515,16 @@ export default function Library() {
                   <button type="button" className="secondary order-handle" aria-label={`${book.title} 이동 손잡이`}
                     aria-describedby="order-help" disabled={locked}
                     data-user-book-id={book.id}
+                    onKeyDown={(event) => {
+                      if (locked || dragging) return
+                      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        void move(index, index - 1)
+                      } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                        event.preventDefault()
+                        void move(index, index + 1)
+                      }
+                    }}
                     onPointerDown={(event) => {
                       if (locked || busy.current || !event.isPrimary || event.button !== 0) return
                       event.currentTarget.setPointerCapture(event.pointerId)
@@ -481,10 +542,6 @@ export default function Library() {
                     onPointerCancel={cancelDrag} onLostPointerCapture={cancelDrag}>
                     <span aria-hidden="true">⠿</span>
                   </button>
-                  <div className="order-steps">
-                    <button type="button" className="secondary" aria-label={`${book.title} 앞으로`} disabled={locked || dragging || index === 0} onClick={() => void move(index, index - 1)}>앞</button>
-                    <button type="button" className="secondary" aria-label={`${book.title} 뒤로`} disabled={locked || dragging || index === books.length - 1} onClick={() => void move(index, index + 1)}>뒤</button>
-                  </div>
                 </div>
               )}
             </li>
@@ -500,16 +557,18 @@ export default function Library() {
         <button ref={refreshButton} type="button" className="secondary" onClick={() => void retryOrder()}>최신 순서 다시 확인</button>
       )}
 
-      {phase === 'ready' && hasMore && (
+      <div ref={listEnd} className="library-end" aria-hidden="true" />
+      {phase === 'ready' && hasMore && (error || typeof IntersectionObserver === 'undefined') && (
         <button
           type="button"
           className="secondary more"
           onClick={loadMore}
           disabled={locked || dragging}
         >
-          {loadingMore ? (slow ? '서버 응답을 기다리는 중…' : '불러오는 중…') : '더 보기'}
+          {loadingMore ? (slow ? '서버 응답을 기다리는 중…' : '불러오는 중…') : error ? '다시 불러오기' : '더 보기'}
         </button>
       )}
+      {loadingMore && typeof IntersectionObserver !== 'undefined' && <p className="result-note">{slow ? '서버 응답을 기다리는 중…' : '책을 더 불러오는 중…'}</p>}
     </section>
   )
 }
