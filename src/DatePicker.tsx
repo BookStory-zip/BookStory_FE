@@ -6,13 +6,17 @@ type Props = {
   label: string
   value: string
   max: string
+  // 고를 수 있는 가장 이른 날짜. 없으면 하한 없음.
+  min?: string
+  // 오늘 표시할 날짜. 없으면 max를 오늘로 본다.
+  today?: string
   onChange: (date: string) => void
   disabled?: boolean
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
-export default function DatePicker({ label, value, max, onChange, disabled = false }: Props) {
+export default function DatePicker({ label, value, max, min = '', today = max, onChange, disabled = false }: Props) {
   const id = useId()
   const [open, setOpen] = useState(false)
   const [month, setMonth] = useState(monthOf(value || max))
@@ -20,7 +24,7 @@ export default function DatePicker({ label, value, max, onChange, disabled = fal
   const gridRef = useRef<HTMLDivElement>(null)
 
   const days = calendarDays(month)
-  const focusTarget = value && monthOf(value) === month ? value : days.find((day) => monthOf(day) === month && day <= max) ?? `${month}-01`
+  const focusTarget = value && monthOf(value) === month ? value : days.find((day) => monthOf(day) === month && day >= min && day <= max) ?? `${month}-01`
 
   function toggle() {
     if (!open) setMonth(monthOf(value || max))
@@ -57,7 +61,7 @@ export default function DatePicker({ label, value, max, onChange, disabled = fal
     if (step === undefined) return
     event.preventDefault()
     const next = addDays(current, step)
-    if (next > max) return
+    if (next > max || next < min) return
     setMonth(monthOf(next))
     requestAnimationFrame(() => {
       gridRef.current?.querySelector<HTMLButtonElement>(`[data-date="${next}"]`)?.focus()
@@ -91,7 +95,7 @@ export default function DatePicker({ label, value, max, onChange, disabled = fal
           onKeyDown={handleKey}
         >
           <div className="calendar-head">
-            <button type="button" className="calendar-nav" aria-label="이전 달" onClick={() => setMonth(addMonths(month, -1))}>
+            <button type="button" className="calendar-nav" aria-label="이전 달" onClick={() => setMonth(addMonths(month, -1))} disabled={month <= monthOf(min)}>
               ‹
             </button>
             <p aria-live="polite">{year}년 {monthNumber}월</p>
@@ -116,11 +120,11 @@ export default function DatePicker({ label, value, max, onChange, disabled = fal
                   key={day}
                   type="button"
                   data-date={day}
-                  className={`calendar-day${outside ? ' is-outside' : ''}${day === max ? ' is-today' : ''}`}
+                  className={`calendar-day${outside ? ' is-outside' : ''}${day === today ? ' is-today' : ''}`}
                   aria-label={spoken(day)}
                   aria-pressed={day === value}
                   tabIndex={day === focusTarget ? 0 : -1}
-                  disabled={day > max}
+                  disabled={day > max || day < min}
                   onClick={() => pick(day)}
                 >
                   {Number(day.slice(8))}

@@ -302,6 +302,8 @@ export type LibraryBookDetail = LibraryBookItem & {
   allowed_statuses: ReadingStatus[]
   // 이 책이 속한 책장(책장 순서). 서재 목록 항목에는 없다.
   shelves: { id: string; name: string }[]
+  // 가져온 완독 책의 과거 읽은 날을 남길 수 있는 KST 날짜(양 끝 포함). start null은 하한 없음, 대상이 아니면 null.
+  past_log_range: { start: string | null; end: string } | null
 }
 
 function isNullableString(value: unknown) {
@@ -336,8 +338,17 @@ function isLibraryBookDetail(value: unknown): value is LibraryBookDetail {
     item.allowed_statuses.every((status) => readingStatuses.includes(status as ReadingStatus)) &&
     Array.isArray(item.shelves) &&
     item.shelves.every((shelf: unknown) => typeof shelf === 'object' && shelf !== null &&
-      typeof (shelf as Record<string, unknown>).id === 'string' && typeof (shelf as Record<string, unknown>).name === 'string')
+      typeof (shelf as Record<string, unknown>).id === 'string' && typeof (shelf as Record<string, unknown>).name === 'string') &&
+    isPastLogRange(item.past_log_range)
   )
+}
+
+function isPastLogRange(value: unknown) {
+  if (value === null) return true
+  if (typeof value !== 'object') return false
+  const range = value as Record<string, unknown>
+  const isDate = (date: unknown) => typeof date === 'string' && DATE_PATTERN.test(date)
+  return (range.start === null || isDate(range.start)) && isDate(range.end)
 }
 
 const libraryBookPath = (userBookId: string) =>
@@ -502,6 +513,19 @@ export async function cancelReadingDate(
 ): Promise<void> {
   await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/${encodeURIComponent(readDate)}`, accessToken, {
     method: 'DELETE',
+  })
+}
+
+// 과거 읽은 날 기간(양 끝 포함)을 한 번에 체크한다. 전부 저장되거나 하나도 저장되지 않는 204.
+export async function checkReadingRange(
+  accessToken: string,
+  userBookId: string,
+  from: string,
+  to: string,
+): Promise<void> {
+  await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/range`, accessToken, {
+    method: 'POST',
+    body: { from, to },
   })
 }
 

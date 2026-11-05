@@ -34,7 +34,8 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `PATCH …/{id}/record` | 선택 `rating`(1~5)·`memo`(1만 자)·`stop_reason`(1천 자)·`is_review_public`(불리언, null 불가) | 바뀐 필드만 전송. 빈 값은 null(삭제), 별점 0은 보내지 않음. 공개 설정 생략은 현재 값 유지 |
 | `DELETE …/{id}` | 204. 연결된 독서 체크도 삭제 | 확인창 후 삭제 |
 | `PUT·DELETE …/{id}/reading-logs/today` | 체크는 읽는 중만, 취소는 상태 무관·기록 없어도 204. 날짜는 서버 KST | 오늘 체크 여부는 오늘 기록의 `user_book_id`로 판단 |
-| `PUT·DELETE …/{id}/reading-logs/{read_date}` | `YYYY-MM-DD`, 서버 KST 오늘 포함 최근 7일. PUT 200·DELETE 204. 운영 제공 | 달력 날짜별 체크·취소. 아래 계약 참고 |
+| `PUT·DELETE …/{id}/reading-logs/{read_date}` | `YYYY-MM-DD`, 서버 KST 오늘 포함 최근 7일. PUT 200·DELETE 204. 운영 제공 | 달력 날짜별 체크·취소. 상세의 과거 읽은 날도 `past_log_range` 안 날짜에 사용. 아래 계약 참고 |
+| `POST …/{id}/reading-logs/range` | `{from, to}` 양 끝 포함 최대 366일, 204 | 상세의 과거 읽은 날 기간 저장. 아래 계약 참고 |
 | `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩. 항목의 `completed_at`·`status`·`has_completed`는 현재 기록(체크 당시 아님) | 마지막 페이지까지 전부 조회. 체크한 날 표시에만 사용 |
 | `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
 | `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`·`reading_minutes`·`goals`) | 기록 화면 통계 탭에서만 요청. 아래 통계·독서 목표 참고 |
@@ -117,6 +118,16 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 - FE 계정 화면에서 전역 켜짐과 현재 기기 수신 상태를 구분합니다. 지원하지 않거나 권한이 차단된 기기에서도 계정 설정을 바꿀 수 있고, 권한 요청은 별도 버튼을 누를 때만 합니다. 기록 화면은 설정 화면으로 연결합니다.
 - 로그인·앱 복귀 시 설정이 true이고 권한이 granted일 때만 자동 구독합니다. 다른 계정·주인 불명 구독은 설정 조회 성공 여부와 관계없이 먼저 끊습니다. 설정·기기 변경은 순서대로 처리하고 계정 변경·이탈 뒤 늦은 쓰기를 막습니다. 권한 창은 이 대기열을 막지 않습니다.
 - 저장 결과 불명확·기기 등록 실패 시 재전송하지 않고 계정 상태를 재조회합니다. 재조회 실패는 꺼짐으로 표시하지 않고 재확인 버튼만 제공합니다.
+
+## 가져온 책의 과거 읽은 날 (BE 5차 main `e4aec03`, 2026-11-05)
+
+BE `docs/frontend-api.md`와 `app/reading_logs.py`·`schemas.py`를 대조했습니다. 운영 반영은 사용자 전달이며 FE의 운영 인증 API 쓰기는 확인하지 않았습니다.
+
+- 개인 상세 두 경로의 필수 `past_log_range`: 완독이고 완독일(KST)이 KST 오늘 - 7일 이하인 책만 `{start: "YYYY-MM-DD" | null, end: "YYYY-MM-DD"}`(양 끝 포함, start null은 하한 없음, end는 완독일), 아니면 null입니다. FE는 null이면 영역을 숨기고, 상태·날짜로 범위를 추정하지 않습니다.
+- 하루씩은 기존 `PUT·DELETE …/reading-logs/{read_date}`를 범위 안 날짜에도 씁니다. 범위 밖 오래된 날짜는 PUT 422 `date_too_old`·409 `reading_check_not_allowed`, 취소는 422 `date_too_old`입니다. 범위가 바뀌어도 기존 기록은 지우지 않고 범위 밖 기록은 고칠 수 없습니다.
+- `POST …/reading-logs/range {from, to}` → 204. 양 끝 포함 최대 366일, 이미 체크된 날 유지, 전부 저장 또는 전부 실패. 역전·366일 초과 422 `date_range`, 미래 422 `future_date`, 대상 아님 409 `reading_check_not_allowed`, 범위 밖 409 `date_order`, 없는·타인 404입니다.
+- FE(`PastReadingDays`): 상세에 월 달력(완독일 달부터, 범위 안만 버튼 활성, 실제 로그 `read_date`·`user_book_id`로 체크 표시)과 기간 입력을 둡니다. 기간은 FE에서 빈 값·역전·범위·366일을 먼저 막고, 일수와 취소 제한을 확인창으로 안내한 뒤 보냅니다.
+- 쓰기 결과와 관계없이 다시 보내지 않습니다. 성공·404·409·`date_too_old`·결과 불명확 시 그 달 기록과 상세(`past_log_range`·`last_read_date`)를 재조회하고, 재조회 실패 시 재확인 전 쓰기를 막습니다. 실패 시 기간 입력은 보존합니다. 달력·통계는 진입할 때 새로 조회합니다.
 
 ## 지난 날짜 독서 체크 (운영 반영)
 

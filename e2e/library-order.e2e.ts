@@ -281,7 +281,7 @@ test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변�
       const book = books.find((item) => item.id === detailMatch[1])!
       return json(route, {
         ...book, publisher: null, published_date: null, description: null, source_url: 'https://example.test', started_at: null,
-        last_read_at: null, last_read_date: null, completed_at: null, stopped_at: null, stop_reason: null, rating: null, memo: null,
+        last_read_at: null, last_read_date: null, past_log_range: null, completed_at: null, stopped_at: null, stop_reason: null, rating: null, memo: null,
         is_review_public: false, review_published_at: null, review_updated_at: null, has_completed: false, updated_at: '2026-11-02T00:00:00Z',
         allowed_statuses: ['want_to_read', 'reading', 'completed', 'paused', 'abandoned'],
         shelves: shelves.filter((shelf) => members.get(shelf.id)?.has(book.id)).map(({ id, name }) => ({ id, name })),
