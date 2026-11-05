@@ -49,6 +49,7 @@ export default function Library() {
   const [saving, setSaving] = useState(false)
   const [needsRefresh, setNeedsRefresh] = useState(false)
   const [notice, setNotice] = useState('')
+  const [orderError, setOrderError] = useState('')
   const [dragTarget, setDragTarget] = useState<number | null>(null)
   const dragRef = useRef<{ from: number; to: number; pointerId: number; x: number; y: number } | null>(null)
   const dragging = dragTarget !== null
@@ -129,20 +130,17 @@ export default function Library() {
     }, 4000)
     try {
       const requestFilter = filterRef.current
+      // API 최대치를 넘는 재조회는 구간을 나눠 동시에 받고, 짧은 구간 뒤는 버린다.
+      const sizes = Array.from({ length: Math.ceil(limit / MAX_LIMIT) }, (_, index) => Math.min(MAX_LIMIT, limit - index * MAX_LIMIT))
       const page = await withAccessToken(async (token) => {
-        const items: LibraryBookItem[] = []
-        while (items.length < limit) {
-          const size = Math.min(MAX_LIMIT, limit - items.length)
-          const chunk = await getLibraryBooks(token, size, offset + items.length, requestFilter)
-          if (!active.current || version !== loadVersion.current) return items
-          items.push(...chunk)
-          if (chunk.length < size) break
-        }
-        return items
+        const chunks = await Promise.all(sizes.map((size, index) => getLibraryBooks(token, size, offset + index * MAX_LIMIT, requestFilter)))
+        const short = chunks.findIndex((chunk, index) => chunk.length < sizes[index])
+        return (short === -1 ? chunks : chunks.slice(0, short + 1)).flat()
       })
       if (!active.current || version !== loadVersion.current) return false
       setBooks((current) => (offset === 0 ? page : [...current, ...page]))
       setHasMore((previous) => page.length === limit && (limit === PAGE_SIZE || previous))
+      setError(null)
       setPhase('ready')
       return true
     } catch (loadError) {
@@ -176,6 +174,7 @@ export default function Library() {
     setBooks([])
     setHasMore(false)
     setError(null)
+    setOrderError('')
     setNotice('')
     setSearchError('')
     setSlow(false)
@@ -227,6 +226,8 @@ export default function Library() {
   }
 
   // 페이지가 바뀔 때 관찰을 다시 시작해 화면이 덜 찼으면 다음 페이지도 이어 받는다.
+  // loadMore가 읽는 값이 바뀔 때만 다시 만든다. 그 밖의 값은 ref라 최신이다.
+  const booksLength = books.length
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined' || !listEnd.current || phase !== 'ready' || !hasMore || error || locked || dragging || shelfBusy) return
     const observer = new IntersectionObserver((entries) => {
@@ -234,7 +235,8 @@ export default function Library() {
     }, { rootMargin: '240px' })
     observer.observe(listEnd.current)
     return () => observer.disconnect()
-  })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, hasMore, error, locked, dragging, shelfBusy, booksLength])
 
   useEffect(() => {
     active.current = true
@@ -304,7 +306,7 @@ export default function Library() {
     focusAfterMove.current = moved.id
     setSaving(true)
     setNotice('')
-    setError(null)
+    setOrderError('')
     const slowTimer = setTimeout(() => {
       if (active.current) setSlow(true)
     }, 4000)
@@ -318,7 +320,8 @@ export default function Library() {
       if (isUnclearWrite(moveError) || (moveError instanceof ApiError && moveError.status === 404)) {
         await refreshOrder('최신 서재 순서를 불러왔습니다. 이동 결과를 확인해주세요.')
       } else {
-        setError(commonErrorMessage(moveError, '순서를 바꾸지 못했습니다'))
+        // 목록 조회 오류와 나눠 이어 받기·다시 불러오기를 막지 않는다.
+        setOrderError(commonErrorMessage(moveError, '순서를 바꾸지 못했습니다'))
       }
     } finally {
       clearTimeout(slowTimer)
@@ -421,11 +424,12 @@ export default function Library() {
             disabled={filtered || selecting || saving || loadingMore || dragging || shelfBusy} onClick={() => {
               setEditing(!editing)
               setNotice('')
+              setOrderError('')
             }}>
             {editing ? '편집 마치기' : '순서 편집'}
           </button>
           {filtered && <p>검색·상태·책장 필터를 해제하면 전체 서재 순서를 편집할 수 있어요.</p>}
-          {editing && <p id="order-help">손잡이를 끌어 옮겨요. 키보드는 손잡이에 초점을 두고 방향키로 옮겨요. 이동할 때마다 저장돼요.</p>}
+          {editing && <p id="order-help">손잡이를 끌거나 앞·뒤 버튼으로 옮겨요. 키보드는 손잡이에 초점을 두고 방향키로도 옮길 수 있어요. 이동할 때마다 저장돼요.</p>}
         </div>
       )}
       {phase === 'ready' && (books.length > 0 || selecting) && <div className="library-selection">
@@ -542,6 +546,11 @@ export default function Library() {
                     onPointerCancel={cancelDrag} onLostPointerCapture={cancelDrag}>
                     <span aria-hidden="true">⠿</span>
                   </button>
+                  {/* 끌기·방향키를 쓰기 어려운 모바일 스크린리더도 옮길 수 있게 둔다. */}
+                  <div className="order-steps">
+                    <button type="button" className="secondary" aria-label={`${book.title} 앞으로`} disabled={locked || dragging || index === 0} onClick={() => void move(index, index - 1)}>앞</button>
+                    <button type="button" className="secondary" aria-label={`${book.title} 뒤로`} disabled={locked || dragging || index === books.length - 1} onClick={() => void move(index, index + 1)}>뒤</button>
+                  </div>
                 </div>
               )}
             </li>
@@ -549,8 +558,8 @@ export default function Library() {
         </ul>
       )}
 
-      {phase === 'ready' && error && (
-        <p className="library-note" role="alert">{error}</p>
+      {phase === 'ready' && (error || orderError) && (
+        <p className="library-note" role="alert">{error ?? orderError}</p>
       )}
 
       {needsRefresh && !saving && (

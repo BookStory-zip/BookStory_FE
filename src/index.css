@@ -1791,6 +1791,12 @@ button.compact {
   font-size: 0.875rem;
 }
 
+.order-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+}
+
 .book-order .order-handle {
   touch-action: none;
   cursor: grab;

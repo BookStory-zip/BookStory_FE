@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { ApiError, getLibraryBook, getLibraryBooks } from './lib/api'
+import { ApiError, getAllLibraryBooks, getLibraryBook } from './lib/api'
 import type { LibraryBookItem, ReadingStatus } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { commonErrorMessage } from './lib/errors'
@@ -11,6 +11,17 @@ type SelectedBook = Pick<LibraryBookItem, 'id' | 'title' | 'status'>
 
 function timerBookId(userId: string) {
   try { return readTimer(userId)?.userBookId ?? null } catch { return null }
+}
+
+// 측정 중인 책은 지워졌어도 저장·버리기를 위해 남기고, 주소로 받은 책은 조회에 실패하면 선택하지 않는다.
+async function restoreBook(token: string, draftId: string | null, requestedId: string | null): Promise<SelectedBook | null> {
+  const id = draftId ?? requestedId
+  if (!id) return null
+  try { return await getLibraryBook(token, id) } catch (failure) {
+    if (!draftId) return null
+    if (!(failure instanceof ApiError) || failure.status !== 404) throw failure
+    return { id, title: '서재에서 찾을 수 없는 책', status: 'want_to_read' }
+  }
 }
 
 export default function TimerPage({ userId }: { userId: string }) {
@@ -30,28 +41,14 @@ export default function TimerPage({ userId }: { userId: string }) {
   const load = useCallback(async () => {
     const run = ++version.current
     try {
-      const result = await withAccessToken(async (token) => {
-        const items: LibraryBookItem[] = []
-        for (let offset = 0; ; offset += 100) {
-          const page = await getLibraryBooks(token, 100, offset, mode === 'reading' ? { status: 'reading' } : {})
-          if (!active.current || run !== version.current) return null
-          items.push(...(mode === 'reading' ? page.filter((book) => book.status === 'reading') : page))
-          if (page.length < 100) break
-        }
-        const restoreId = timerBookId(userId) ?? requestedBookId
-        let restored: SelectedBook | null = null
-        if (restoreId) {
-          try { restored = await getLibraryBook(token, restoreId) } catch (failure) {
-            if (!(failure instanceof ApiError) || failure.status !== 404) throw failure
-            restored = { id: restoreId, title: '서재에서 찾을 수 없는 책', status: 'want_to_read' }
-          }
-        }
-        return { items, restored }
-      })
-      if (!result || !active.current || run !== version.current) return
-      setBooks(result.items)
-      selectedId.current = result.restored?.id ?? null
-      setSelected(result.restored)
+      const [items, restored] = await withAccessToken((token) => Promise.all([
+        getAllLibraryBooks(token, mode === 'reading' ? { status: 'reading' } : {}),
+        restoreBook(token, timerBookId(userId), requestedBookId),
+      ]))
+      if (!active.current || run !== version.current) return
+      setBooks(items)
+      selectedId.current = restored?.id ?? null
+      setSelected(restored)
       setError('')
     } catch (failure) {
       if (active.current && run === version.current) setError(commonErrorMessage(failure, '책 목록을 불러오지 못했습니다'))
@@ -62,6 +59,8 @@ export default function TimerPage({ userId }: { userId: string }) {
 
   useEffect(() => {
     active.current = true
+    // load의 상태 변경은 모두 첫 await 뒤라 동기 setState가 아니다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
     const unsubscribe = subscribeTimer(() => {
       const id = timerBookId(userId)

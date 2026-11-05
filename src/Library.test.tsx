@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
 import type { LibraryBookItem } from './lib/api'
 import Library, { PAGE_SIZE } from './Library'
+import LibraryShelfActions from './LibraryShelfActions'
 
 const mocks = vi.hoisted(() => ({
   getLibraryBooks: vi.fn(),
@@ -277,6 +278,32 @@ test('invalid_position은 한국어로 안내하고 기존 목록을 보존한�
   expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(1)
 })
 
+test('이동 실패는 목록 이어 받기를 막지 않고 다시 불러오기로 바꾸지 않는다', async () => {
+  mocks.getLibraryBooks.mockResolvedValueOnce(makeBooks(PAGE_SIZE, 'A')).mockResolvedValueOnce(makeBooks(1, 'B'))
+  mocks.moveLibraryBook.mockRejectedValueOnce(new ApiError(422, 'English detail', 'invalid_position'))
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 1 이동 손잡이' }), { key: 'ArrowLeft' })
+  await screen.findByRole('alert')
+  fireEvent.click(screen.getByRole('button', { name: '편집 마치기' }))
+  expect(screen.queryByRole('alert')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  await screen.findByText('B 책 0')
+})
+
+test('앞·뒤 버튼으로도 옮길 수 있고 양 끝에서는 막는다', async () => {
+  const books = makeBooks(3, 'A')
+  mocks.getLibraryBooks.mockResolvedValueOnce(books).mockResolvedValueOnce([books[1], books[0], books[2]])
+  mocks.moveLibraryBook.mockResolvedValue(undefined)
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '순서 편집' }))
+  expect(screen.getByRole('button', { name: 'A 책 0 앞으로' })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('button', { name: 'A 책 2 뒤로' })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
+  await waitFor(() => expect(mocks.moveLibraryBook).toHaveBeenCalledWith('test-token', books[1].id, null))
+  await screen.findByText('순서를 저장했습니다.')
+})
+
 test('404는 삭제된 책을 추정하지 않고 최신 목록으로 다시 확인한다', async () => {
   const books = makeBooks(2, 'A')
   mocks.getLibraryBooks.mockResolvedValueOnce(books).mockResolvedValueOnce([books[0]])
@@ -484,6 +511,35 @@ test('선택한 책을 책장에 담고 일부 실패하면 성공을 유지하�
   expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('checked', false)
   expect(screen.getByRole('checkbox', { name: 'A 책 2 선택' })).toHaveProperty('checked', true)
   expect(mocks.getShelves).toHaveBeenCalledTimes(2)
+})
+
+test('책장 변경 뒤 재조회가 실패했다가 다시 확인에 성공하면 이전 오류와 잠금을 지운다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 0)])
+  mocks.getLibraryBooks.mockResolvedValueOnce(makeBooks(PAGE_SIZE, 'A')).mockRejectedValueOnce(new ApiError(503))
+    .mockResolvedValueOnce(makeBooks(PAGE_SIZE, 'A')).mockResolvedValueOnce(makeBooks(1, 'B'))
+  mocks.addBookToShelf.mockResolvedValue(undefined)
+  renderInRouter(<Library />)
+  fireEvent.click(await screen.findByRole('button', { name: '책 선택' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  fireEvent.click(await screen.findByRole('button', { name: '책장 정보 다시 확인' }))
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  expect(screen.queryByRole('button', { name: '다시 불러오기' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  await screen.findByText('B 책 0')
+})
+
+test('담을 책장이 목록에서 사라지면 선택을 비우고 담기를 막는다', () => {
+  const props = { books: makeBooks(1, 'A'), blocked: false, onChanged: vi.fn(), onBusyChange: vi.fn() }
+  const view = render(<LibraryShelfActions {...props} shelves={[shelfItem('s1', 'SF', 0)]} />)
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  expect(screen.getByRole('button', { name: '책장에 담기' })).toHaveProperty('disabled', false)
+  view.rerender(<LibraryShelfActions {...props} shelves={[shelfItem('s2', '에세이', 0)]} />)
+  expect(screen.getByLabelText('담을 책장')).toHaveProperty('value', '')
+  expect(screen.getByRole('button', { name: '책장에 담기' })).toHaveProperty('disabled', true)
+  view.unmount()
+  expect(props.onBusyChange).toHaveBeenLastCalledWith(false)
 })
 
 test('보고 있는 책장에서 여러 권을 빼고 불명확한 결과는 실패로 단정하거나 자동 재전송하지 않는다', async () => {

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
 import ReadingDayEditor from './ReadingDayEditor'
 
-const mocks = vi.hoisted(() => ({ getLibraryBooks: vi.fn(), getReadingLogs: vi.fn(), checkReadingDate: vi.fn(), cancelReadingDate: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getAllLibraryBooks: vi.fn(), getReadingLogs: vi.fn(), checkReadingDate: vi.fn(), cancelReadingDate: vi.fn() }))
 vi.mock('./lib/api', async (original) => ({ ...await original<typeof import('./lib/api')>(), ...mocks }))
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
 vi.mock('./lib/auth', async (original) => ({ ...await original<typeof import('./lib/auth')>(), withAccessToken: (request: (token: string) => Promise<unknown>) => request('token') }))
@@ -19,7 +19,7 @@ function setup(date = '2026-10-27', today = '2026-10-28') {
 }
 beforeEach(() => {
   vi.resetAllMocks()
-  mocks.getLibraryBooks.mockResolvedValue([book])
+  mocks.getAllLibraryBooks.mockResolvedValue([book])
   mocks.getReadingLogs.mockResolvedValue([])
   changed.mockResolvedValue(true)
 })
@@ -35,7 +35,7 @@ test('날짜별로 개인 id를 체크하고 재조회가 끝나야 취소할 �
 })
 
 test('완독한 책의 기존 체크도 취소할 수 있고 완독만 한 책을 체크로 취급하지 않는다', async () => {
-  mocks.getLibraryBooks.mockResolvedValue([{ ...book, status: 'completed' }])
+  mocks.getAllLibraryBooks.mockResolvedValue([{ ...book, status: 'completed' }])
   mocks.getReadingLogs.mockResolvedValue([log])
   setup()
   fireEvent.click(await screen.findByRole('button', { name: '채식주의자 체크 취소' }))
@@ -45,12 +45,12 @@ test('완독한 책의 기존 체크도 취소할 수 있고 완독만 한 책�
 })
 
 // 상태 필터를 모르는 서버가 전체를 돌려줘도 읽는 중인 책만 체크 대상으로 남긴다.
-test('읽는 중 필터로 100권 뒤까지 가져오고, 필터를 무시한 응답에서도 읽는 중만 체크 대상으로 둔다', async () => {
-  mocks.getLibraryBooks.mockResolvedValueOnce(Array.from({ length: 100 }, (_, i) => ({ ...book, id: `done-${i}`, status: 'completed' }))).mockResolvedValueOnce([book])
+test('읽는 중 필터로 전체를 가져오고, 필터를 무시한 응답에서도 읽는 중만 체크 대상으로 둔다', async () => {
+  mocks.getAllLibraryBooks.mockResolvedValueOnce([...Array.from({ length: 100 }, (_, i) => ({ ...book, id: `done-${i}`, status: 'completed' })), book])
   setup()
   await screen.findByRole('button', { name: '채식주의자 체크' })
   expect(screen.getAllByRole('button', { name: /체크$/ })).toHaveLength(1)
-  expect(mocks.getLibraryBooks.mock.calls.map((call) => call.slice(1))).toEqual([[100, 0, { status: 'reading' }], [100, 100, { status: 'reading' }]])
+  expect(mocks.getAllLibraryBooks).toHaveBeenCalledWith('token', { status: 'reading' })
 })
 
 test.each(['2026-10-22', '2026-10-28'])('오늘 포함 최근 7일 경계 %s는 편집할 수 있다', async (date) => {
@@ -61,7 +61,7 @@ test.each(['2026-10-22', '2026-10-28'])('오늘 포함 최근 7일 경계 %s는 
 test.each(['2026-10-21', '2026-10-29'])('범위 밖 %s는 조회와 쓰기를 하지 않는다', (date) => {
   setup(date)
   expect(screen.getByText('오늘을 포함한 최근 7일만 체크하거나 취소할 수 있어요.')).toBeTruthy()
-  expect(mocks.getLibraryBooks).not.toHaveBeenCalled()
+  expect(mocks.getAllLibraryBooks).not.toHaveBeenCalled()
 })
 
 test('시작일 이전 오류는 체크 문구로 안내하고 상태를 다시 조회한다', async () => {
@@ -103,7 +103,7 @@ test('떠난 날짜의 늦은 조회 응답을 표시하지 않는다', async ()
 })
 
 test('취소 후 행이 사라져도 결과 안내에 키보드 포커스가 남는다', async () => {
-  mocks.getLibraryBooks.mockResolvedValue([])
+  mocks.getAllLibraryBooks.mockResolvedValue([])
   mocks.getReadingLogs.mockResolvedValueOnce([log]).mockResolvedValueOnce([])
   setup()
   const cancel = await screen.findByRole('button', { name: '채식주의자 체크 취소' })

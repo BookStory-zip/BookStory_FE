@@ -21,11 +21,16 @@ export default function LibraryShelfActions({ books, shelves, currentShelfId, bl
   const active = useRef(true)
   const busy = useRef(false)
   const locked = pending || needsRefresh || blocked
+  // 담을 책장이 삭제·재조회로 목록에서 빠지면 선택을 비운다.
+  const targetId = shelves?.some((shelf) => shelf.id === target) ? target : ''
 
   useEffect(() => {
     active.current = true
-    return () => { active.current = false }
-  }, [])
+    return () => {
+      active.current = false
+      onBusyChange(false)
+    }
+  }, [onBusyChange])
 
   async function refresh(successfulIds: string[]) {
     let fresh = false
@@ -36,7 +41,7 @@ export default function LibraryShelfActions({ books, shelves, currentShelfId, bl
   }
 
   async function change(remove: boolean) {
-    const shelfId = remove ? currentShelfId : target
+    const shelfId = remove ? currentShelfId : targetId
     if (busy.current || locked || !shelfId || books.length === 0) return
     busy.current = true
     setPending(true)
@@ -72,11 +77,11 @@ export default function LibraryShelfActions({ books, shelves, currentShelfId, bl
     {shelves?.length === 0 && <p className="result-note">책장 관리에서 먼저 책장을 만들어 주세요.</p>}
     <div className="shelf-action-controls">
       <label htmlFor="shelf-destination">담을 책장</label>
-      <select id="shelf-destination" value={target} disabled={locked || !shelves?.length} onChange={(event) => setTarget(event.target.value)}>
+      <select id="shelf-destination" value={targetId} disabled={locked || !shelves?.length} onChange={(event) => setTarget(event.target.value)}>
         <option value="">책장 선택</option>
         {shelves?.map((shelf) => <option key={shelf.id} value={shelf.id}>{shelf.name}</option>)}
       </select>
-      <button type="button" disabled={locked || !target || !books.length} onClick={() => void change(false)}>{pending ? '처리 중…' : '책장에 담기'}</button>
+      <button type="button" disabled={locked || !targetId || !books.length} onClick={() => void change(false)}>{pending ? '처리 중…' : '책장에 담기'}</button>
       {currentShelfId && <button type="button" className="secondary" disabled={locked || !books.length} onClick={() => void change(true)}>책장에서 빼기</button>}
     </div>
     <div aria-live="polite">{results.map((message, index) => <p key={index} className="result-note">{message}</p>)}</div>

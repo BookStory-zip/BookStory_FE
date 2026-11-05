@@ -6,6 +6,10 @@ import type { SearchBook } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { ADD_RATE_LIMITED, codeMessage, commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
 
+// ISBN13이 없는 책은 담을 수 없어 결과에서 뺀다.
+type AddableBook = SearchBook & { isbn13: string }
+const isAddable = (book: SearchBook): book is AddableBook => book.isbn13 !== null
+
 type SaveState = { phase: 'saving' | 'saved' | 'error'; message: string }
 
 // 429는 Retry-After(없으면 60초) 동안 검색·더 보기를 막는다. 자동으로 다시 보내지 않는다.
@@ -51,7 +55,7 @@ function saveErrorMessage(error: unknown) {
 }
 
 export default function BookSearch() {
-  const [results, setResults] = useState<SearchBook[] | null>(null)
+  const [results, setResults] = useState<AddableBook[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saves, setSaves] = useState<Record<string, SaveState>>({})
@@ -103,7 +107,7 @@ export default function BookSearch() {
     try {
       const { books, isEnd } = await searchBooks(query.trim())
       if (version !== searchVersion.current) return
-      setResults(books.filter((book) => book.isbn13 !== null))
+      setResults(books.filter(isAddable))
       setPaging({ query: query.trim(), page: 1, isEnd })
     } catch (searchError) {
       if (version !== searchVersion.current) return
@@ -125,7 +129,7 @@ export default function BookSearch() {
     try {
       const { books, isEnd } = await searchBooks(paging.query, nextPage)
       if (version !== searchVersion.current) return
-      setResults((current) => [...(current ?? []), ...books.filter((book) => book.isbn13 !== null)])
+      setResults((current) => [...(current ?? []), ...books.filter(isAddable)])
       setPaging({ query: paging.query, page: nextPage, isEnd })
     } catch (moreLoadError) {
       if (version !== searchVersion.current) return
@@ -197,9 +201,9 @@ export default function BookSearch() {
       {results !== null && results.length > 0 && (
         <ul className="results" aria-busy={searching}>
           {results.map((book, index) => {
-            const save = book.isbn13 ? saves[book.isbn13] : undefined
+            const save = saves[book.isbn13]
             return (
-              <li key={`${book.isbn13 ?? 'no-isbn'}-${index}`} className="result">
+              <li key={`${book.isbn13}-${index}`} className="result">
                 {book.thumbnail ? (
                   <img
                     className="result-cover"
@@ -224,7 +228,7 @@ export default function BookSearch() {
                     <button
                       type="button"
                       className="secondary compact"
-                      onClick={() => void handleAdd(book.isbn13!)}
+                      onClick={() => void handleAdd(book.isbn13)}
                       disabled={save?.phase === 'saving' || save?.phase === 'saved'}
                     >
                       {save?.phase === 'saving'
