@@ -95,6 +95,17 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 - 서재 카드 제목 끝의 괄호 하나만 표시에서 제거하되 숫자·(상)(중)(하)·(N권)·(제N권)·(Vol. N) 같은 권 표시는 남기고 원문을 보존합니다. 중단·포기는 서재 필터 선택지에서만 숨기며 API 상태 값은 유지합니다.
 - 별도 BE 계약인 서재 정렬·도서 검색 기준/정렬·계정 알림·과거 읽은 날은 이 FE 작업에 연결하지 않습니다. BE의 기능별 배포 및 최종 계약 확인 후 후속 작업으로 연결합니다.
 
+## 서재 정렬 (2026-11-05 수용 계약, FE 구현·운영 연동 확인 대기)
+
+- `GET /library/books`의 선택 `sort`: `custom`(기본)은 `position ASC, created_at DESC, id DESC`, `created`는 `created_at DESC, id DESC`, `started`는 `started_at DESC NULLS LAST, created_at DESC, id DESC`입니다. 조회만 바꾸고 저장된 position은 유지합니다. 기존 응답·limit/offset·검색/상태/책장 조합은 유지하며 잘못된 값은 422 `validation_error`입니다.
+- FE는 정렬 변경 시 offset 0부터 다시 받고, 모든 추가 페이지·필터 변경·책장 작업 후 재조회에 선택 정렬을 유지합니다. 위치 편집은 custom이면서 검색·상태·책장 필터가 없을 때만 허용합니다. 정렬 422는 이전 조건으로 복귀하고 검색어 대신 정렬 선택에 안내합니다.
+- FE 구현은 전달받은 확정 계약 기준입니다. 사용자 확인(2026-11-05): 정렬 API는 BE develop에만 병합됐고 main·운영에는 아직 없습니다. 운영 OpenAPI 접근도 실패했으며 실제 BE 연동·운영 배포 완료로 해석하지 않습니다.
+
+### 후속 계정 알림 계약 변경 (사용자 전달, 2026-11-05)
+
+- `PUT /me/push-subscriptions`는 계정의 `enabled`를 true로 켭니다. `DELETE /me/push-subscriptions`는 계정 설정을 바꾸지 않습니다. 구독 등록도 설정을 바꾸지 않는다는 이전 합의를 대체합니다.
+- 계정 알림 FE 연동 시 서버 설정이 enabled=true일 때만 자동 구독합니다. 계정 알림 끄기 후에는 자동 구독 PUT으로 다시 켜지지 않도록 동기화 중인 요청도 확인합니다. 현재 기기 알림 구현은 이번 서재 정렬 작업에서 변경하지 않습니다.
+
 ## 지난 날짜 독서 체크 (운영 반영)
 
 BE `feat/past-reading-check` `26903f5` 제공 안내와 로컬 코드·`docs/frontend-api.md`를 대조했습니다(2026-11-03). 운영 반영과 실제 연동 확인 범위는 plan.md에 별도로 기록합니다. 이 날짜 API 변경에는 스키마 변경·DB migration이 없습니다.

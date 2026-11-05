@@ -152,8 +152,9 @@ function isLibraryBookItem(value: unknown): value is LibraryBookItem {
   )
 }
 
-// 검색·상태 조건은 서버가 함께 적용한다. 정렬은 저장된 서재 순서이고 전체 개수는 없다.
-export type LibraryFilter = { q?: string; field?: 'title' | 'author'; status?: ReadingStatus; shelf_id?: string }
+// 검색·상태·정렬은 서버가 적용한다. 기본값은 저장된 서재 순서이고 전체 개수는 없다.
+export type LibrarySort = 'custom' | 'created' | 'started'
+export type LibraryFilter = { q?: string; field?: 'title' | 'author'; status?: ReadingStatus; shelf_id?: string; sort?: LibrarySort }
 
 export async function getLibraryBooks(
   accessToken: string,
@@ -175,6 +176,7 @@ export async function getLibraryBooks(
   if (filter.status) query.set('status', filter.status)
   // 타인·없는 책장은 404다.
   if (filter.shelf_id) query.set('shelf_id', filter.shelf_id)
+  if (filter.sort) query.set('sort', filter.sort)
   const data = await apiRequest(`/library/books?${query}`, accessToken)
 
   if (!Array.isArray(data) || !data.every(isLibraryBookItem)) {

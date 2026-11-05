@@ -197,6 +197,19 @@ test('서재 전체 조회는 100권씩 이어 받고 짧은 페이지에서 멈
   ])
 })
 
+test('서재 정렬은 검색·상태·책장 조건과 함께 보내며 기본 조회는 기존 주소를 유지한다', async () => {
+  const fetchMock = vi.fn().mockImplementation(async () => Response.json([]))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await getLibraryBooks('test-access-token', 20, 40, { q: '책', field: 'author', status: 'reading', shelf_id: 's1', sort: 'started' })
+  const url = new URL(fetchMock.mock.calls[0][0])
+  expect(Object.fromEntries(url.searchParams)).toEqual({ limit: '20', offset: '40', q: '책', field: 'author', status: 'reading', shelf_id: 's1', sort: 'started' })
+  await getLibraryBooks('test-access-token', 20, 0, { sort: 'created' })
+  expect(fetchMock.mock.calls[1][0]).toContain('sort=created')
+  await getLibraryBooks('test-access-token', 20, 0)
+  expect(fetchMock.mock.calls[2][0]).toBe('https://api.example.test/library/books?limit=20&offset=0')
+})
+
 test.each([{ total: 1 }, [{ id: 'x', title: '제목' }], [{ status: 'unknown' }]])(
   '서재 응답 형식이 다르면 거부한다: %j',
   async (body) => {
