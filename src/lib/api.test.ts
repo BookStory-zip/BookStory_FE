@@ -5,8 +5,10 @@ import {
   cancelReadingDate,
   checkReadingToday,
   checkReadingDate,
+  checkReadingRange,
   deleteLibraryBook,
   getAllLibraryBooks,
+  getLibraryBook,
   getLibraryBooks,
   getMe,
   getProfile,
@@ -54,6 +56,36 @@ test('지난 날짜 체크·취소는 개인 id와 날짜를 경로로 보내고
     ['https://api.example.test/library/books/own%2F1/reading-logs/2026-10-28', 'PUT', undefined],
     ['https://api.example.test/library/books/own%2F1/reading-logs/2026-10-28', 'DELETE', undefined],
   ])
+})
+
+test('과거 읽은 날 기간은 개인 id 경로에 from·to만 보내고 빈 204를 읽는다', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(checkReadingRange('token', 'own/1', '2025-01-01', '2025-12-31')).resolves.toBeUndefined()
+  expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    ['https://api.example.test/library/books/own%2F1/reading-logs/range', 'POST', '{"from":"2025-01-01","to":"2025-12-31"}'],
+  ])
+})
+
+const detailBody = {
+  id: 'own-1', book_id: 'common-1', isbn13: '9788936433598', title: '소년이 온다', authors: ['한강'], thumbnail_url: null,
+  status: 'completed', created_at: '2026-01-01T00:00:00Z', publisher: null, published_date: null, description: null,
+  source_url: 'https://example.test', started_at: null, last_read_at: null, last_read_date: null, completed_at: '2025-03-01T00:00:00Z',
+  stopped_at: null, stop_reason: null, rating: null, memo: null, is_review_public: false, review_published_at: null,
+  review_updated_at: null, has_completed: true, updated_at: '2026-01-01T00:00:00Z', allowed_statuses: ['reading'], shelves: [],
+}
+
+test.each([null, { start: null, end: '2025-03-01' }, { start: '2025-01-02', end: '2025-03-01' }])('상세의 past_log_range %j를 그대로 받는다', async (range) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ ...detailBody, past_log_range: range })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getLibraryBook('token', 'own-1')).resolves.toMatchObject({ past_log_range: range })
+})
+
+test.each([undefined, {}, { start: null }, { start: '2025/01/02', end: '2025-03-01' }, { start: null, end: null }])('past_log_range %j는 형식 오류로 처리한다', async (range) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ ...detailBody, past_log_range: range })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getLibraryBook('token', 'own-1')).rejects.toThrow('책 상세 응답 형식')
 })
 
 test('다른 날짜나 다른 개인 항목의 체크 응답을 성공으로 받아들이지 않는다', async () => {

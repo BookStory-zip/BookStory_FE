@@ -29,6 +29,7 @@ import DatePicker from './DatePicker'
 import { spokenDate } from './lib/dates'
 import { useKstToday } from './useKstToday'
 import ReadingNotes from './ReadingNotes'
+import PastReadingDays from './PastReadingDays'
 
 type Pending = 'status' | 'record' | 'delete' | 'check' | 'refresh' | null
 // conflict: 409. 화면이 오래된 상태라 서버 기준으로 다시 불러와야 한다.
@@ -76,6 +77,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [needsRefresh, setNeedsRefresh] = useState(false)
   const [notesBusy, setNotesBusy] = useState(false)
+  const [pastBusy, setPastBusy] = useState(false)
   const [form, setForm] = useState<RecordForm>({ rating: null, memo: '', stopReason: '', isReviewPublic: false })
   const [nextStatus, setNextStatus] = useState<ReadingStatus | null>(null)
   const [startedDate, setStartedDate] = useState('')
@@ -198,7 +200,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     done: string,
     options: { conflict?: string; refresh?: (result: WriteResult) => Promise<void> } = {},
   ): Promise<WriteResult> {
-    if (pendingRef.current || needsRefresh || notesBusy) return 'failed'
+    if (pendingRef.current || needsRefresh || notesBusy || pastBusy) return 'failed'
     pendingRef.current = kind
     setPending(kind)
     setNotice(null)
@@ -370,7 +372,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     )
   }
 
-  const busy = pending !== null || needsRefresh || notesBusy
+  const busy = pending !== null || needsRefresh || notesBusy || pastBusy
   // BE는 읽는 중·완독 상태에 같은 상태로 날짜를 보내면 날짜만 고친다.
   const canEditDates = book.status === 'reading' || book.status === 'completed'
 
@@ -583,7 +585,19 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         </button>
       </form>
 
-      <ReadingNotes key={book.id} userBookId={book.id} today={today} blocked={pending !== null || needsRefresh} onBusyChange={setNotesBusy} />
+      {/* 범위는 상세 응답의 past_log_range만 따른다. 상태·날짜가 바뀌어 null이 되면 숨긴다. */}
+      {book.past_log_range && (
+        <PastReadingDays
+          userBookId={book.id}
+          range={book.past_log_range}
+          today={today}
+          blocked={pending !== null || needsRefresh || notesBusy}
+          onChanged={reload}
+          onBusyChange={setPastBusy}
+        />
+      )}
+
+      <ReadingNotes key={book.id} userBookId={book.id} today={today} blocked={pending !== null || needsRefresh || pastBusy} onBusyChange={setNotesBusy} />
 
       <div className="detail-card danger">
         <h2>서재에서 빼기</h2>
