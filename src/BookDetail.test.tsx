@@ -86,6 +86,15 @@ function renderDetail() {
   )
 }
 
+test('상세에는 책장·타이머를 표시하지 않고 비활성인 현재 상태도 별도로 강조한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ status: 'want_to_read' }))
+  renderDetail()
+  await screen.findByRole('heading', { name: '소년이 온다' })
+  expect(screen.queryByRole('heading', { name: '책장' })).toBeNull()
+  expect(screen.queryByRole('heading', { name: '독서 타이머' })).toBeNull()
+  expect(screen.getByRole('radio', { name: /읽고 싶음/ }).closest('label')?.classList.contains('is-current')).toBe(true)
+})
+
 test('최근 체크는 버튼을 누른 시각이 아니라 실제 읽은 날짜를 표시한다', async () => {
   mocks.getLibraryBook.mockResolvedValue(detail({ last_read_at: '2026-10-28T03:00:00Z', last_read_date: '2026-10-25' }))
   renderDetail()

@@ -184,6 +184,16 @@ export async function getLibraryBooks(
   return data
 }
 
+// 선택 목록처럼 조건에 맞는 서재 전체가 필요할 때 API 최대치로 끝까지 받는다.
+export async function getAllLibraryBooks(accessToken: string, filter: LibraryFilter = {}): Promise<LibraryBookItem[]> {
+  const books: LibraryBookItem[] = []
+  for (let offset = 0; ; offset += 100) {
+    const page = await getLibraryBooks(accessToken, 100, offset, filter)
+    books.push(...page)
+    if (page.length < 100) return books
+  }
+}
+
 const ISBN13_PATTERN = /^97[89][0-9]{10}$/
 // 카카오 검색은 한 페이지 10개, 최대 50페이지까지 요청할 수 있다.
 export const SEARCH_LAST_PAGE = 50

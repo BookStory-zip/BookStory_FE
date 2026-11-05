@@ -34,6 +34,13 @@ test('계정이 바뀌면 이전 계정의 진행 측정을 정리한다', async
   expect(readTimer('user-a')).toBeNull()
 })
 
+test('상단 로고로 서재에 이동하고 독립 타이머 메뉴를 제공한다', async () => {
+  await open()
+  expect(screen.getByRole('link', { name: '타이머' }).getAttribute('href')).toBe('/timer')
+  fireEvent.click(screen.getByRole('link', { name: 'BookStory' }))
+  await screen.findByText('테스트 서재')
+})
+
 test('탈퇴 완료 후 로그아웃이 실패해도 측정은 정리한다', async () => {
   mocks.signOut.mockRejectedValue(new TypeError('network'))
   await open()

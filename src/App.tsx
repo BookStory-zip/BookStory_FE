@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { isAuthError } from '@supabase/supabase-js'
-import { Navigate, NavLink, Route, Routes } from 'react-router'
+import { Link, Navigate, NavLink, Route, Routes } from 'react-router'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
 import { commonErrorMessage, isAuthFailure } from './lib/errors'
 import { releaseReminder, syncReminder } from './lib/push'
@@ -16,6 +16,7 @@ const BookCatalog = lazy(() => import('./BookCatalog'))
 const PasswordReset = lazy(() => import('./PasswordReset'))
 const ReadingRecords = lazy(() => import('./ReadingRecords'))
 const AccountSettings = lazy(() => import('./AccountSettings'))
+const TimerPage = lazy(() => import('./TimerPage'))
 
 function PageLoading() {
   return (
@@ -255,13 +256,14 @@ function AuthScreen() {
       <main className="app">
         <a href="#content" className="skip-link">본문으로 바로가기</a>
         <header className="app-header">
-          <p className="wordmark" translate="no">
+          <Link to="/" className="wordmark" translate="no">
             <CabinIcon className="wordmark-icon" />
             BookStory
-          </p>
+          </Link>
           <nav className="app-nav" aria-label="주요 메뉴">
             <NavLink to="/" end>서재</NavLink>
             <NavLink to="/search">책 찾기</NavLink>
+            <NavLink to="/timer">타이머</NavLink>
             <NavLink to="/records">기록</NavLink>
             <NavLink to="/settings">계정</NavLink>
           </nav>
@@ -284,6 +286,7 @@ function AuthScreen() {
               <Route path="catalog/:isbn13" element={<BookCatalog />} />
               <Route path="books/:userBookId" element={<BookDetail userId={userId} />} />
               <Route path="records" element={<ReadingRecords />} />
+              <Route path="timer" element={<TimerPage userId={userId} />} />
               <Route path="settings" element={<AccountSettings onDeleted={() => {
                 clearTimer(userId)
                 return handleLogout('탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.')

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ApiError, cancelReadingDate, checkReadingDate, getLibraryBooks, getReadingLogs } from './lib/api'
+import { ApiError, cancelReadingDate, checkReadingDate, getAllLibraryBooks, getReadingLogs } from './lib/api'
 import type { LibraryBookItem, ReadingLogEntry } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { isEditableDate } from './lib/dates'
@@ -24,15 +24,7 @@ export default function ReadingDayEditor({ date, today, onChanged, onBusyChange,
   const load = useCallback(() => {
     const current = ++version.current
     return withAccessToken(async (token) => {
-      const booksRequest = async () => {
-        const books: LibraryBookItem[] = []
-        for (let offset = 0; ; offset += 100) {
-          const page = await getLibraryBooks(token, 100, offset, { status: 'reading' })
-          books.push(...page)
-          if (page.length < 100) return books
-        }
-      }
-      const [books, logs] = await Promise.all([booksRequest(), getReadingLogs(token, date, date)])
+      const [books, logs] = await Promise.all([getAllLibraryBooks(token, { status: 'reading' }), getReadingLogs(token, date, date)])
       return { books, logs }
     }).then((fresh) => {
       if (current !== version.current || !active.current) return false

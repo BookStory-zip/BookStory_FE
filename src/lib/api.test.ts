@@ -6,6 +6,7 @@ import {
   checkReadingToday,
   checkReadingDate,
   deleteLibraryBook,
+  getAllLibraryBooks,
   getLibraryBooks,
   getMe,
   getProfile,
@@ -179,6 +180,21 @@ test('서재 목록은 limit·offset을 보내고 표지 null을 허용한다', 
   // 검색어 없이 기준만 보내지 않는다.
   await getLibraryBooks('test-access-token', 20, 0, { field: 'author' })
   expect(fetchMock.mock.calls[3][0]).toBe('https://api.example.test/library/books?limit=20&offset=0')
+})
+
+test('서재 전체 조회는 100권씩 이어 받고 짧은 페이지에서 멈춘다', async () => {
+  const item = { id: 'user-book', book_id: 'book', isbn13: '9788936433598', title: '책', authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-10-27T00:00:00Z' }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(Response.json(Array.from({ length: 100 }, (_, index) => ({ ...item, id: `a-${index}` }))))
+    .mockResolvedValueOnce(Response.json([item]))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(getAllLibraryBooks('test-access-token', { status: 'reading' })).resolves.toHaveLength(101)
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    'https://api.example.test/library/books?limit=100&offset=0&status=reading',
+    'https://api.example.test/library/books?limit=100&offset=100&status=reading',
+  ])
 })
 
 test.each([{ total: 1 }, [{ id: 'x', title: '제목' }], [{ status: 'unknown' }]])(
