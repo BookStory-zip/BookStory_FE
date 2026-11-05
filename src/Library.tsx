@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { ApiError, getLibraryBooks, getShelves, moveLibraryBook, readingStatuses, statusLabels } from './lib/api'
-import type { LibraryBookItem, LibraryFilter, ReadingStatus, Shelf } from './lib/api'
+import type { LibraryBookItem, LibraryFilter, LibrarySort, ReadingStatus, Shelf } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { codeMessage, commonErrorMessage, isUnclearWrite } from './lib/errors'
 import { Link } from 'react-router'
@@ -19,12 +19,12 @@ type Field = NonNullable<LibraryFilter['field']>
 // 카드 제목 끝의 설명 괄호 하나. 숫자·(상)(중)(하)·(N권)·(제N권)·(Vol. N) 같은 권 표시는 남겨 권을 구분한다.
 const TRAILING_NOTE = /\s*\((?!\s*(?:\d+|[상중하]|제?\s*\d+\s*권|vol\.?\s*\d+)\s*\))[^()]*\)\s*$/i
 
-function makeFilter({ q, field, status, shelf_id }: LibraryFilter): LibraryFilter {
-  return { ...(q && { q, field: field ?? 'title' }), ...(status && { status }), ...(shelf_id && { shelf_id }) }
+function makeFilter({ q, field, status, shelf_id, sort }: LibraryFilter): LibraryFilter {
+  return { ...(q && { q, field: field ?? 'title' }), ...(status && { status }), ...(shelf_id && { shelf_id }), ...(sort && sort !== 'custom' && { sort }) }
 }
 
 // 조건 조회를 서버가 거부했을 때 되돌아갈 조건과 안내.
-type Fallback = { filter: LibraryFilter; message: string; kind: 'search' | 'shelf' }
+type Fallback = { filter: LibraryFilter; message: string; kind: 'search' | 'shelf' | 'sort' }
 
 // 손가락·마우스 아래의 책 순번. 서재 밖이면 null.
 function bookIndexAt(shelf: HTMLElement | null, x: number, y: number) {
@@ -70,6 +70,7 @@ export default function Library() {
   const [query, setQuery] = useState('')
   const [field, setField] = useState<Field>('title')
   const [searchError, setSearchError] = useState('')
+  const [sortError, setSortError] = useState('')
   const [shelves, setShelves] = useState<Shelf[] | null>(null)
   const [shelvesError, setShelvesError] = useState('')
   const [managing, setManaging] = useState(false)
@@ -79,6 +80,7 @@ export default function Library() {
   const shelvesVersion = useRef(0)
   // 필터 결과의 순서를 전체 서재 순서로 오해해 저장하지 않도록 필터 중에는 순서 편집을 막는다.
   const filtered = Boolean(filter.q || filter.status || filter.shelf_id)
+  const customOrder = !filter.sort || filter.sort === 'custom'
   const filterLocked = editing || selecting || saving || needsRefresh || shelfBusy
 
   async function refreshShelfBooks(successfulIds: string[]) {
@@ -149,6 +151,9 @@ export default function Library() {
       if (!active.current || version !== loadVersion.current) return false
       // 같은 조건을 다시 보내도 422이므로 재시도 대신 이전 조건으로 돌아가 입력란에 이유를 알린다.
       if (offset === 0 && !preserve && loadError instanceof ApiError && loadError.status === 422 && filterRef.current !== previousFilter.current) {
+        if (filterRef.current.sort !== previousFilter.current.sort) {
+          return { filter: previousFilter.current, message: '정렬 조건을 적용하지 못해 이전 정렬로 돌아왔어요.', kind: 'sort' }
+        }
         return { filter: previousFilter.current, message: codeMessage(loadError) ?? '검색 조건을 확인해주세요.', kind: 'search' }
       }
       // 선택한 책장이 삭제됐으면 원인을 추정하지 않고 책장 목록을 다시 받은 뒤 전체 책장으로 돌아간다.
@@ -179,6 +184,7 @@ export default function Library() {
     setOrderError('')
     setNotice('')
     setSearchError('')
+    setSortError('')
     setSlow(false)
     setLoadingMore(false)
     setPhase('loading')
@@ -191,6 +197,7 @@ export default function Library() {
       if (typeof fallback !== 'object' || !active.current) return
       apply(fallback.filter, false)
       if (fallback.kind === 'search') setSearchError(fallback.message)
+      else if (fallback.kind === 'sort') setSortError(fallback.message)
       else {
         setNotice(fallback.message)
         void loadShelves()
@@ -300,7 +307,7 @@ export default function Library() {
   }
 
   async function move(from: number, to: number) {
-    if (busy.current || locked || from === to || to < 0 || to >= books.length) return
+    if (!customOrder || filtered || busy.current || locked || from === to || to < 0 || to >= books.length) return
     const moved = books[from]
     const remaining = books.filter((book) => book.id !== moved.id)
     const anchor = to === 0 ? null : remaining[to - 1].id
@@ -378,6 +385,17 @@ export default function Library() {
       </form>
       {searchError && <p id="library-search-error" className="library-note" role="alert">{searchError}</p>}
       <div className="library-filters">
+        <div className="library-filter">
+        <label htmlFor="library-sort">서재 정렬</label>
+        <select id="library-sort" value={filter.sort ?? 'custom'} disabled={filterLocked}
+          aria-invalid={sortError ? true : undefined} aria-describedby={sortError ? 'library-sort-error' : undefined}
+          onChange={(event) => apply(makeFilter({ ...filter, sort: event.target.value as LibrarySort }))}>
+          <option value="custom">직접 정한 순서</option>
+          <option value="created">서재 등록 최신순</option>
+          <option value="started">읽기 시작 최신순</option>
+        </select>
+        </div>
+        <div className="library-filter">
         <label htmlFor="library-status">읽기 상태</label>
         <select id="library-status" value={filter.status ?? ''} disabled={filterLocked}
           onChange={(event) => {
@@ -388,7 +406,8 @@ export default function Library() {
           <option value="">전체</option>
           {readingStatuses.filter((status) => status !== 'paused' && status !== 'abandoned').map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
         </select>
-        {shelves && shelves.length > 0 && <>
+        </div>
+        {shelves && shelves.length > 0 && <div className="library-filter">
           <label htmlFor="library-shelf">책장</label>
           <select id="library-shelf" value={filter.shelf_id ?? ''} disabled={filterLocked}
             onChange={(event) => {
@@ -398,7 +417,7 @@ export default function Library() {
             <option value="">전체</option>
             {shelves.map((shelf) => <option key={shelf.id} value={shelf.id}>{shelf.name} ({shelf.book_count}권)</option>)}
           </select>
-        </>}
+        </div>}
         <button type="button" className="secondary compact" aria-expanded={managing} disabled={editing || selecting || saving || shelfBusy} onClick={() => setManaging(!managing)}>
           {managing ? '책장 관리 닫기' : '책장 관리'}
         </button>
@@ -409,6 +428,7 @@ export default function Library() {
           </p>
         )}
       </div>
+      {sortError && <p id="library-sort-error" className="library-note" role="alert">{sortError}</p>}
 
       {shelvesError && (
         <div className="library-note" role="alert">
@@ -423,7 +443,7 @@ export default function Library() {
       {phase === 'ready' && books.length > 0 && (
         <div className="library-order">
           <button ref={editButton} type="button" className="secondary compact" aria-pressed={editing}
-            disabled={filtered || selecting || saving || loadingMore || dragging || shelfBusy} onClick={() => {
+            disabled={!customOrder || filtered || selecting || saving || loadingMore || dragging || shelfBusy} onClick={() => {
               setEditing(!editing)
               setNotice('')
               setOrderError('')
@@ -431,6 +451,7 @@ export default function Library() {
             {editing ? '편집 마치기' : '순서 편집'}
           </button>
           {filtered && <p>검색·상태·책장 필터를 해제하면 전체 서재 순서를 편집할 수 있어요.</p>}
+          {!customOrder && <p>직접 정한 순서를 선택하면 서재 순서를 편집할 수 있어요.</p>}
           {editing && <p id="order-help">손잡이를 끌거나 앞·뒤 버튼으로 옮겨요. 키보드는 손잡이에 초점을 두고 방향키로도 옮길 수 있어요. 이동할 때마다 저장돼요.</p>}
         </div>
       )}

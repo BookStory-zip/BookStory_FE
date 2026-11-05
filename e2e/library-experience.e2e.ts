@@ -1,6 +1,49 @@
 import { expect, test } from '@playwright/test'
 import { cover, json, mockBackend, signInWithMockSession } from './fixtures'
 
+test('서재 정렬은 서버 순서·추가 로딩을 따르고 직접 정한 순서를 보존한다', async ({ page }, testInfo) => {
+  const books = Array.from({ length: 25 }, (_, index) => ({
+    id: `sort-${index}`, book_id: `catalog-${index}`, isbn13: '9788936433598', title: `정렬 책 ${index}`, authors: ['독서가'],
+    thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-05T00:00:00Z',
+  }))
+  const custom = [books[5], ...books.filter((book) => book.id !== 'sort-5')]
+  const orders = { custom, created: [...books].reverse(), started: [...books.slice(10), ...books.slice(0, 10)] }
+  const requests: { sort: string; offset: number }[] = []
+  let writes = 0
+  await signInWithMockSession(page)
+  await mockBackend(page, async (route, url, method) => {
+    if (url.pathname.endsWith('/position')) { writes += 1; return json(route, { detail: 'Unexpected move' }, 409).then(() => true) }
+    if (url.pathname !== '/library/books' || method !== 'GET') return false
+    const sort = (url.searchParams.get('sort') ?? 'custom') as keyof typeof orders
+    const offset = Number(url.searchParams.get('offset'))
+    requests.push({ sort, offset })
+    return json(route, orders[sort].slice(offset, offset + Number(url.searchParams.get('limit')))).then(() => true)
+  })
+  await page.goto('/')
+  const first = page.locator('ul.shelf > li').first()
+  const sort = page.getByLabel('서재 정렬')
+  await expect(first).toContainText('정렬 책 5')
+  await sort.selectOption('created')
+  await expect(first).toContainText('정렬 책 24')
+  await expect(page.getByRole('button', { name: '순서 편집' })).toBeDisabled()
+  await page.locator('ul.shelf > li').last().scrollIntoViewIfNeeded()
+  await expect(page.locator('ul.shelf > li')).toHaveCount(25)
+  expect(requests).toContainEqual({ sort: 'created', offset: 20 })
+  await sort.selectOption('started')
+  await expect(first).toContainText('정렬 책 10')
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.evaluate(() => scrollTo(0, 0))
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`library-sort-${width}.png`) })
+  }
+  await sort.selectOption('custom')
+  await expect(first).toContainText('정렬 책 5')
+  await expect(page.getByRole('button', { name: '순서 편집' })).toBeEnabled()
+  expect(writes).toBe(0)
+  expect(requests).toContainEqual({ sort: 'started', offset: 0 })
+})
+
 test('큰 화면은 스크롤 없이 다음 책으로 채우고 모든 책을 표시한 뒤 멈춘다', async ({ page }, testInfo) => {
   const books = Array.from({ length: 41 }, (_, index) => ({
     id: `personal-${index}`, book_id: `catalog-${index}`, isbn13: '9788936433598',

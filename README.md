@@ -15,7 +15,7 @@ React·TypeScript·Vite SPA이며, 인증은 Supabase, 개인 데이터는 BookS
 | --- | --- |
 | `/` (미인증) | 회원가입·이메일 인증 안내·로그인 |
 | `/reset-password`, `/reset-password/update` | 재설정 메일 요청, 새 비밀번호 저장 |
-| `/` (인증) | 서재(숲속 오두막 책장), 제목/저자 검색·읽기 상태·서브 책장 필터와 책장 관리, 무한 스크롤, 여러 권 책장 담기·빼기, 필터 없는 전체 서재의 순서 편집(드래그·방향키·앞/뒤 버튼) |
+| `/` (인증) | 서재(숲속 오두막 책장), 제목/저자 검색·읽기 상태·서브 책장 필터와 책장 관리, 직접 정한 순서·서재 등록 최신순·읽기 시작 최신순, 무한 스크롤, 여러 권 책장 담기·빼기, 필터 없는 직접 정한 순서의 편집(드래그·방향키·앞/뒤 버튼) |
 | `/search` | 전체·제목·저자·출판사 검색, 정확도순·출간일 최신순, ISBN13이 있는 결과만 표시·담기(숨긴 권수 안내) |
 | `/timer` | 읽는 중인 책 선택·타이머 측정, 모든 상태의 책별 시간 기록 조회·삭제 |
 | `/catalog/{isbn13}` | 공통 책 정보·소개, 내 기록 확인, 공개 후기·평점·더 보기 |
@@ -67,7 +67,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=
 | `npm run lint` | ESLint |
 | `npm test` | Vitest 화면·API·읽기 전용 배포 확인 스크립트 테스트 |
 | `npm run build` | 타입 검사 후 프로덕션 빌드 |
-| `npm run test:e2e` | Playwright 모바일 Chromium 핵심 흐름 16개(가짜 API). 처음 한 번 `npx playwright install chromium` |
+| `npm run test:e2e` | Playwright 모바일 Chromium 핵심 흐름 17개(가짜 API). 처음 한 번 `npx playwright install chromium` |
 
 테스트는 운영 API·DB를 호출하지 않습니다.
 CI(`.github/workflows/ci.yml`)가 develop·main push와 두 브랜치 대상 PR에서 위 네 가지를 실행합니다.
