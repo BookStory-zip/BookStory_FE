@@ -56,6 +56,8 @@ function saveErrorMessage(error: unknown) {
 
 export default function BookSearch() {
   const [results, setResults] = useState<AddableBook[] | null>(null)
+  // 받은 결과 중 ISBN13이 없어 숨긴 권수. 없는 책으로 오해하지 않게 알린다.
+  const [hidden, setHidden] = useState(0)
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saves, setSaves] = useState<Record<string, SaveState>>({})
@@ -107,7 +109,9 @@ export default function BookSearch() {
     try {
       const { books, isEnd } = await searchBooks(query.trim())
       if (version !== searchVersion.current) return
-      setResults(books.filter(isAddable))
+      const addable = books.filter(isAddable)
+      setResults(addable)
+      setHidden(books.length - addable.length)
       setPaging({ query: query.trim(), page: 1, isEnd })
     } catch (searchError) {
       if (version !== searchVersion.current) return
@@ -129,7 +133,9 @@ export default function BookSearch() {
     try {
       const { books, isEnd } = await searchBooks(paging.query, nextPage)
       if (version !== searchVersion.current) return
-      setResults((current) => [...(current ?? []), ...books.filter(isAddable)])
+      const addable = books.filter(isAddable)
+      setResults((current) => [...(current ?? []), ...addable])
+      setHidden((current) => current + books.length - addable.length)
       setPaging({ query: paging.query, page: nextPage, isEnd })
     } catch (moreLoadError) {
       if (version !== searchVersion.current) return
@@ -192,10 +198,11 @@ export default function BookSearch() {
         <p className="library-note" role="status">검색 요청이 많아 잠시 뒤에 다시 검색할 수 있어요.</p>
       )}
 
-      {results !== null && results.length === 0 && (
-        <p className="library-note">{paging && !paging.isEnd && paging.page < SEARCH_LAST_PAGE
-          ? '담을 수 있는 책이 이 페이지에 없습니다. 더 보기를 눌러 주세요.'
-          : '검색 결과가 없습니다.'}</p>
+      {results !== null && results.length === 0 && (paging && !paging.isEnd && paging.page < SEARCH_LAST_PAGE
+        ? <p className="library-note">담을 수 있는 책이 이 페이지에 없습니다. 더 보기를 눌러 주세요.</p>
+        : hidden === 0 && <p className="library-note">검색 결과가 없습니다.</p>)}
+      {results !== null && hidden > 0 && (
+        <p className="library-note" role="status">ISBN13이 없어 서재에 담을 수 없는 책 {hidden}권은 표시하지 않았어요.</p>
       )}
 
       {results !== null && results.length > 0 && (

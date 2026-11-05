@@ -16,6 +16,8 @@ const SCROLL_STEP = 12
 // BE와 같이 앞뒤 공백 제거·NFC 정규화 뒤 코드 포인트로 센다.
 const QUERY_LIMIT = 200
 type Field = NonNullable<LibraryFilter['field']>
+// 카드 제목 끝의 설명 괄호 하나. 숫자·(상)(중)(하)·(N권)·(제N권)·(Vol. N) 같은 권 표시는 남겨 권을 구분한다.
+const TRAILING_NOTE = /\s*\((?!\s*(?:\d+|[상중하]|제?\s*\d+\s*권|vol\.?\s*\d+)\s*\))[^()]*\)\s*$/i
 
 function makeFilter({ q, field, status, shelf_id }: LibraryFilter): LibraryFilter {
   return { ...(q && { q, field: field ?? 'title' }), ...(status && { status }), ...(shelf_id && { shelf_id }) }
@@ -506,7 +508,7 @@ export default function Library() {
                   {book.title.slice(0, 1)}
                 </div>
               )}
-              <p className="book-title" title={book.title}>{book.title.replace(/\s*\((?!\s*\d+\s*\))[^()]*\)\s*$/, '').trim() || book.title}</p>
+              <p className="book-title" title={book.title}>{book.title.replace(TRAILING_NOTE, '').trim() || book.title}</p>
               {book.authors.length > 0 && (
                 <p className="book-authors">{book.authors.join(', ')}</p>
               )}

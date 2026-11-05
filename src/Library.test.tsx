@@ -56,15 +56,16 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-test('서재 카드의 끝 괄호만 정리하고 숫자 권 번호와 원문을 보존한다', async () => {
-  const titles = ['해리 포터 (스페셜 에디션)', '1Q84 (1)', '(부록)', '제목 (설명) (한정판)']
-  mocks.getLibraryBooks.mockResolvedValue(makeBooks(4, 'A').map((book, index) => ({ ...book, title: titles[index] })))
+test('서재 카드의 끝 괄호만 정리하고 권 표시와 원문을 보존한다', async () => {
+  const titles = ['해리 포터 (스페셜 에디션)', '1Q84 (1)', '(부록)', '제목 (설명) (한정판)', '토지 (상)', '토지 (하)', '원피스 (1권)', '삼국지 (제2권)', 'Dune (Vol. 2)']
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(titles.length, 'A').map((book, index) => ({ ...book, title: titles[index] })))
   renderInRouter(<Library />)
   await screen.findByText('해리 포터')
   expect(screen.getByText('해리 포터').getAttribute('title')).toBe(titles[0])
   expect(screen.getByText('1Q84 (1)')).toBeTruthy()
   expect(screen.getByText('(부록)')).toBeTruthy()
   expect(screen.getByText('제목 (설명)')).toBeTruthy()
+  for (const title of titles.slice(4)) expect(screen.getByText(title)).toBeTruthy()
   const options = screen.getByLabelText('읽기 상태').querySelectorAll('option')
   expect([...options].map(option => option.value)).toEqual(['', 'want_to_read', 'reading', 'completed'])
 })
