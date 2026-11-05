@@ -64,7 +64,7 @@ test('저장 결과가 불명확하면 시간을 고정하고 같은 식별자·
 test('다른 책의 측정을 덮어쓰지 않고 다른 계정에서는 보이지 않는다', async () => {
   writeTimer(startTimer('user-a', 'other-book', now, crypto.randomUUID()))
   show()
-  expect(screen.getByRole('link', { name: '진행 중인 타이머로 이동' }).getAttribute('href')).toBe('/books/other-book')
+  expect(screen.getByRole('link', { name: '진행 중인 타이머로 이동' }).getAttribute('href')).toBe('/timer?book=other-book')
   expect(screen.queryByRole('button', { name: '타이머 시작' })).toBeNull()
   cleanup()
   show({ userId: 'user-b' })

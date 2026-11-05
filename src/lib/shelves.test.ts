@@ -67,7 +67,7 @@ test('서재 조회에 책장 조건을 검색·상태와 함께 보낸다', asy
 test('상세의 shelves는 필수이며 {id, name} 배열이어야 한다', async () => {
   const detail = {
     id: 'ub-1', book_id: 'b-1', isbn13: '9788936433598', title: '책', authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-11-01T00:00:00Z',
-    publisher: null, published_date: null, description: null, source_url: 'https://example.test', started_at: null, last_read_at: null, last_read_date: null,
+    publisher: null, published_date: null, description: null, source_url: 'https://example.test', started_at: null, last_read_at: null, last_read_date: null, past_log_range: null,
     completed_at: null, stopped_at: null, stop_reason: null, rating: null, memo: null, is_review_public: false, review_published_at: null, review_updated_at: null,
     has_completed: false, updated_at: '2026-11-01T00:00:00Z', allowed_statuses: ['reading'],
   }

@@ -6,14 +6,14 @@ import { ApiError } from './lib/api'
 import type { GoalProgress, ReadingLogEntry, ReadingNoteEntry } from './lib/api'
 import ReadingRecords from './ReadingRecords'
 
-const mocks = vi.hoisted(() => ({ getReadingLogs: vi.fn(), getReadingCompletions: vi.fn(), getReadingStatistics: vi.fn(), getLibraryBooks: vi.fn(), checkReadingDate: vi.fn(), updateGoal: vi.fn(), deleteGoal: vi.fn(), getNoteTimeline: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getReadingLogs: vi.fn(), getReadingCompletions: vi.fn(), getReadingStatistics: vi.fn(), getAllLibraryBooks: vi.fn(), checkReadingDate: vi.fn(), updateGoal: vi.fn(), deleteGoal: vi.fn(), getNoteTimeline: vi.fn() }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),
   getReadingLogs: mocks.getReadingLogs,
   getReadingCompletions: mocks.getReadingCompletions,
   getReadingStatistics: mocks.getReadingStatistics,
-  getLibraryBooks: mocks.getLibraryBooks,
+  getAllLibraryBooks: mocks.getAllLibraryBooks,
   checkReadingDate: mocks.checkReadingDate,
   updateGoal: mocks.updateGoal,
   deleteGoal: mocks.deleteGoal,
@@ -38,7 +38,7 @@ const renderRecords = () => render(<MemoryRouter><ReadingRecords /></MemoryRoute
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.getReadingCompletions.mockResolvedValue([])
-  mocks.getLibraryBooks.mockResolvedValue([])
+  mocks.getAllLibraryBooks.mockResolvedValue([])
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-28T03:00:00Z'))
 })
@@ -46,7 +46,7 @@ beforeEach(() => {
 test('선택한 최근 날짜를 체크하면 달력과 월 요약을 다시 조회한다', async () => {
   let saved = false
   mocks.getReadingLogs.mockImplementation(() => Promise.resolve(saved ? [log('1', '2026-10-27', 'own-a', '어제의 책')] : []))
-  mocks.getLibraryBooks.mockResolvedValue([{ id: 'own-a', book_id: 'common', title: '어제의 책', status: 'reading', authors: [], thumbnail_url: null }])
+  mocks.getAllLibraryBooks.mockResolvedValue([{ id: 'own-a', book_id: 'common', title: '어제의 책', status: 'reading', authors: [], thumbnail_url: null }])
   mocks.checkReadingDate.mockImplementation(() => { saved = true; return Promise.resolve() })
   renderRecords()
   await screen.findByText('이 달에는 체크하거나 완독한 기록이 없습니다.')
@@ -60,14 +60,14 @@ test('선택한 최근 날짜를 체크하면 달력과 월 요약을 다시 조
 
 test('독서 알림으로 들어오면 알림 날짜의 체크 편집기를 읽는 중 필터로 바로 연다', async () => {
   mocks.getReadingLogs.mockResolvedValue([log('1', '2026-10-27', 'own-b', '이미 읽은 책')])
-  mocks.getLibraryBooks.mockResolvedValue([{ id: 'own-a', title: '오늘의 책', status: 'reading', authors: [], thumbnail_url: null }])
+  mocks.getAllLibraryBooks.mockResolvedValue([{ id: 'own-a', title: '오늘의 책', status: 'reading', authors: [], thumbnail_url: null }])
   render(<MemoryRouter initialEntries={['/records?check=2026-10-27']}><ReadingRecords /></MemoryRouter>)
   expect(await screen.findByRole('button', { name: '오늘의 책 체크' })).toBeTruthy()
   expect(screen.getByRole('button', { name: '이미 읽은 책 체크 취소' })).toBeTruthy()
   // 체크한 책은 편집기 카드에만 나오고 아래 목록에 다시 나오지 않는다.
   await waitFor(() => expect(screen.getAllByRole('link', { name: /이미 읽은 책/ })).toHaveLength(1))
   expect(screen.getByRole('button', { name: '2026년 10월 27일, 1권: 이미 읽은 책', pressed: true })).toBeTruthy()
-  expect(mocks.getLibraryBooks).toHaveBeenCalledWith('test-token', 100, 0, { status: 'reading' })
+  expect(mocks.getAllLibraryBooks).toHaveBeenCalledWith('test-token', { status: 'reading' })
   await waitFor(() => expect(document.activeElement?.textContent).toBe('2026년 10월 27일'))
 })
 
@@ -92,7 +92,7 @@ test.each(['2026-10-21', '2026-10-29', 'today', '2026-10-99'])('알림 날짜 %s
 
 test('KST 날짜가 바뀌면 7일 범위 밖이 된 편집을 막는다', async () => {
   mocks.getReadingLogs.mockResolvedValue([])
-  mocks.getLibraryBooks.mockResolvedValue([{ id: 'own-a', title: '어제의 책', status: 'reading', authors: [], thumbnail_url: null }])
+  mocks.getAllLibraryBooks.mockResolvedValue([{ id: 'own-a', title: '어제의 책', status: 'reading', authors: [], thumbnail_url: null }])
   renderRecords()
   await screen.findByText('이 달에는 체크하거나 완독한 기록이 없습니다.')
   fireEvent.click(screen.getByRole('button', { name: '2026년 10월 22일' }))
@@ -111,7 +111,7 @@ test('KST 자정을 넘겨 끝난 저장도 잠금을 유지하고 결과를 재
   let finish!: () => void
   let saved = false
   mocks.getReadingLogs.mockImplementation(() => Promise.resolve(saved ? [log('1', '2026-10-27', 'own-a', '어제의 책')] : []))
-  mocks.getLibraryBooks.mockResolvedValue([{ id: 'own-a', title: '어제의 책', status: 'reading', authors: [], thumbnail_url: null }])
+  mocks.getAllLibraryBooks.mockResolvedValue([{ id: 'own-a', title: '어제의 책', status: 'reading', authors: [], thumbnail_url: null }])
   mocks.checkReadingDate.mockReturnValue(new Promise<void>((resolve) => { finish = () => { saved = true; resolve() } }))
   renderRecords()
   await screen.findByText('이 달에는 체크하거나 완독한 기록이 없습니다.')

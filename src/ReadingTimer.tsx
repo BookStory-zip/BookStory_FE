@@ -16,6 +16,7 @@ type Props = {
   blocked: boolean
   onSaved: () => Promise<ReadingStatus | null>
   onBusyChange: (busy: boolean) => void
+  historyOnly?: boolean
 }
 type History = { items: ReadingSession[]; offset: number; more: boolean }
 type Remove = { kind: 'draft'; id: string } | { kind: 'saved'; id: string }
@@ -46,7 +47,7 @@ function saveError(error: unknown): string {
 }
 
 // 부모의 계정·책 key로 재마운트한다. 측정 중 화면을 떠나도 시각과 일시정지 누계만 로컬에 보관한다.
-export default function ReadingTimer({ userId, userBookId, status, blocked, onSaved, onBusyChange }: Props) {
+export default function ReadingTimer({ userId, userBookId, status, blocked, onSaved, onBusyChange, historyOnly = false }: Props) {
   const [local, setLocal] = useState(() => initialTimer(userId))
   const [now, setNow] = useState(Date.now)
   const [history, setHistory] = useState<History | null>(null)
@@ -89,8 +90,9 @@ export default function ReadingTimer({ userId, userBookId, status, blocked, onSa
       clearInterval(interval)
       window.removeEventListener('focus', refresh)
       document.removeEventListener('visibilitychange', refresh)
+      onBusyChange(false)
     }
-  }, [userId])
+  }, [userId, onBusyChange])
 
   const load = useCallback((offset: number) => {
     const version = ++historyVersion.current
@@ -211,9 +213,9 @@ export default function ReadingTimer({ userId, userBookId, status, blocked, onSa
   }
 
   return <section className="detail-card reading-timer" aria-labelledby="timer-title">
-    <h2 id="timer-title">독서 타이머</h2>
-    {draft && !own ? <div>
-      <p className="result-note">다른 책의 측정이 남아 있어요. <Link to={`/books/${encodeURIComponent(draft.userBookId)}`}>진행 중인 타이머로 이동</Link></p>
+    <h2 id="timer-title">{historyOnly ? '독서 시간 기록' : '독서 타이머'}</h2>
+    {!historyOnly && (draft && !own ? <div>
+      <p className="result-note">다른 책의 측정이 남아 있어요. <Link to={`/timer?book=${encodeURIComponent(draft.userBookId)}`}>진행 중인 타이머로 이동</Link></p>
       <button type="button" className="link-button" disabled={locked} onClick={() => setRemove({ kind: 'draft', id: draft.clientSessionId })}>측정 버리기</button>
     </div> : <>
       <p className="timer-clock" role="timer" aria-label="측정 시간" aria-live="off">{clock(seconds)}</p>
@@ -229,7 +231,7 @@ export default function ReadingTimer({ userId, userBookId, status, blocked, onSa
         {draft && <button type="button" className="link-button" disabled={locked} onClick={() => setRemove({ kind: 'draft', id: draft.clientSessionId })}>측정 버리기</button>}
       </div>
       {status !== 'reading' && <p className="result-note">읽는 중인 책만 새 측정을 시작할 수 있어요.</p>}
-    </>}
+    </>)}
     {local.error && <p role="alert">{local.error}</p>}
     <p aria-live="polite">{note}</p>
     <h3>저장한 시간</h3>

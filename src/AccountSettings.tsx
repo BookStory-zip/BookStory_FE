@@ -6,6 +6,7 @@ import { deleteAccount, isAccountDeleted, withAccessToken } from './lib/auth'
 import { commonErrorMessage, isUnclearWrite, NICKNAME_RULE } from './lib/errors'
 import CabinIcon from './CabinIcon'
 import ConfirmDialog from './ConfirmDialog'
+import ReadingReminder from './ReadingReminder'
 
 // BE와 같은 규칙: 앞뒤 공백을 지우고 NFC로 정규화한 뒤 완성형 한글·영문·숫자·_·-와 한 칸 공백, 2~20자.
 const NICKNAME_PATTERN = /^[가-힣A-Za-z0-9_-]+( [가-힣A-Za-z0-9_-]+)*$/
@@ -163,6 +164,8 @@ export default function AccountSettings({ onDeleted }: Props) {
         )}
         <p role="status">{nicknameNote}</p>
       </form>
+
+      <ReadingReminder disabled={deleting || deleted} />
 
       <form className="detail-card danger" aria-labelledby="delete-title" onSubmit={requestDelete}>
         <h2 id="delete-title">계정 탈퇴</h2>

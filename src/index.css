@@ -389,6 +389,32 @@ main.app {
   width: auto;
 }
 
+.book-search-form {
+  flex-wrap: wrap;
+}
+
+.search-options {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.search-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+
+.search-option label {
+  flex-shrink: 0;
+}
+
+.search-option select {
+  min-width: 0;
+}
+
 .library-search {
   margin-bottom: var(--space-3);
 }
@@ -403,6 +429,21 @@ main.app {
   align-items: center;
   gap: var(--space-2) var(--space-3);
   margin-bottom: var(--space-6);
+}
+
+.library-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+
+.library-filter label {
+  flex-shrink: 0;
+}
+
+.library-filter select {
+  min-width: 0;
 }
 
 .shelf-manager {
@@ -700,6 +741,87 @@ legend {
 .status-option:has(input:disabled) {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+.status-option.is-current {
+  opacity: 1;
+  background: var(--color-paper-2);
+  color: var(--color-accent);
+}
+
+.status-option.is-current small {
+  font-weight: 700;
+}
+
+.library-end {
+  height: 1px;
+}
+
+.library-selection {
+  margin-block: var(--space-4);
+}
+
+.library-shelf-actions {
+  margin-top: var(--space-3);
+}
+
+.shelf-action-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.shelf-action-controls select {
+  max-width: 100%;
+}
+
+.book-selection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+}
+
+.book-selection input {
+  flex: 0 0 auto;
+  width: 1.125rem;
+  height: 1.125rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--color-accent);
+}
+
+.timer-book-picker {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-6);
+}
+
+.timer-modes {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.timer-modes button {
+  flex: 1;
+  width: auto;
+}
+
+.timer-modes button[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  opacity: 1;
+}
+
+.timer-book-picker select {
+  width: 100%;
+  min-width: 0;
+}
+
+.wordmark {
+  text-decoration: none;
 }
 
 .status-option input {
@@ -1554,13 +1676,14 @@ button.compact {
   min-height: 2.75rem;
 }
 
-.library h1 {
+.library h1,
+.timer-page h1 {
   margin: var(--space-8) 0 var(--space-6);
   font-size: 1.75rem;
   text-shadow: none;
 }
 
-:is(.library, .search, .records) h1 + .library-sub {
+:is(.library, .search, .records, .timer-page) h1 + .library-sub {
   margin: calc(var(--space-6) * -1 + var(--space-1)) 0 var(--space-6);
   color: var(--color-muted);
   font-size: 0.9375rem;

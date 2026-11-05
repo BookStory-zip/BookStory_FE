@@ -35,6 +35,7 @@ const detail = {
   updated_at: '2026-10-01T00:00:00Z',
   allowed_statuses: ['want_to_read', 'reading', 'completed', 'paused', 'abandoned'],
   shelves: [],
+  past_log_range: null,
 }
 
 test('타이머 복원·1시간 확인·같은 요청 재시도·자동 체크·삭제·로그아웃이 이어진다', async ({ page }, testInfo) => {
@@ -74,7 +75,8 @@ test('타이머 복원·1시간 확인·같은 요청 재시도·자동 체크·
     await page.clock.setFixedTime(new Date(start + ms))
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   }
-  await page.goto(`/books/${book.id}`)
+  await page.goto('/timer')
+  await page.getByLabel('어떤 책을 읽으시나요?').selectOption(book.id)
   await page.getByRole('button', { name: '타이머 시작' }).click()
   await jump(90_000)
   await page.getByRole('button', { name: '일시정지', exact: true }).click()
@@ -155,6 +157,85 @@ test('지난 날짜 체크 → 새로고침 → 최근 체크 날짜 → 완독 
   await page.getByRole('button', { name: '소년이 온다 체크 취소' }).click()
   await expect(page.getByText('이 달에는 체크하거나 완독한 기록이 없습니다.')).toBeVisible()
   expect(requests).toEqual(['PUT', 'DELETE'])
+})
+
+test('가져온 완독 책에 과거 읽은 날을 하루·기간으로 남기고 기록 달력에서 본다', async ({ page }, testInfo) => {
+  await page.clock.setFixedTime(new Date('2026-11-05T03:00:00Z'))
+  await signInWithMockSession(page)
+  const dates = new Set<string>()
+  const writes: string[] = []
+  let rangeCalls = 0
+  const range = { start: '2026-09-25', end: '2026-10-10' }
+  const completed = { ...detail, status: 'completed', started_at: '2026-09-24T15:00:00Z', completed_at: '2026-10-10T03:00:00Z', has_completed: true, past_log_range: range }
+  const logOf = (read_date: string) => ({ id: `log-${read_date}`, user_book_id: book.id, read_date, created_at: '2026-11-05T03:00:00Z', book_id: book.book_id, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url })
+  await mockBackend(page, async (route, url, method) => {
+    if (url.pathname === '/library/books') return json(route, [{ ...book, status: 'completed' }]).then(() => true)
+    if (url.pathname === `/library/books/${book.id}`) return json(route, { ...completed, last_read_date: [...dates].sort().at(-1) ?? null }).then(() => true)
+    if (url.pathname === '/reading-logs') {
+      const start = url.searchParams.get('start_date')!
+      const end = url.searchParams.get('end_date')!
+      return json(route, [...dates].filter((date) => date >= start && date <= end).map(logOf)).then(() => true)
+    }
+    if (url.pathname === `/library/books/${book.id}/reading-logs/range` && method === 'POST') {
+      rangeCalls += 1
+      const { from, to } = route.request().postDataJSON() as { from: string; to: string }
+      writes.push(`POST ${from}~${to}`)
+      // 첫 요청은 응답을 잃었지만 서버에는 저장된 상황이다. 화면은 다시 보내지 않고 재조회로 확인해야 한다.
+      for (let day = new Date(`${from}T00:00:00Z`); day <= new Date(`${to}T00:00:00Z`); day.setUTCDate(day.getUTCDate() + 1)) dates.add(day.toISOString().slice(0, 10))
+      if (rangeCalls === 1) return route.abort('failed').then(() => true)
+      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
+    }
+    const single = url.pathname.match(/\/reading-logs\/(\d{4}-\d{2}-\d{2})$/)
+    if (single) {
+      writes.push(`${method} ${single[1]}`)
+      if (method === 'DELETE') {
+        dates.delete(single[1])
+        return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
+      }
+      dates.add(single[1])
+      return json(route, logOf(single[1])).then(() => true)
+    }
+    return false
+  })
+
+  await page.goto(`/books/${book.id}`)
+  const past = page.locator('.past-days')
+  await expect(past.getByRole('heading', { name: '과거 읽은 날' })).toBeVisible()
+  await past.getByRole('button', { name: '2026년 10월 3일', exact: true }).click()
+  await expect(past.getByText('2026년 10월 3일을 읽은 날로 남겼습니다.')).toBeVisible()
+  await expect(past.getByRole('button', { name: '2026년 10월 3일, 읽은 날' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.detail-dates div').filter({ has: page.getByText('최근 체크', { exact: true }) })).toContainText('2026년 10월 3일')
+  await expect(past.getByRole('button', { name: '2026년 10월 11일, 고칠 수 없음' })).toBeDisabled()
+
+  await past.getByRole('button', { name: /^기간 시작/ }).click()
+  await past.getByRole('group', { name: '기간 시작 달력' }).getByRole('button', { name: '2026년 10월 5일' }).click()
+  await past.getByRole('button', { name: /^기간 끝/ }).click()
+  await past.getByRole('group', { name: '기간 끝 달력' }).getByRole('button', { name: '2026년 10월 8일' }).click()
+  await past.getByRole('button', { name: '기간 확인' }).click()
+  const dialog = page.getByRole('dialog', { name: '4일을 읽은 날로 남길까요?' })
+  await expect(dialog).toBeVisible()
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`past-range-confirm-${width}.png`), fullPage: true })
+  }
+  await dialog.getByRole('button', { name: '저장' }).click()
+  await expect(past.getByText(/저장 결과를 확인하지 못했습니다/)).toBeVisible()
+  await expect(past.getByRole('button', { name: '2026년 10월 8일, 읽은 날' })).toHaveAttribute('aria-pressed', 'true')
+  expect(rangeCalls).toBe(1)
+
+  await past.getByRole('button', { name: '2026년 10월 8일, 읽은 날' }).click()
+  await expect(past.getByText('2026년 10월 8일 체크를 취소했습니다.')).toBeVisible()
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`past-days-${width}.png`), fullPage: true })
+  }
+  expect(writes).toEqual(['PUT 2026-10-03', 'POST 2026-10-05~2026-10-08', 'DELETE 2026-10-08'])
+
+  await page.getByRole('link', { name: '기록', exact: true }).click()
+  await page.getByRole('button', { name: '이전 달' }).click()
+  await expect(page.getByText('4일 동안 1권을 읽었어요.')).toBeVisible()
 })
 
 test('책 검색 → 공통 상세 → 후기 공개·수정·비공개가 연결된다', async ({ page }, testInfo) => {
@@ -308,7 +389,8 @@ test('검색해서 서재에 담으면 서재에서 보인다', async ({ page })
   await page.goto('/search')
   await page.getByRole('searchbox').fill('한강')
   await page.getByRole('button', { name: '검색' }).click()
-  await expect(page.getByText('13자리 ISBN이 없어 서재에 담을 수 없습니다.')).toBeVisible()
+  await expect(page.getByRole('link', { name: '소년이 온다', exact: true })).toBeVisible()
+  await expect(page.getByText('ISBN10만 있는 책')).toHaveCount(0)
 
   await page.getByRole('button', { name: '서재에 담기' }).click()
   await expect(page.getByText('서재에 담았습니다.')).toBeVisible()

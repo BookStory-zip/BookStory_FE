@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getReadingLogs: vi.fn(),
   checkReadingToday: vi.fn(),
   cancelReadingToday: vi.fn(),
+  checkReadingDate: vi.fn(),
   getReadingSessions: vi.fn(),
   getReadingNotes: vi.fn(),
   createReadingNote: vi.fn(),
@@ -71,6 +72,7 @@ function detail(overrides: Partial<LibraryBookDetail> = {}): LibraryBookDetail {
     updated_at: '2026-10-01T00:00:00Z',
     allowed_statuses: allowedFor(status),
     shelves: [],
+    past_log_range: null,
     ...overrides,
   }
 }
@@ -86,11 +88,41 @@ function renderDetail() {
   )
 }
 
+test('상세에는 책장·타이머를 표시하지 않고 비활성인 현재 상태도 별도로 강조한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ status: 'want_to_read' }))
+  renderDetail()
+  await screen.findByRole('heading', { name: '소년이 온다' })
+  expect(screen.queryByRole('heading', { name: '책장' })).toBeNull()
+  expect(screen.queryByRole('heading', { name: '독서 타이머' })).toBeNull()
+  expect(screen.getByRole('radio', { name: /읽고 싶음/ }).closest('label')?.classList.contains('is-current')).toBe(true)
+})
+
 test('최근 체크는 버튼을 누른 시각이 아니라 실제 읽은 날짜를 표시한다', async () => {
   mocks.getLibraryBook.mockResolvedValue(detail({ last_read_at: '2026-10-28T03:00:00Z', last_read_date: '2026-10-25' }))
   renderDetail()
   await screen.findByRole('heading', { name: '소년이 온다' })
   expect(screen.getByText('최근 체크').nextElementSibling?.textContent).toBe('2026년 10월 25일')
+})
+
+test('과거 읽은 날은 past_log_range가 있을 때만 보이고, 완독 상태만으로 만들지 않는다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ status: 'completed', completed_at: '2025-02-20T03:00:00Z' }))
+  renderDetail()
+  await screen.findByRole('heading', { name: '소년이 온다' })
+  expect(screen.queryByRole('heading', { name: '과거 읽은 날' })).toBeNull()
+})
+
+test('과거 읽은 날 체크 후 상세를 다시 불러와 최근 체크와 범위를 서버 기준으로 바꾼다', async () => {
+  const range = { start: '2025-02-10', end: '2025-02-20' }
+  mocks.getLibraryBook
+    .mockResolvedValueOnce(detail({ status: 'completed', completed_at: '2025-02-20T03:00:00Z', past_log_range: range }))
+    .mockResolvedValueOnce(detail({ status: 'completed', completed_at: '2025-02-20T03:00:00Z', past_log_range: range, last_read_date: '2025-02-15' }))
+  mocks.getReadingLogs.mockResolvedValue([])
+  renderDetail()
+  const grid = await screen.findByRole('group', { name: '2025년 2월 읽은 날' })
+  fireEvent.click(within(grid).getByRole('button', { name: '2025년 2월 15일' }))
+  await waitFor(() => expect(screen.getByText('최근 체크').nextElementSibling?.textContent).toBe('2025년 2월 15일'))
+  expect(mocks.checkReadingDate).toHaveBeenCalledWith('test-token', 'user-book-1', '2025-02-15')
+  expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2)
 })
 
 test('메모는 기본 비공개이며 직접 선택해 저장해야 공개한다', async () => {

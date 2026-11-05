@@ -5,21 +5,44 @@ import {
   cancelReadingDate,
   checkReadingToday,
   checkReadingDate,
+  checkReadingRange,
   deleteLibraryBook,
+  getAllLibraryBooks,
+  getLibraryBook,
   getLibraryBooks,
   getMe,
   getProfile,
+  getReminderSettings,
   getReadingCompletions,
   getReadingLogs,
   moveLibraryBook,
   searchBooks,
   updateLibraryRecord,
   updateNickname,
+  updateReminderSettings,
 } from './api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
+})
+
+test('계정 알림은 boolean을 읽고 설정 PUT의 빈 204를 처리한다', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ enabled: false })).mockResolvedValueOnce(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getReminderSettings('token')).resolves.toBe(false)
+  await expect(updateReminderSettings('token', true)).resolves.toBeUndefined()
+  expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    ['https://api.example.test/me/reminder-settings', undefined, undefined],
+    ['https://api.example.test/me/reminder-settings', 'PUT', '{"enabled":true}'],
+  ])
+})
+
+test.each([null, {}, { enabled: null }, { enabled: 'false' }])('알림 설정 응답 %j를 꺼짐으로 해석하지 않는다', async (body) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(body)))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getReminderSettings('token')).rejects.toThrow('알림 설정 응답 형식')
 })
 
 test('지난 날짜 체크·취소는 개인 id와 날짜를 경로로 보내고 본문을 생략한다', async () => {
@@ -33,6 +56,36 @@ test('지난 날짜 체크·취소는 개인 id와 날짜를 경로로 보내고
     ['https://api.example.test/library/books/own%2F1/reading-logs/2026-10-28', 'PUT', undefined],
     ['https://api.example.test/library/books/own%2F1/reading-logs/2026-10-28', 'DELETE', undefined],
   ])
+})
+
+test('과거 읽은 날 기간은 개인 id 경로에 from·to만 보내고 빈 204를 읽는다', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(checkReadingRange('token', 'own/1', '2025-01-01', '2025-12-31')).resolves.toBeUndefined()
+  expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    ['https://api.example.test/library/books/own%2F1/reading-logs/range', 'POST', '{"from":"2025-01-01","to":"2025-12-31"}'],
+  ])
+})
+
+const detailBody = {
+  id: 'own-1', book_id: 'common-1', isbn13: '9788936433598', title: '소년이 온다', authors: ['한강'], thumbnail_url: null,
+  status: 'completed', created_at: '2026-01-01T00:00:00Z', publisher: null, published_date: null, description: null,
+  source_url: 'https://example.test', started_at: null, last_read_at: null, last_read_date: null, completed_at: '2025-03-01T00:00:00Z',
+  stopped_at: null, stop_reason: null, rating: null, memo: null, is_review_public: false, review_published_at: null,
+  review_updated_at: null, has_completed: true, updated_at: '2026-01-01T00:00:00Z', allowed_statuses: ['reading'], shelves: [],
+}
+
+test.each([null, { start: null, end: '2025-03-01' }, { start: '2025-01-02', end: '2025-03-01' }])('상세의 past_log_range %j를 그대로 받는다', async (range) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ ...detailBody, past_log_range: range })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getLibraryBook('token', 'own-1')).resolves.toMatchObject({ past_log_range: range })
+})
+
+test.each([undefined, {}, { start: null }, { start: '2025/01/02', end: '2025-03-01' }, { start: null, end: null }])('past_log_range %j는 형식 오류로 처리한다', async (range) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ ...detailBody, past_log_range: range })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getLibraryBook('token', 'own-1')).rejects.toThrow('책 상세 응답 형식')
 })
 
 test('다른 날짜나 다른 개인 항목의 체크 응답을 성공으로 받아들이지 않는다', async () => {
@@ -181,6 +234,34 @@ test('서재 목록은 limit·offset을 보내고 표지 null을 허용한다', 
   expect(fetchMock.mock.calls[3][0]).toBe('https://api.example.test/library/books?limit=20&offset=0')
 })
 
+test('서재 전체 조회는 100권씩 이어 받고 짧은 페이지에서 멈춘다', async () => {
+  const item = { id: 'user-book', book_id: 'book', isbn13: '9788936433598', title: '책', authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-10-27T00:00:00Z' }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(Response.json(Array.from({ length: 100 }, (_, index) => ({ ...item, id: `a-${index}` }))))
+    .mockResolvedValueOnce(Response.json([item]))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(getAllLibraryBooks('test-access-token', { status: 'reading' })).resolves.toHaveLength(101)
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    'https://api.example.test/library/books?limit=100&offset=0&status=reading',
+    'https://api.example.test/library/books?limit=100&offset=100&status=reading',
+  ])
+})
+
+test('서재 정렬은 검색·상태·책장 조건과 함께 보내며 기본 조회는 기존 주소를 유지한다', async () => {
+  const fetchMock = vi.fn().mockImplementation(async () => Response.json([]))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await getLibraryBooks('test-access-token', 20, 40, { q: '책', field: 'author', status: 'reading', shelf_id: 's1', sort: 'started' })
+  const url = new URL(fetchMock.mock.calls[0][0])
+  expect(Object.fromEntries(url.searchParams)).toEqual({ limit: '20', offset: '40', q: '책', field: 'author', status: 'reading', shelf_id: 's1', sort: 'started' })
+  await getLibraryBooks('test-access-token', 20, 0, { sort: 'created' })
+  expect(fetchMock.mock.calls[1][0]).toContain('sort=created')
+  await getLibraryBooks('test-access-token', 20, 0)
+  expect(fetchMock.mock.calls[2][0]).toBe('https://api.example.test/library/books?limit=20&offset=0')
+})
+
 test.each([{ total: 1 }, [{ id: 'x', title: '제목' }], [{ status: 'unknown' }]])(
   '서재 응답 형식이 다르면 거부한다: %j',
   async (body) => {
@@ -224,6 +305,22 @@ test('검색 meta에 is_end가 없으면 더 보기를 막는다', async () => {
   vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
 
   await expect(searchBooks('책')).resolves.toMatchObject({ isEnd: true })
+})
+
+test('책 찾기는 검색 기준·정렬을 공개 API에 보내고 생략 시 기존 기본 동작을 유지한다', async () => {
+  const fetchMock = vi.fn().mockImplementation(async () => Response.json({ documents: [], meta: { is_end: true } }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await searchBooks('한강', 2, { target: 'person', sort: 'latest' })
+  expect(Object.fromEntries(new URL(fetchMock.mock.calls[0][0]).searchParams)).toEqual({ query: '한강', page: '2', target: 'person', sort: 'latest' })
+  expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Authorization')
+  await searchBooks('책', 1, { target: 'title', sort: 'accuracy' })
+  await searchBooks('창비', 1, { target: 'publisher' })
+  expect(new URL(fetchMock.mock.calls[1][0]).searchParams.get('target')).toBe('title')
+  expect(new URL(fetchMock.mock.calls[1][0]).searchParams.get('sort')).toBe('accuracy')
+  expect(new URL(fetchMock.mock.calls[2][0]).searchParams.get('target')).toBe('publisher')
+  await searchBooks('책')
+  expect(fetchMock.mock.calls[3][0]).toBe('https://api.example.test/books/search?query=%EC%B1%85&page=1')
 })
 
 test('서재 등록은 isbn13만 JSON으로 보내고, 201·200으로 신규·기존을 구분한다', async () => {

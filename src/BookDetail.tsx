@@ -28,9 +28,8 @@ import ConfirmDialog from './ConfirmDialog'
 import DatePicker from './DatePicker'
 import { spokenDate } from './lib/dates'
 import { useKstToday } from './useKstToday'
-import BookShelves from './BookShelves'
 import ReadingNotes from './ReadingNotes'
-import ReadingTimer from './ReadingTimer'
+import PastReadingDays from './PastReadingDays'
 
 type Pending = 'status' | 'record' | 'delete' | 'check' | 'refresh' | null
 // conflict: 409. 화면이 오래된 상태라 서버 기준으로 다시 불러와야 한다.
@@ -69,17 +68,16 @@ const sameForm = (a: RecordForm, b: RecordForm) =>
 // 다른 책으로 이동하면 새로 마운트해 이전 책의 늦은 응답과 입력을 버린다.
 export default function BookDetailPage({ userId }: { userId: string }) {
   const { userBookId = '' } = useParams()
-  return <BookDetail key={userBookId} userBookId={userBookId} userId={userId} />
+  return <BookDetail key={`${userId}:${userBookId}`} userBookId={userBookId} />
 }
 
-function BookDetail({ userBookId, userId }: { userBookId: string; userId: string }) {
+function BookDetail({ userBookId }: { userBookId: string }) {
   const navigate = useNavigate()
   const [book, setBook] = useState<LibraryBookDetail | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [needsRefresh, setNeedsRefresh] = useState(false)
-  const [timerBusy, setTimerBusy] = useState(false)
   const [notesBusy, setNotesBusy] = useState(false)
-  const [shelvesBusy, setShelvesBusy] = useState(false)
+  const [pastBusy, setPastBusy] = useState(false)
   const [form, setForm] = useState<RecordForm>({ rating: null, memo: '', stopReason: '', isReviewPublic: false })
   const [nextStatus, setNextStatus] = useState<ReadingStatus | null>(null)
   const [startedDate, setStartedDate] = useState('')
@@ -202,7 +200,7 @@ function BookDetail({ userBookId, userId }: { userBookId: string; userId: string
     done: string,
     options: { conflict?: string; refresh?: (result: WriteResult) => Promise<void> } = {},
   ): Promise<WriteResult> {
-    if (pendingRef.current || needsRefresh || timerBusy || notesBusy || shelvesBusy) return 'failed'
+    if (pendingRef.current || needsRefresh || notesBusy || pastBusy) return 'failed'
     pendingRef.current = kind
     setPending(kind)
     setNotice(null)
@@ -374,7 +372,7 @@ function BookDetail({ userBookId, userId }: { userBookId: string; userId: string
     )
   }
 
-  const busy = pending !== null || needsRefresh || timerBusy || notesBusy || shelvesBusy
+  const busy = pending !== null || needsRefresh || notesBusy || pastBusy
   // BE는 읽는 중·완독 상태에 같은 상태로 날짜를 보내면 날짜만 고친다.
   const canEditDates = book.status === 'reading' || book.status === 'completed'
 
@@ -452,11 +450,6 @@ function BookDetail({ userBookId, userId }: { userBookId: string; userId: string
           ))}
       </div>
 
-      <ReadingTimer userId={userId} userBookId={book.id} status={book.status} blocked={pending !== null || needsRefresh || notesBusy || shelvesBusy} onBusyChange={setTimerBusy} onSaved={async () => {
-        const [, fresh] = await Promise.all([loadTodayLog(todayRef.current), reload()])
-        return fresh ? bookRef.current?.status ?? null : null
-      }} />
-
       <form className="detail-card" onSubmit={handleStatus} aria-labelledby="status-title">
         <h2 id="status-title">독서 상태</h2>
         <fieldset className="status-options" disabled={busy}>
@@ -465,7 +458,7 @@ function BookDetail({ userBookId, userId }: { userBookId: string; userId: string
             // 고를 수 있는 상태는 서버가 준 allowed_statuses를 따른다. 현재 상태는 날짜 고치기용으로만 고른다.
             const blocked = status !== book.status && !book.allowed_statuses.includes(status)
             return (
-              <label key={status} className="status-option">
+              <label key={status} className={`status-option${status === book.status ? ' is-current' : ''}`}>
                 <input
                   type="radio"
                   name="status"
@@ -592,10 +585,19 @@ function BookDetail({ userBookId, userId }: { userBookId: string; userId: string
         </button>
       </form>
 
-      <BookShelves key={`shelves-${book.id}`} userBookId={book.id} current={book.shelves} blocked={pending !== null || needsRefresh || timerBusy || notesBusy}
-        onChanged={reload} onBusyChange={setShelvesBusy} />
+      {/* 범위는 상세 응답의 past_log_range만 따른다. 상태·날짜가 바뀌어 null이 되면 숨긴다. */}
+      {book.past_log_range && (
+        <PastReadingDays
+          userBookId={book.id}
+          range={book.past_log_range}
+          today={today}
+          blocked={pending !== null || needsRefresh || notesBusy}
+          onChanged={reload}
+          onBusyChange={setPastBusy}
+        />
+      )}
 
-      <ReadingNotes key={book.id} userBookId={book.id} today={today} blocked={pending !== null || needsRefresh || timerBusy || shelvesBusy} onBusyChange={setNotesBusy} />
+      <ReadingNotes key={book.id} userBookId={book.id} today={today} blocked={pending !== null || needsRefresh || pastBusy} onBusyChange={setNotesBusy} />
 
       <div className="detail-card danger">
         <h2>서재에서 빼기</h2>

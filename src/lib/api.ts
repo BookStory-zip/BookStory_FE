@@ -152,8 +152,9 @@ function isLibraryBookItem(value: unknown): value is LibraryBookItem {
   )
 }
 
-// 검색·상태 조건은 서버가 함께 적용한다. 정렬은 저장된 서재 순서이고 전체 개수는 없다.
-export type LibraryFilter = { q?: string; field?: 'title' | 'author'; status?: ReadingStatus; shelf_id?: string }
+// 검색·상태·정렬은 서버가 적용한다. 기본값은 저장된 서재 순서이고 전체 개수는 없다.
+export type LibrarySort = 'custom' | 'created' | 'started'
+export type LibraryFilter = { q?: string; field?: 'title' | 'author'; status?: ReadingStatus; shelf_id?: string; sort?: LibrarySort }
 
 export async function getLibraryBooks(
   accessToken: string,
@@ -175,6 +176,7 @@ export async function getLibraryBooks(
   if (filter.status) query.set('status', filter.status)
   // 타인·없는 책장은 404다.
   if (filter.shelf_id) query.set('shelf_id', filter.shelf_id)
+  if (filter.sort) query.set('sort', filter.sort)
   const data = await apiRequest(`/library/books?${query}`, accessToken)
 
   if (!Array.isArray(data) || !data.every(isLibraryBookItem)) {
@@ -182,6 +184,16 @@ export async function getLibraryBooks(
   }
 
   return data
+}
+
+// 선택 목록처럼 조건에 맞는 서재 전체가 필요할 때 API 최대치로 끝까지 받는다.
+export async function getAllLibraryBooks(accessToken: string, filter: LibraryFilter = {}): Promise<LibraryBookItem[]> {
+  const books: LibraryBookItem[] = []
+  for (let offset = 0; ; offset += 100) {
+    const page = await getLibraryBooks(accessToken, 100, offset, filter)
+    books.push(...page)
+    if (page.length < 100) return books
+  }
 }
 
 const ISBN13_PATTERN = /^97[89][0-9]{10}$/
@@ -196,6 +208,10 @@ export type SearchBook = {
   isbn13: string | null
 }
 
+export type SearchTarget = 'title' | 'person' | 'publisher'
+export type SearchSort = 'accuracy' | 'latest'
+export type SearchOptions = { target?: SearchTarget; sort?: SearchSort }
+
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -203,8 +219,11 @@ function text(value: unknown): string {
 export async function searchBooks(
   query: string,
   page = 1,
+  options: SearchOptions = {},
 ): Promise<{ books: SearchBook[]; isEnd: boolean }> {
   const params = new URLSearchParams({ query, page: String(page) })
+  if (options.target) params.set('target', options.target)
+  if (options.sort) params.set('sort', options.sort)
   const data = await apiRequest(`/books/search?${params}`, null)
 
   if (
@@ -283,6 +302,8 @@ export type LibraryBookDetail = LibraryBookItem & {
   allowed_statuses: ReadingStatus[]
   // 이 책이 속한 책장(책장 순서). 서재 목록 항목에는 없다.
   shelves: { id: string; name: string }[]
+  // 가져온 완독 책의 과거 읽은 날을 남길 수 있는 KST 날짜(양 끝 포함). start null은 하한 없음, 대상이 아니면 null.
+  past_log_range: { start: string | null; end: string } | null
 }
 
 function isNullableString(value: unknown) {
@@ -317,8 +338,17 @@ function isLibraryBookDetail(value: unknown): value is LibraryBookDetail {
     item.allowed_statuses.every((status) => readingStatuses.includes(status as ReadingStatus)) &&
     Array.isArray(item.shelves) &&
     item.shelves.every((shelf: unknown) => typeof shelf === 'object' && shelf !== null &&
-      typeof (shelf as Record<string, unknown>).id === 'string' && typeof (shelf as Record<string, unknown>).name === 'string')
+      typeof (shelf as Record<string, unknown>).id === 'string' && typeof (shelf as Record<string, unknown>).name === 'string') &&
+    isPastLogRange(item.past_log_range)
   )
+}
+
+function isPastLogRange(value: unknown) {
+  if (value === null) return true
+  if (typeof value !== 'object') return false
+  const range = value as Record<string, unknown>
+  const isDate = (date: unknown) => typeof date === 'string' && DATE_PATTERN.test(date)
+  return (range.start === null || isDate(range.start)) && isDate(range.end)
 }
 
 const libraryBookPath = (userBookId: string) =>
@@ -483,6 +513,19 @@ export async function cancelReadingDate(
 ): Promise<void> {
   await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/${encodeURIComponent(readDate)}`, accessToken, {
     method: 'DELETE',
+  })
+}
+
+// 과거 읽은 날 기간(양 끝 포함)을 한 번에 체크한다. 전부 저장되거나 하나도 저장되지 않는 204.
+export async function checkReadingRange(
+  accessToken: string,
+  userBookId: string,
+  from: string,
+  to: string,
+): Promise<void> {
+  await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/range`, accessToken, {
+    method: 'POST',
+    body: { from, to },
   })
 }
 
@@ -809,6 +852,18 @@ export async function getPushPublicKey(): Promise<string> {
 }
 
 export type PushSubscriptionBody = { endpoint: string; keys: { p256dh: string; auth: string } }
+
+export async function getReminderSettings(accessToken: string): Promise<boolean> {
+  const data = await apiRequest('/me/reminder-settings', accessToken)
+  if (typeof data !== 'object' || data === null || !('enabled' in data) || typeof data.enabled !== 'boolean') {
+    throw new Error('알림 설정 응답 형식이 올바르지 않습니다.')
+  }
+  return data.enabled
+}
+
+export async function updateReminderSettings(accessToken: string, enabled: boolean): Promise<void> {
+  await apiRequest('/me/reminder-settings', accessToken, { method: 'PUT', body: { enabled } })
+}
 
 // 같은 endpoint를 다시 보내면 키만 갱신되므로 반복 등록해도 안전하다.
 export async function savePushSubscription(accessToken: string, body: PushSubscriptionBody): Promise<void> {

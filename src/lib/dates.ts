@@ -14,6 +14,21 @@ export function isEditableDate(date: string, today: string): boolean {
   return !Number.isNaN(utc.getTime()) && toDate(utc) === date && date >= addDays(today, -6) && date <= today
 }
 
+// 양 끝을 포함한 날 수.
+export const inclusiveDays = (from: string, to: string) =>
+  Math.round((toUtc(to).getTime() - toUtc(from).getTime()) / 86_400_000) + 1
+
+// 과거 읽은 날 기간 저장 전 검사. 최종 판단은 서버가 하고, 보내도 실패할 입력만 미리 막는다.
+export function pastRangeProblem(from: string, to: string, range: { start: string | null; end: string }): string | null {
+  if (!from || !to) return '시작일과 종료일을 모두 골라주세요.'
+  if (from > to) return '시작일이 종료일보다 늦을 수 없어요.'
+  if ((range.start !== null && from < range.start) || to > range.end) {
+    return `${range.start ? `시작일(${spokenDate(range.start)})부터 ` : ''}완독일(${spokenDate(range.end)})까지만 남길 수 있어요.`
+  }
+  if (inclusiveDays(from, to) > 366) return '한 번에 366일까지 남길 수 있어요. 기간을 나눠 저장해주세요.'
+  return null
+}
+
 export const monthOf = (date: string) => date.slice(0, 7)
 
 export function addMonths(month: string, delta: number): string {
