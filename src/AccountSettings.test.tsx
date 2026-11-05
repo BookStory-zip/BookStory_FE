@@ -5,6 +5,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { ApiError } from './lib/api'
 import AccountSettings from './AccountSettings'
 
+vi.mock('./ReadingReminder', () => ({ default: () => <h2>독서 알림</h2> }))
+
 const mocks = vi.hoisted(() => ({ getProfile: vi.fn(), updateNickname: vi.fn(), deleteAccount: vi.fn(), isAccountDeleted: vi.fn() }))
 vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),

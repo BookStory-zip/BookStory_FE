@@ -1,5 +1,6 @@
 // 독서 알림 전용 서비스 워커. 푸시 수신과 알림 클릭만 처리하고 요청을 가로채거나 캐시하지 않는다.
 self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))
 
 self.addEventListener('push', (event) => {
   let date = ''

@@ -5,7 +5,7 @@ FE가 사용하는 BookStory BE API 계약과 FE 반영 방식, BE 전달 사항
 BE가 FE용으로 정리한 계약은 BE 저장소 `docs/frontend-api.md`에 있습니다.
 
 - 운영 API: https://bookstory-api-w31a.onrender.com · [Swagger](https://bookstory-api-w31a.onrender.com/docs)
-- 기준: BE 4차 main `4c69319`(PR #30, C 노트·D-1 검색·D-2 책장, A 타이머·B 목표는 3차 `d4a93be`), FE main `97a039c`(PR #21, 2026-11-04 자동 운영 배포). BE 운영 반영 완료는 BE 회신이며, FE가 Render 배포 SHA나 운영 DB를 직접 조회한 것은 아닙니다. 운영 API 계약·공개 알림 키·CORS와 FE 커밋 표식·정적 파일 제공은 직접 확인했습니다. 개인 기록 쓰기는 별도 검증 환경을 사용하며 실제 확인 범위는 plan.md에 기록합니다.
+- 기준: BE 5차 main `e4aec03`(2026-11-05 사용자 전달: 서재 정렬·도서 검색 기준/정렬·계정 알림·과거 읽은 날 운영 반영), FE main `97a039c`(PR #21, 2026-11-04 자동 운영 배포). BE 5차 verify·운영 OpenAPI·로그인 점검 통과는 BE 회신이며, FE가 운영 인증 API나 Render 배포 SHA·DB를 직접 확인한 것은 아닙니다. 실제 FE 확인 범위는 plan.md에 기록합니다.
 
 ## 인증
 
@@ -43,7 +43,8 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 운영 제공 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
 | `DELETE /me` | 204. 비밀번호 인증 5분 이내 토큰만, 아니면 403 `recent_login_required`, 로그인 계정 삭제 실패 503 `account_deletion_failed`(재시도 가능) | 계정 화면 탈퇴. 비밀번호 재로그인 후 요청 |
 | `GET /push/public-key` | 공개. `{public_key}`(base64url), 발송 키 미설정이면 503. 운영 200 확인 | 구독의 `applicationServerKey`. 아래 독서 알림 참고 |
-| `PUT·DELETE /me/push-subscriptions` | PUT `{endpoint, keys: {p256dh, auth}}`, DELETE `{endpoint}`, 모두 204. endpoint는 https 푸시 서비스만, 형식 오류 422 | 알림 켜기·끄기·앱 시작 재등록·로그아웃 해제 |
+| `PUT·DELETE /me/push-subscriptions` | PUT `{endpoint, keys: {p256dh, auth}}`, DELETE `{endpoint}`, 모두 204. endpoint는 https 푸시 서비스만, 형식 오류 422 | 켜진 계정의 기기 등록·앱 복귀 재등록·로그아웃 해제 |
+| `GET·PUT /me/reminder-settings` | GET `{enabled: boolean}`, PUT 같은 본문 → 204 | 계정 전체 알림 켜기·끄기 |
 
 | 값 | 의미 |
 | --- | --- |
@@ -99,12 +100,16 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 
 - `GET /library/books`의 선택 `sort`: `custom`(기본)은 `position ASC, created_at DESC, id DESC`, `created`는 `created_at DESC, id DESC`, `started`는 `started_at DESC NULLS LAST, created_at DESC, id DESC`입니다. 조회만 바꾸고 저장된 position은 유지합니다. 기존 응답·limit/offset·검색/상태/책장 조합은 유지하며 잘못된 값은 422 `validation_error`입니다.
 - FE는 정렬 변경 시 offset 0부터 다시 받고, 모든 추가 페이지·필터 변경·책장 작업 후 재조회에 선택 정렬을 유지합니다. 위치 편집은 custom이면서 검색·상태·책장 필터가 없을 때만 허용합니다. 정렬 422는 이전 조건으로 복귀하고 검색어 대신 정렬 선택에 안내합니다.
-- FE 구현은 전달받은 확정 계약 기준입니다. 사용자 확인(2026-11-05): 정렬 API는 BE develop에만 병합됐고 main·운영에는 아직 없습니다. 운영 OpenAPI 접근도 실패했으며 실제 BE 연동·운영 배포 완료로 해석하지 않습니다.
+- FE 구현은 전달받은 확정 계약 기준입니다. BE 5차 main `e4aec03` 운영 반영 완료 안내를 받았습니다(2026-11-05). FE의 운영 OpenAPI 접근은 실패했으며 실제 인증 API 연동 검증은 남아 있습니다.
 
-### 후속 계정 알림 계약 변경 (사용자 전달, 2026-11-05)
+### 계정 알림 최종 계약 (BE 5차 main `e4aec03`, 2026-11-05)
 
-- `PUT /me/push-subscriptions`는 계정의 `enabled`를 true로 켭니다. `DELETE /me/push-subscriptions`는 계정 설정을 바꾸지 않습니다. 구독 등록도 설정을 바꾸지 않는다는 이전 합의를 대체합니다.
-- 계정 알림 FE 연동 시 서버 설정이 enabled=true일 때만 자동 구독합니다. 계정 알림 끄기 후에는 자동 구독 PUT으로 다시 켜지지 않도록 동기화 중인 요청도 확인합니다. 현재 기기 알림 구현은 이번 서재 정렬 작업에서 변경하지 않습니다.
+- `GET /me/reminder-settings` → `{enabled: boolean}`, `PUT /me/reminder-settings {enabled: boolean}` → 204입니다. 필수 boolean 누락·null은 422 `validation_error`, 미인증은 401입니다.
+- **구독 PUT·DELETE는 저장된 계정 설정을 바꾸지 않습니다.** 구독 PUT이 true를 켠다는 중간 전달 계약을 대체합니다. 설정을 저장한 적 없는 계정은 구독 여부를 따르며, GET에서 true를 읽으면 서버가 그 값을 저장해 이후 마지막 구독이 사라져도 켜짐을 유지합니다. 신규 계정은 구독이 없어 false입니다.
+- `enabled=false`이면 모든 기기 발송을 막습니다. FE의 끄기는 설정 PUT만 보내며, 기기 구독을 지우지 않습니다. 로그아웃은 현재 기기의 구독만 해제하고 계정 설정은 유지합니다.
+- FE 계정 화면에서 전역 켜짐과 현재 기기 수신 상태를 구분합니다. 지원하지 않거나 권한이 차단된 기기에서도 계정 설정을 바꿀 수 있고, 권한 요청은 별도 버튼을 누를 때만 합니다. 기록 화면은 설정 화면으로 연결합니다.
+- 로그인·앱 복귀 시 설정이 true이고 권한이 granted일 때만 자동 구독합니다. 다른 계정·주인 불명 구독은 설정 조회 성공 여부와 관계없이 먼저 끊습니다. 설정·기기 변경은 순서대로 처리하고 계정 변경·이탈 뒤 늦은 쓰기를 막습니다. 권한 창은 이 대기열을 막지 않습니다.
+- 저장 결과 불명확·기기 등록 실패 시 재전송하지 않고 계정 상태를 재조회합니다. 재조회 실패는 꺼짐으로 표시하지 않고 재확인 버튼만 제공합니다.
 
 ## 지난 날짜 독서 체크 (운영 반영)
 
@@ -201,12 +206,12 @@ BE `feat/reading-reminder` `affb334` 계약을 2026-11-03 확정했습니다. �
 - BE: 매일 21:00 KST에 모든 사용자 공통으로 발송합니다. 구독이 있고 읽는 중인 책 중 오늘(KST) 체크하지 않은 책이 하나라도 있는 사용자에게 하루 한 번 보냅니다. 실행이 늦어져도 자정 전까지만 보내며, 알림 유효 시간도 자정까지입니다.
 - 내용은 `{"type": "reading_reminder", "date": "YYYY-MM-DD"}`입니다. 문구·이동 화면은 FE 서비스 워커(`public/sw.js`)가 정합니다: 제목 "BookStory", 본문 "오늘 아직 체크하지 않은 책이 있어요.", 클릭 시 새 창으로 `/records?check={date}`를 열어 그날 체크 편집기(읽는 중 책 체크·기존 체크 취소)를 바로 엽니다. 열린 창을 이동시키지 않아 작성 중인 입력이 사라지지 않습니다. 자정 뒤에 눌러도 알림 날짜를 쓰며, 최근 7일 밖이거나 형식이 틀리면 편집기 없이 기록 화면만 엽니다. 같은 날 알림은 `date`로 묶습니다.
 - 서재 상태 필터 요청(2026-11-03 FE 수용): `GET /library/books?status=reading&limit&offset`. `status`는 선택·5개 상태 중 하나, 생략 시 전체, 저장된 서재 순서·기존 응답 형식 유지, 잘못된 값 422 `validation_error`. 체크 편집기가 이 필터로 요청하되, 필터를 모르는 서버가 전체를 돌려줘도 화면에서 다시 `reading`만 고르므로 BE 배포 순서와 무관하게 안전합니다.
-- 켜기 여부는 브라우저 구독 유무입니다. 같은 endpoint를 다시 PUT하면 키만 갱신하고, 다른 계정이 같은 endpoint를 등록하면 그 계정으로 옮깁니다. DELETE는 본인 구독만 지우며 없어도 204입니다.
+- 켜기 여부는 위 계정 알림 설정을 따릅니다. 같은 endpoint를 다시 PUT하면 키만 갱신하고, 다른 계정이 같은 endpoint를 등록하면 그 계정으로 옮깁니다. DELETE는 본인 구독만 지우며 없어도 204입니다.
 - BE는 404·410과 저장된 키를 쓸 수 없는 구독만 삭제합니다. 발송 키 교체 뒤 이전 키 구독의 403은 실패로만 세고 지우지 않습니다.
-- FE: 기록(달력) 화면의 "알림 켜기/끄기" 버튼을 누를 때만 권한을 요청합니다. 서버 등록이 실패하면 브라우저 구독을 남기지 않습니다. 끄기·로그아웃은 DELETE 결과와 무관하게 브라우저 구독을 해제하며, 서버에 남은 구독은 다음 발송의 410으로 정리됩니다.
-- 계정 보호: 켠 계정을 브라우저 저장소에 기록합니다. 앱 시작 시 다른 계정·주인 불명·권한 회수 구독은 이 계정으로 PUT하지 않고 해제합니다. 같은 계정이면 다시 PUT하고, 구독 키가 `/push/public-key`와 다르면 예전 endpoint를 DELETE한 뒤 다시 구독해 PUT합니다. 다른 계정은 직접 알림을 켜야 합니다.
-- 503은 "지금은 알림을 사용할 수 없어요"로 안내하고 로그아웃하지 않습니다. 지원하지 않는 브라우저는 버튼 대신 iOS 16.4 이상 홈 화면 추가 안내를 보여 줍니다. endpoint는 로그·화면에 출력하지 않습니다.
-- 서비스 워커는 요청을 가로채거나 캐시하지 않습니다. `/sw.js`는 `Cache-Control: no-cache`로 배포하고, manifest는 홈 화면 추가용 최소 구성입니다.
+- FE: 계정 화면에서 알림을 켜고 끄며, 별도 기기 권한 버튼에서만 권한을 요청합니다. 서버 등록이 실패하면 브라우저 구독을 남기지 않습니다. 로그아웃은 DELETE 결과와 무관하게 브라우저 구독을 해제하며, 서버에 남은 구독은 다음 발송의 410으로 정리됩니다.
+- 계정 보호: 구독한 계정을 브라우저 저장소에 기록합니다. 로그인·앱 복귀 시 다른 계정·주인 불명·권한 회수 구독은 먼저 끊고 현재 계정 설정을 확인합니다. 켜짐·권한 granted일 때 기존 구독을 재등록하거나, 구독이 없으면 새로 만듭니다. 공개 키가 바뀌면 이전 endpoint를 DELETE하고 다시 구독합니다.
+- 503은 "지금은 알림을 사용할 수 없어요"로 안내하고 로그아웃하지 않습니다. 미지원 브라우저에는 iOS 16.4 이상 홈 화면 추가 안내와 계정 설정 버튼을 보여 줍니다. endpoint는 로그·화면에 출력하지 않습니다.
+- 서비스 워커는 요청을 가로채거나 캐시하지 않습니다. `/sw.js`는 `Cache-Control: no-cache`로 배포하고, 로그인·앱 복귀 시 기존 워커의 update를 확인합니다. 새 워커는 skipWaiting·clients.claim으로 활성화하며 열린 FE 페이지를 강제로 새로고침하지 않습니다. manifest는 홈 화면 추가용 최소 구성입니다.
 
 ## 계정·안정성 (공개 가입 전, 운영 반영)
 

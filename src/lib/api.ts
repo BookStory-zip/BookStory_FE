@@ -822,6 +822,18 @@ export async function getPushPublicKey(): Promise<string> {
 
 export type PushSubscriptionBody = { endpoint: string; keys: { p256dh: string; auth: string } }
 
+export async function getReminderSettings(accessToken: string): Promise<boolean> {
+  const data = await apiRequest('/me/reminder-settings', accessToken)
+  if (typeof data !== 'object' || data === null || !('enabled' in data) || typeof data.enabled !== 'boolean') {
+    throw new Error('알림 설정 응답 형식이 올바르지 않습니다.')
+  }
+  return data.enabled
+}
+
+export async function updateReminderSettings(accessToken: string, enabled: boolean): Promise<void> {
+  await apiRequest('/me/reminder-settings', accessToken, { method: 'PUT', body: { enabled } })
+}
+
 // 같은 endpoint를 다시 보내면 키만 갱신되므로 반복 등록해도 안전하다.
 export async function savePushSubscription(accessToken: string, body: PushSubscriptionBody): Promise<void> {
   await apiRequest('/me/push-subscriptions', accessToken, { method: 'PUT', body })

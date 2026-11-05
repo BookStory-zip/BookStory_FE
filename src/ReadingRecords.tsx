@@ -9,7 +9,6 @@ import CabinIcon from './CabinIcon'
 import NoteTimeline from './NoteTimeline'
 import ReadingStatistics from './ReadingStatistics'
 import ReadingDayEditor from './ReadingDayEditor'
-import ReadingReminder from './ReadingReminder'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -141,7 +140,7 @@ export default function ReadingRecords() {
       ) : (
         <>
 
-      <ReadingReminder />
+      <p className="result-note"><Link to="/settings#reminder-settings">독서 알림 설정</Link></p>
 
       <div className="records-month">
         <button type="button" className="calendar-nav" aria-label="이전 달" disabled={editingBusy} onClick={() => moveMonth(-1)}>
