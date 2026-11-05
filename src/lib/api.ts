@@ -206,6 +206,10 @@ export type SearchBook = {
   isbn13: string | null
 }
 
+export type SearchTarget = 'title' | 'person' | 'publisher'
+export type SearchSort = 'accuracy' | 'latest'
+export type SearchOptions = { target?: SearchTarget; sort?: SearchSort }
+
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -213,8 +217,11 @@ function text(value: unknown): string {
 export async function searchBooks(
   query: string,
   page = 1,
+  options: SearchOptions = {},
 ): Promise<{ books: SearchBook[]; isEnd: boolean }> {
   const params = new URLSearchParams({ query, page: String(page) })
+  if (options.target) params.set('target', options.target)
+  if (options.sort) params.set('sort', options.sort)
   const data = await apiRequest(`/books/search?${params}`, null)
 
   if (
