@@ -44,6 +44,8 @@ test('순서 편집: 키보드·탭 이동, 불러온 범위 유지, 새로고�
   expect(moves).toEqual([{ after_user_book_id: null }, { after_user_book_id: 'personal-0' }])
   await expect(page.getByRole('listitem')).toHaveCount(23)
   await expect(page.getByRole('button', { name: '더 보기' })).toHaveCount(0)
+  await page.getByRole('button', { name: '편집 마치기' }).click()
+  await expect(page.locator('.library-management summary')).toBeFocused()
   await page.reload()
   await expect(page.getByRole('listitem')).toHaveCount(20)
   await expect(page.getByRole('listitem').nth(1)).toContainText('서재 책 1')
@@ -91,6 +93,7 @@ test('손잡이 드래그: 이동·동일 위치·Escape·영역 밖 취소와 �
   await page.mouse.up()
   await expect(page.getByRole('listitem').first()).toContainText('드래그 책 1')
   await expect(handle(1)).toBeEnabled()
+  await expect(page.locator('.order-menu')).toHaveCount(0)
   expect(anchors).toEqual([null])
   from = await position(1)
   await page.mouse.move(from.x, from.y)
@@ -114,6 +117,13 @@ test('손잡이 드래그: 이동·동일 위치·Escape·영역 밖 취소와 �
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
   await expect(page.getByRole('listitem').first()).toContainText('드래그 책 0')
   expect(anchors).toEqual([null, null])
+  await expect(page.locator('.order-menu')).toHaveCount(0)
+  await handle(0).tap()
+  await expect(page.getByRole('button', { name: '드래그 책 0 앞으로' })).toBeDisabled()
+  await page.getByRole('button', { name: '드래그 책 0 뒤로' }).click()
+  await expect(page.getByRole('listitem').first()).toContainText('드래그 책 1')
+  await expect(handle(0)).toBeFocused()
+  expect(anchors).toEqual([null, null, 'personal-1'])
 })
 
 test('손잡이 드래그: 화면 가장자리에서 자동 스크롤해 보이지 않던 위치로 옮긴다', async ({ page }) => {
@@ -143,6 +153,19 @@ test('손잡이 드래그: 화면 가장자리에서 자동 스크롤해 보이�
   await signInWithMockSession(page)
   await page.goto('/')
   await (await libraryAction(page, '순서 편집')).click()
+  const stationary = page.getByRole('button', { name: '스크롤 책 7 이동 손잡이' })
+  await stationary.evaluate((element) => element.scrollIntoView({ block: 'end' }))
+  const stationaryBox = (await stationary.boundingBox())!
+  const beforeScroll = await page.evaluate(() => scrollY)
+  await page.mouse.move(stationaryBox.x + stationaryBox.width / 2, stationaryBox.y + stationaryBox.height / 2)
+  await page.mouse.down()
+  await page.waitForTimeout(250)
+  const heldScroll = await page.evaluate(() => scrollY)
+  await page.mouse.up()
+  expect(heldScroll).toBe(beforeScroll)
+  expect(anchors).toHaveLength(0)
+  await expect(page.locator('.order-menu')).toHaveCount(1)
+  await page.keyboard.press('Escape')
   const last = page.getByRole('button', { name: '스크롤 책 19 이동 손잡이' })
   await last.scrollIntoViewIfNeeded()
   const first = page.getByRole('button', { name: '스크롤 책 0 이동 손잡이' })
@@ -326,6 +349,7 @@ test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변�
   await page.getByRole('button', { name: '선택 마치기' }).click()
 
   await (await libraryAction(page, '책장 관리')).click()
+  await page.getByRole('button', { name: '에세이 이동 손잡이' }).click()
   await page.getByRole('button', { name: '에세이 앞으로' }).click()
   await expect(page.getByText('책장 순서를 바꿨습니다.')).toBeVisible()
   await page.getByRole('button', { name: 'SF 이름 바꾸기' }).click()
@@ -353,6 +377,88 @@ test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변�
     'PATCH /shelves/shelf-1 {"name":"sf"}',
     'DELETE /shelves/shelf-1',
   ])
+})
+
+test('책장 손잡이는 키보드·이동 메뉴·터치 드래그와 모달 내부 자동 스크롤을 제공한다', async ({ page, context }, testInfo) => {
+  let shelves = Array.from({ length: 25 }, (_, i) => ({ id: `s${i}`, name: `책장 ${i}`, book_count: 0, position: i }))
+  const moves: { id: string; after: string | null }[] = []
+  let failNext = false
+  await mockBackend(page, async (route, url, method) => {
+    if (url.pathname === '/shelves') return json(route, shelves).then(() => true)
+    if (url.pathname === '/library/books') return json(route, []).then(() => true)
+    if (url.pathname.endsWith('/position') && method === 'PATCH') {
+      const id = url.pathname.split('/')[2]
+      const after = route.request().postDataJSON().after_shelf_id
+      moves.push({ id, after })
+      if (failNext) { failNext = false; return json(route, { code: 'invalid_position', detail: 'invalid' }, 422).then(() => true) }
+      const moved = shelves.find((item) => item.id === id)!
+      shelves = shelves.filter((item) => item.id !== id)
+      shelves.splice(after === null ? 0 : shelves.findIndex((item) => item.id === after) + 1, 0, moved)
+      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
+    }
+    return false
+  })
+  await signInWithMockSession(page)
+  await page.setViewportSize({ width: 390, height: 650 })
+  await page.goto('/')
+  await (await libraryAction(page, '책장 관리')).click()
+  const modal = page.getByRole('dialog', { name: '책장 관리', exact: true })
+  const items = modal.locator('.shelf-list > li')
+  const handle = (i: number) => page.getByRole('button', { name: `책장 ${i} 이동 손잡이`, exact: true })
+  const pane = modal.locator('.shelf-manager')
+  const cdp = await context.newCDPSession(page)
+  await expect(page.getByRole('button', { name: '앞', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '뒤', exact: true })).toHaveCount(0)
+  await handle(12).evaluate((element) => element.scrollIntoView({ block: 'end' }))
+  const stationary = (await handle(12).boundingBox())!
+  const beforeScroll = await pane.evaluate((el) => el.scrollTop)
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: stationary.x + stationary.width / 2, y: stationary.y + stationary.height / 2, id: 0 }] })
+  await page.waitForTimeout(250)
+  const heldScroll = await pane.evaluate((el) => el.scrollTop)
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  expect(heldScroll).toBe(beforeScroll)
+  expect(moves).toHaveLength(0)
+  await expect(page.locator('.order-menu')).toHaveCount(1)
+  await page.keyboard.press('Escape')
+  await handle(1).press('ArrowUp')
+  await expect(items.first()).toContainText('책장 1')
+  await expect(handle(1)).toBeFocused()
+  await handle(1).tap()
+  await expect(page.getByRole('button', { name: '책장 1 앞으로' })).toBeDisabled()
+  await page.getByRole('button', { name: '책장 1 뒤로' }).click()
+  await expect(items.first()).toContainText('책장 0')
+  await expect(handle(1)).toBeFocused()
+  await handle(24).scrollIntoViewIfNeeded()
+  const from = (await handle(24).boundingBox())!
+  const area = (await pane.boundingBox())!
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from.x + from.width / 2, y: from.y + from.height / 2, id: 0 }] })
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + from.width / 2, y: area.y + 4, id: 0 }] })
+  await expect.poll(() => pane.evaluate((el) => el.scrollTop)).toBe(0)
+  const target = (await items.first().boundingBox())!
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: target.x + target.width / 2, y: target.y + target.height / 2, id: 0 }] })
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await expect(items.first()).toContainText('책장 24')
+  await expect(handle(24)).toBeFocused()
+  await expect(page.locator('.order-menu')).toHaveCount(0)
+  expect(moves).toEqual([{ id: 's1', after: null }, { id: 's1', after: 's0' }, { id: 's24', after: null }])
+  const point = (await handle(24).boundingBox())!
+  const next = (await items.nth(1).boundingBox())!
+  await page.mouse.move(point.x + point.width / 2, point.y + point.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(next.x + next.width / 2, next.y + next.height / 2, { steps: 4 })
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(modal).toBeVisible()
+  expect(moves).toHaveLength(3)
+  failNext = true
+  await handle(24).press('ArrowDown')
+  await expect(page.getByRole('alert')).toContainText('자기 자신 뒤로')
+  await expect(handle(24)).toBeEnabled()
+  await expect(handle(24)).toBeFocused()
+  await expect(items.first()).toContainText('책장 24')
+  expect(moves).toHaveLength(4)
+  await handle(24).tap()
+  await page.screenshot({ path: testInfo.outputPath('shelf-order-menu-mobile.png') })
 })
 
 test('책장 모달은 목록을 밀지 않고 모바일 내부 스크롤·저장 잠금·삭제 취소·초점 복귀를 지킨다', async ({ page }, testInfo) => {

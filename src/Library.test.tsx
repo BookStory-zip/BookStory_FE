@@ -417,17 +417,24 @@ test('이동 실패는 목록 이어 받기를 막지 않고 다시 불러오기
   await screen.findByText('B 책 0')
 })
 
-test('앞·뒤 버튼으로도 옮길 수 있고 양 끝에서는 막는다', async () => {
+test('앞·뒤 버튼은 기본 숨기고 손잡이의 이동 메뉴에서 양 끝을 막고 옮긴다', async () => {
   const books = makeBooks(3, 'A')
   mocks.getLibraryBooks.mockResolvedValueOnce(books).mockResolvedValueOnce([books[1], books[0], books[2]])
   mocks.moveLibraryBook.mockResolvedValue(undefined)
   renderInRouter(<Library />)
   fireEvent.click(await findManagementAction('순서 편집'))
+  expect(screen.queryByRole('button', { name: 'A 책 0 앞으로' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 0 이동 손잡이' }))
   expect(screen.getByRole('button', { name: 'A 책 0 앞으로' })).toHaveProperty('disabled', true)
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 0 이동 손잡이' }), { key: 'Escape' })
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 2 이동 손잡이' }))
   expect(screen.getByRole('button', { name: 'A 책 2 뒤로' })).toHaveProperty('disabled', true)
+  fireEvent.keyDown(screen.getByRole('button', { name: 'A 책 2 이동 손잡이' }), { key: 'Escape' })
+  fireEvent.click(screen.getByRole('button', { name: 'A 책 1 이동 손잡이' }))
   fireEvent.click(screen.getByRole('button', { name: 'A 책 1 앞으로' }))
   await waitFor(() => expect(mocks.moveLibraryBook).toHaveBeenCalledWith('test-token', books[1].id, null))
   await screen.findByText('순서를 저장했습니다.')
+  expect(screen.queryByRole('button', { name: 'A 책 1 앞으로' })).toBeNull()
 })
 
 test('404는 삭제된 책을 추정하지 않고 최신 목록으로 다시 확인한다', async () => {

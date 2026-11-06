@@ -23,6 +23,11 @@ const onBusyChange = vi.fn()
 const onClose = vi.fn()
 const renderManager = () => render(<ShelfManager shelves={shelves} refresh={refresh} onBusyChange={onBusyChange} onClose={onClose} />)
 
+function orderAction(name: string, direction: '앞으로' | '뒤로') {
+  fireEvent.click(screen.getByRole('button', { name: `${name} 이동 손잡이` }))
+  return screen.getByRole('button', { name: `${name} ${direction}` })
+}
+
 beforeEach(() => {
   vi.resetAllMocks()
   refresh.mockResolvedValue(true)
@@ -96,11 +101,12 @@ test('이름 바꾸기는 대소문자만 바뀌어도 보내고, 완전히 같�
 test('순서 이동은 기준 책장 뒤로 보내고, 맨 앞은 null이며 끝에서는 더 옮기지 않는다', async () => {
   mocks.moveShelf.mockResolvedValue(undefined)
   renderManager()
-  expect(screen.getByRole('button', { name: 'SF 앞으로' })).toHaveProperty('disabled', true)
-  expect(screen.getByRole('button', { name: '시 뒤로' })).toHaveProperty('disabled', true)
-  fireEvent.click(screen.getByRole('button', { name: '에세이 앞으로' }))
+  expect(screen.queryByRole('button', { name: 'SF 앞으로' })).toBeNull()
+  expect(orderAction('SF', '앞으로')).toHaveProperty('disabled', true)
+  expect(orderAction('시', '뒤로')).toHaveProperty('disabled', true)
+  fireEvent.click(orderAction('에세이', '앞으로'))
   await screen.findByText('책장 순서를 바꿨습니다.')
-  fireEvent.click(screen.getByRole('button', { name: 'SF 뒤로' }))
+  fireEvent.click(orderAction('SF', '뒤로'))
   await vi.waitFor(() => expect(mocks.moveShelf).toHaveBeenCalledTimes(2))
   expect(mocks.moveShelf.mock.calls.map((call) => call.slice(1))).toEqual([['s2', null], ['s1', 's2']])
 })
@@ -108,7 +114,7 @@ test('순서 이동은 기준 책장 뒤로 보내고, 맨 앞은 null이며 끝
 test('순서 이동 404는 원인을 추정하지 않고 책장 목록만 다시 받는다', async () => {
   mocks.moveShelf.mockRejectedValueOnce(new ApiError(404, 'Shelf not found'))
   renderManager()
-  fireEvent.click(screen.getByRole('button', { name: '시 앞으로' }))
+  fireEvent.click(orderAction('시', '앞으로'))
   expect((await screen.findByRole('alert')).textContent).toContain('최신 책장 목록을 불러왔어요')
   expect(refresh).toHaveBeenCalledTimes(1)
   expect(mocks.moveShelf).toHaveBeenCalledTimes(1)
