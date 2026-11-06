@@ -90,7 +90,7 @@ export default function Library() {
   const customOrder = !filter.sort || filter.sort === 'custom'
   const filterLocked = editing || selecting || saving || needsRefresh || shelfBusy
 
-  // 空のグリッドでも実際の列幅を読める。測れない環境では従来の20件を使う。
+  // 빈 그리드에서도 실제 열 폭을 읽는다. 측정할 수 없으면 기존 20권을 쓴다.
   function visibleCapacity() {
     const grid = shelf.current
     if (!grid || !grid.clientWidth || !listStart.current) return PAGE_SIZE
