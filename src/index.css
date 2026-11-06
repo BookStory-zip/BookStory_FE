@@ -862,21 +862,10 @@ legend {
   margin-block: var(--space-6);
 }
 
-.timer-modes {
-  display: flex;
-  gap: var(--space-3);
-}
-
-.timer-modes button {
-  flex: 1;
-  width: auto;
-}
-
-.timer-modes button[aria-pressed='true'] {
-  background: var(--color-accent);
-  color: var(--color-on-accent);
-  opacity: 1;
-}
+.timer-history-toggle { margin-top: var(--space-4); }
+.timer-history-panel { margin-top: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--color-rule); }
+.timer-history-panel h2 { font-size: 1.125rem; }
+.timer-history-content { display: grid; gap: var(--space-3); }
 
 .timer-book-picker select {
   width: 100%;
