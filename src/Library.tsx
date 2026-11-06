@@ -56,6 +56,13 @@ export default function Library() {
   const dragRef = useRef<{ from: number; to: number; pointerId: number; x: number; y: number } | null>(null)
   const dragging = dragTarget !== null
   const shelf = useRef<HTMLUListElement>(null)
+  const listStart = useRef<HTMLDivElement>(null)
+  const management = useRef<HTMLDetailsElement>(null)
+  const searchButton = useRef<HTMLButtonElement>(null)
+  const queryInput = useRef<HTMLInputElement>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [managementOpen, setManagementOpen] = useState(false)
   const listEnd = useRef<HTMLDivElement>(null)
   const title = useRef<HTMLHeadingElement>(null)
   const editButton = useRef<HTMLButtonElement>(null)
@@ -82,6 +89,42 @@ export default function Library() {
   const filtered = Boolean(filter.q || filter.status || filter.shelf_id)
   const customOrder = !filter.sort || filter.sort === 'custom'
   const filterLocked = editing || selecting || saving || needsRefresh || shelfBusy
+
+  // 빈 그리드에서도 실제 열 폭을 읽는다. 측정할 수 없으면 기존 20권을 쓴다.
+  function visibleCapacity() {
+    const grid = shelf.current
+    if (!grid || !grid.clientWidth || !listStart.current) return PAGE_SIZE
+    const style = getComputedStyle(grid)
+    const tracks = style.gridTemplateColumns.split(' ').map(Number.parseFloat).filter(Number.isFinite)
+    if (!tracks.length) return PAGE_SIZE
+    const first = grid.children[0]?.getBoundingClientRect()
+    const next = grid.children[tracks.length]?.getBoundingClientRect()
+    const gap = Number.parseFloat(style.rowGap) || 0
+    const rowHeight = first?.height || tracks[0] * 0.84 * 1.5 + 100
+    const pitch = next && first ? next.top - first.top : rowHeight + gap
+    const available = window.innerHeight - listStart.current.getBoundingClientRect().top - (Number.parseFloat(style.paddingTop) || 0)
+    return tracks.length * Math.max(1, Math.ceil(available / Math.max(1, pitch)))
+  }
+
+  function initialLimit() {
+    return Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, visibleCapacity()))
+  }
+
+  function closeManagement() {
+    setManagementOpen(false)
+    if (management.current) {
+      management.current.querySelector('summary')?.focus()
+    }
+  }
+
+  useEffect(() => {
+    if (!managementOpen) return
+    const close = (event: PointerEvent) => {
+      if (!management.current?.contains(event.target as Node)) setManagementOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [managementOpen])
 
   async function refreshShelfBooks(successfulIds: string[]) {
     setSelectedIds((current) => current.filter((id) => !successfulIds.includes(id)))
@@ -143,7 +186,7 @@ export default function Library() {
       })
       if (!active.current || version !== loadVersion.current) return false
       setBooks((current) => (offset === 0 ? page : [...current, ...page]))
-      setHasMore((previous) => page.length === limit && (limit === PAGE_SIZE || previous))
+      setHasMore((previous) => page.length === limit && (!preserve || previous))
       setError(null)
       setPhase('ready')
       return true
@@ -193,11 +236,11 @@ export default function Library() {
 
   // 조건을 바꾸거나 다시 시도할 때 첫 페이지를 받는다. 서버가 조건을 거부하면 되돌아간다.
   function loadFirstPage() {
-    void load(0).then((fallback) => {
+    void load(0, false, initialLimit()).then((fallback) => {
       if (typeof fallback !== 'object' || !active.current) return
       apply(fallback.filter, false)
-      if (fallback.kind === 'search') setSearchError(fallback.message)
-      else if (fallback.kind === 'sort') setSortError(fallback.message)
+      if (fallback.kind === 'search') { setSearchError(fallback.message); setSearchOpen(true) }
+      else if (fallback.kind === 'sort') { setSortError(fallback.message); setFiltersOpen(true) }
       else {
         setNotice(fallback.message)
         void loadShelves()
@@ -227,11 +270,11 @@ export default function Library() {
     loadFirstPage()
   }
 
-  function loadMore() {
+  function loadMore(limit = PAGE_SIZE) {
     if (!hasMore || busy.current || locked || dragRef.current || shelfBusy) return
     setError(null)
     setLoadingMore(true)
-    void load(books.length)
+    void load(books.length, false, limit)
   }
 
   // 페이지가 바뀔 때 관찰을 다시 시작해 화면이 덜 찼으면 다음 페이지도 이어 받는다.
@@ -248,14 +291,30 @@ export default function Library() {
   }, [phase, hasMore, error, locked, dragging, shelfBusy, booksLength])
 
   useEffect(() => {
+    if (phase !== 'ready' || !hasMore || error || locked || dragging || shelfBusy) return
+    const fill = () => {
+      const missing = visibleCapacity() - booksLength
+      if (missing > 0) loadMore(Math.min(MAX_LIMIT, missing))
+    }
+    const frame = requestAnimationFrame(fill)
+    window.addEventListener('resize', fill)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fill)
+    if (shelf.current) observer?.observe(shelf.current)
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', fill); observer?.disconnect() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, hasMore, error, locked, dragging, shelfBusy, booksLength, searchOpen, filtersOpen])
+
+  useEffect(() => {
     active.current = true
-    if (!busy.current) void load(0)
+    if (!busy.current) void load(0, false, initialLimit())
     void loadShelves()
     return () => {
       active.current = false
       loadVersion.current += 1
       busy.current = false
     }
+    // 첫 마운트에서만 조회한다. 이후 조건 변경은 apply가 처리한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -369,101 +428,107 @@ export default function Library() {
   return (
     <section className="library" aria-labelledby="library-title" aria-busy={phase === 'loading'}>
       <h1 id="library-title" ref={title} tabIndex={-1}>내 서재</h1>
-      <p className="library-sub">숲속 오두막 책장에 꽂아 둔 책</p>
-
-      <form className="search-form library-search" role="search" onSubmit={submitSearch}>
-        <label htmlFor="library-field" className="visually-hidden">검색 기준</label>
-        <select id="library-field" value={field} disabled={filterLocked} onChange={(event) => setField(event.target.value as Field)}>
-          <option value="title">제목</option>
-          <option value="author">저자</option>
-        </select>
-        <label htmlFor="library-query" className="visually-hidden">서재 검색어</label>
-        <input id="library-query" type="search" value={query} disabled={filterLocked} placeholder="내 서재에서 찾기"
-          autoComplete="off" enterKeyHint="search" aria-invalid={searchError ? true : undefined}
-          aria-describedby={searchError ? 'library-search-error' : undefined} onChange={(event) => setQuery(event.target.value)} />
-        <button type="submit" disabled={filterLocked}>검색</button>
-      </form>
-      {searchError && <p id="library-search-error" className="library-note" role="alert">{searchError}</p>}
-      <div className="library-filters">
-        <div className="library-filter">
-        <label htmlFor="library-sort">서재 정렬</label>
-        <select id="library-sort" value={filter.sort ?? 'custom'} disabled={filterLocked}
-          aria-invalid={sortError ? true : undefined} aria-describedby={sortError ? 'library-sort-error' : undefined}
-          onChange={(event) => apply(makeFilter({ ...filter, sort: event.target.value as LibrarySort }))}>
-          <option value="custom">직접 정한 순서</option>
-          <option value="created">서재 등록 최신순</option>
-          <option value="started">읽기 시작 최신순</option>
-        </select>
+      <div className="library-toolbar">
+        <button ref={searchButton} type="button" className="secondary compact" aria-label="서재 검색"
+          aria-expanded={searchOpen} aria-controls="library-search-panel" disabled={filterLocked}
+          onClick={() => {
+            setSearchOpen(!searchOpen)
+            if (!searchOpen) requestAnimationFrame(() => queryInput.current?.focus())
+            else searchButton.current?.focus()
+          }}>검색</button>
+        <button type="button" className="secondary compact library-filter-toggle" aria-expanded={filtersOpen}
+          aria-controls="library-filter-panel" onClick={() => setFiltersOpen(!filtersOpen)}>필터·정렬</button>
+        <div id="library-filter-panel" className={`library-filters${filtersOpen ? ' is-open' : ''}`}>
+          <div className="library-filter">
+            <label htmlFor="library-sort">서재 정렬</label>
+            <select id="library-sort" value={filter.sort ?? 'custom'} disabled={filterLocked}
+              aria-invalid={sortError ? true : undefined} aria-describedby={sortError ? 'library-sort-error' : undefined}
+              onChange={(event) => apply(makeFilter({ ...filter, sort: event.target.value as LibrarySort }))}>
+              <option value="custom">직접 정한 순서</option>
+              <option value="created">서재 등록 최신순</option>
+              <option value="started">읽기 시작 최신순</option>
+            </select>
+          </div>
+          <div className="library-filter">
+            <label htmlFor="library-status">읽기 상태</label>
+            <select id="library-status" value={filter.status ?? ''} disabled={filterLocked}
+              onChange={(event) => {
+                if (filter.field) setField(filter.field)
+                apply(makeFilter({ ...filter, status: (event.target.value || undefined) as ReadingStatus | undefined }))
+              }}>
+              <option value="">전체</option>
+              {readingStatuses.filter((status) => status !== 'paused' && status !== 'abandoned').map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
+            </select>
+          </div>
+          {shelves && shelves.length > 0 && <div className="library-filter">
+            <label htmlFor="library-shelf">책장</label>
+            <select id="library-shelf" value={filter.shelf_id ?? ''} disabled={filterLocked}
+              onChange={(event) => {
+                if (filter.field) setField(filter.field)
+                apply(makeFilter({ ...filter, shelf_id: event.target.value || undefined }))
+              }}>
+              <option value="">전체</option>
+              {shelves.map((shelf) => <option key={shelf.id} value={shelf.id}>{shelf.name} ({shelf.book_count}권)</option>)}
+            </select>
+          </div>}
         </div>
-        <div className="library-filter">
-        <label htmlFor="library-status">읽기 상태</label>
-        <select id="library-status" value={filter.status ?? ''} disabled={filterLocked}
-          onChange={(event) => {
-            // 제출하지 않은 검색 기준이 아니라 적용된 기준을 쓰고, 선택 상자도 그에 맞춘다.
-            if (filter.field) setField(filter.field)
-            apply(makeFilter({ ...filter, status: (event.target.value || undefined) as ReadingStatus | undefined }))
-          }}>
-          <option value="">전체</option>
-          {readingStatuses.filter((status) => status !== 'paused' && status !== 'abandoned').map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
-        </select>
-        </div>
-        {shelves && shelves.length > 0 && <div className="library-filter">
-          <label htmlFor="library-shelf">책장</label>
-          <select id="library-shelf" value={filter.shelf_id ?? ''} disabled={filterLocked}
-            onChange={(event) => {
-              if (filter.field) setField(filter.field)
-              apply(makeFilter({ ...filter, shelf_id: event.target.value || undefined }))
-            }}>
-            <option value="">전체</option>
-            {shelves.map((shelf) => <option key={shelf.id} value={shelf.id}>{shelf.name} ({shelf.book_count}권)</option>)}
-          </select>
-        </div>}
-        <button type="button" className="secondary compact" aria-expanded={managing} disabled={editing || selecting || saving || shelfBusy} onClick={() => setManaging(!managing)}>
-          {managing ? '책장 관리 닫기' : '책장 관리'}
-        </button>
-        {filter.q && (
-          <p aria-live="polite">
-            {filter.field === 'author' ? '저자' : '제목'} ‘{filter.q}’ 검색 결과
-            <button type="button" className="link-button" disabled={filterLocked} onClick={clearSearch}>검색 해제</button>
-          </p>
-        )}
+        <details ref={management} open={managementOpen} className="library-management"
+          onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setManagementOpen(false) }} onKeyDown={(event) => {
+          if (event.key === 'Escape') { event.preventDefault(); closeManagement() }
+        }}>
+          <summary onClick={(event) => { event.preventDefault(); setManagementOpen(!managementOpen) }}>관리</summary>
+          <div className="library-management-actions" hidden={!managementOpen}>
+            <button type="button" className="secondary compact" disabled={editing || selecting || saving || shelfBusy}
+              onClick={() => { closeManagement(); setManaging(!managing) }}>{managing ? '책장 관리 닫기' : '책장 관리'}</button>
+            <button type="button" className="secondary compact"
+              disabled={phase !== 'ready' || !books.length || !customOrder || filtered || selecting || saving || loadingMore || dragging || shelfBusy}
+              onClick={() => { closeManagement(); setEditing(true); setNotice(''); setOrderError('') }}>순서 편집</button>
+            <button type="button" className="secondary compact" disabled={phase !== 'ready' || !books.length || editing || saving || shelfBusy || needsRefresh}
+              onClick={() => { closeManagement(); setSelecting(true); setManaging(false); setSelectedIds([]) }}>책 선택</button>
+            {filtered && <p className="result-note">검색·상태·책장 필터를 해제하면 전체 서재 순서를 편집할 수 있어요.</p>}
+            {!customOrder && <p className="result-note">직접 정한 순서를 선택하면 서재 순서를 편집할 수 있어요.</p>}
+          </div>
+        </details>
       </div>
-      {sortError && <p id="library-sort-error" className="library-note" role="alert">{sortError}</p>}
-
-      {shelvesError && (
-        <div className="library-note" role="alert">
-          <p>{shelvesError}</p>
-          <button type="button" className="secondary compact" onClick={() => void loadShelves()}>책장 다시 불러오기</button>
-        </div>
-      )}
-      {managing && shelves && (
-        <ShelfManager shelves={shelves} refresh={refreshShelves} onBusyChange={setShelfBusy} />
-      )}
-
-      {phase === 'ready' && books.length > 0 && (
-        <div className="library-order">
-          <button ref={editButton} type="button" className="secondary compact" aria-pressed={editing}
-            disabled={!customOrder || filtered || selecting || saving || loadingMore || dragging || shelfBusy} onClick={() => {
-              setEditing(!editing)
-              setNotice('')
-              setOrderError('')
-            }}>
-            {editing ? '편집 마치기' : '순서 편집'}
-          </button>
-          {filtered && <p>검색·상태·책장 필터를 해제하면 전체 서재 순서를 편집할 수 있어요.</p>}
-          {!customOrder && <p>직접 정한 순서를 선택하면 서재 순서를 편집할 수 있어요.</p>}
-          {editing && <p id="order-help">손잡이를 끌거나 앞·뒤 버튼으로 옮겨요. 키보드는 손잡이에 초점을 두고 방향키로도 옮길 수 있어요. 이동할 때마다 저장돼요.</p>}
-        </div>
-      )}
-      {phase === 'ready' && (books.length > 0 || selecting) && <div className="library-selection">
-        <button type="button" className="secondary compact" aria-pressed={selecting} disabled={editing || saving || shelfBusy || needsRefresh}
-          onClick={() => { setSelecting(!selecting); setManaging(false); setSelectedIds([]) }}>
-          {selecting ? '선택 마치기' : '책 선택'}
-        </button>
-        {selecting && <LibraryShelfActions books={books.filter((book) => selectedIds.includes(book.id))} shelves={shelves}
-          currentShelfId={filter.shelf_id} blocked={loadingMore || saving || needsRefresh} onChanged={refreshShelfBooks} onBusyChange={setShelfBusy} />}
+      <div id="library-search-panel" hidden={!searchOpen}>
+        <form className="search-form library-search" role="search" onSubmit={submitSearch}>
+          <label htmlFor="library-field" className="visually-hidden">검색 기준</label>
+          <select id="library-field" value={field} disabled={filterLocked} onChange={(event) => setField(event.target.value as Field)}>
+            <option value="title">제목</option><option value="author">저자</option>
+          </select>
+          <label htmlFor="library-query" className="visually-hidden">서재 검색어</label>
+          <input ref={queryInput} id="library-query" type="search" value={query} disabled={filterLocked} placeholder="내 서재에서 찾기"
+            autoComplete="off" enterKeyHint="search" aria-invalid={searchError ? true : undefined}
+            aria-describedby={searchError ? 'library-search-error' : undefined} onChange={(event) => setQuery(event.target.value)} />
+          <button type="submit" disabled={filterLocked}>검색</button>
+        </form>
+        {searchError && <p id="library-search-error" className="library-note" role="alert">{searchError}</p>}
+      </div>
+      {filtered && <div className="library-conditions" aria-live="polite">
+        {filter.q && <span><span>{filter.field === 'author' ? '저자' : '제목'} ‘{filter.q}’ 검색 결과</span>
+          <button type="button" className="link-button" disabled={filterLocked} onClick={clearSearch}>검색 해제</button></span>}
+        {filter.status && <span>{statusLabels[filter.status]}
+          <button type="button" className="link-button" disabled={filterLocked} onClick={() => apply(makeFilter({ ...filter, status: undefined }))}>상태 해제</button></span>}
+        {filter.shelf_id && <span>{shelves?.find((item) => item.id === filter.shelf_id)?.name ?? '선택한 책장'}
+          <button type="button" className="link-button" disabled={filterLocked} onClick={() => apply(makeFilter({ ...filter, shelf_id: undefined }))}>책장 해제</button></span>}
       </div>}
-      <p className="library-order-status" role="status">{saving ? (slow ? '서버를 깨우는 중입니다. 처음 접속하면 30초 정도 걸릴 수 있습니다.' : needsRefresh ? '최신 순서를 확인하는 중…' : '순서를 저장하는 중…') : notice}</p>
+      {sortError && <p id="library-sort-error" className="library-note" role="alert">{sortError}</p>}
+      {shelvesError && <div className="library-note" role="alert"><p>{shelvesError}</p>
+        <button type="button" className="secondary compact" onClick={() => void loadShelves()}>책장 다시 불러오기</button></div>}
+      {managing && shelves && <ShelfManager shelves={shelves} refresh={refreshShelves} onBusyChange={setShelfBusy} />}
+      {editing && <div className="library-order">
+        <button ref={editButton} type="button" className="secondary compact" disabled={saving || loadingMore || dragging || needsRefresh}
+          onClick={() => { setEditing(false); setNotice(''); setOrderError('') }}>편집 마치기</button>
+        <p id="order-help">손잡이를 끌거나 앞·뒤 버튼으로 옮겨요. 키보드는 손잡이에 초점을 두고 방향키로도 옮길 수 있어요. 이동할 때마다 저장돼요.</p>
+      </div>}
+      {selecting && <div className="library-selection">
+        <button type="button" className="secondary compact" disabled={saving || shelfBusy || needsRefresh}
+          onClick={() => { setSelecting(false); setSelectedIds([]) }}>선택 마치기</button>
+        <LibraryShelfActions books={books.filter((book) => selectedIds.includes(book.id))} shelves={shelves}
+          currentShelfId={filter.shelf_id} blocked={loadingMore || saving || needsRefresh} onChanged={refreshShelfBooks} onBusyChange={setShelfBusy} />
+      </div>}
+      <p className="library-order-status" role="status">{saving ? (slow ? '서버 응답을 기다리는 중…' : needsRefresh ? '최신 순서를 확인하는 중…' : '순서를 저장하는 중…') : notice}</p>
+      <div ref={listStart} />
 
       {phase === 'loading' && (
         <div className="cabin-loading">
@@ -497,8 +562,7 @@ export default function Library() {
         </div>
       )}
 
-      {books.length > 0 && (
-        <ul ref={shelf} className={`shelf${editing ? ' shelf-editing' : ''}`} aria-busy={saving}>
+      <ul ref={shelf} className={`shelf${editing ? ' shelf-editing' : ''}`} aria-busy={saving}>
           {books.map((book, index) => (
             <li key={book.id} data-book-index={index} className={dragTarget === index ? 'order-target' : undefined}>
               {selecting && <label className="book-selection">
@@ -578,8 +642,7 @@ export default function Library() {
               )}
             </li>
           ))}
-        </ul>
-      )}
+      </ul>
 
       {phase === 'ready' && (error || orderError) && (
         <p className="library-note" role="alert">{error ?? orderError}</p>
@@ -594,7 +657,7 @@ export default function Library() {
         <button
           type="button"
           className="secondary more"
-          onClick={loadMore}
+          onClick={() => loadMore()}
           disabled={locked || dragging || shelfBusy}
         >
           {loadingMore ? (slow ? '서버 응답을 기다리는 중…' : '불러오는 중…') : error ? '다시 불러오기' : '더 보기'}

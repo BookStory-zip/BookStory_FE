@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { cover, json, mockBackend, signInWithMockSession } from './fixtures'
+import { cover, json, libraryAction, libraryControl, mockBackend, signInWithMockSession } from './fixtures'
 
 test('순서 편집: 키보드·탭 이동, 불러온 범위 유지, 새로고침 후 저장된 순서', async ({ page }) => {
   let books = Array.from({ length: 23 }, (_, i) => ({
@@ -31,7 +31,7 @@ test('순서 편집: 키보드·탭 이동, 불러온 범위 유지, 새로고�
   await page.goto('/')
   await page.locator('ul.shelf > li').last().scrollIntoViewIfNeeded()
   await expect(page.getByRole('listitem')).toHaveCount(23)
-  await page.getByRole('button', { name: '순서 편집' }).click()
+  await (await libraryAction(page, '순서 편집')).click()
   const forward = page.getByRole('button', { name: '서재 책 1 이동 손잡이', exact: true })
   await forward.focus()
   await page.keyboard.press('ArrowLeft')
@@ -76,7 +76,7 @@ test('손잡이 드래그: 이동·동일 위치·Escape·영역 밖 취소와 �
   })
   await signInWithMockSession(page)
   await page.goto('/')
-  await page.getByRole('button', { name: '순서 편집' }).click()
+  await (await libraryAction(page, '순서 편집')).click()
   const handle = (i: number) => page.getByRole('button', { name: `드래그 책 ${i} 이동 손잡이` })
   const position = async (i: number) => {
     await handle(i).evaluate((element) => element.scrollIntoView({ block: 'center' }))
@@ -142,7 +142,7 @@ test('손잡이 드래그: 화면 가장자리에서 자동 스크롤해 보이�
   })
   await signInWithMockSession(page)
   await page.goto('/')
-  await page.getByRole('button', { name: '순서 편집' }).click()
+  await (await libraryAction(page, '순서 편집')).click()
   const last = page.getByRole('button', { name: '스크롤 책 19 이동 손잡이' })
   await last.scrollIntoViewIfNeeded()
   const first = page.getByRole('button', { name: '스크롤 책 0 이동 손잡이' })
@@ -184,15 +184,15 @@ test('서재 검색·상태 필터: 서버 조건 조합, 자동 로딩, 해제 
   await page.goto('/')
   await expect(page.getByRole('listitem')).toHaveCount(20)
 
-  await page.getByLabel('검색 기준').selectOption('author')
-  await page.getByLabel('서재 검색어').fill('한강')
-  await page.getByLabel('서재 검색어').press('Enter')
+  await (await libraryControl(page, '검색 기준')).selectOption('author')
+  await (await libraryControl(page, '서재 검색어')).fill('한강')
+  await (await libraryControl(page, '서재 검색어')).press('Enter')
   await expect(page.getByText('저자 ‘한강’ 검색 결과')).toBeVisible()
-  await expect(page.getByRole('button', { name: '순서 편집' })).toBeDisabled()
+  await expect((await libraryAction(page, '순서 편집'))).toBeDisabled()
   await page.locator('ul.shelf > li').last().scrollIntoViewIfNeeded()
   await expect(page.getByRole('listitem')).toHaveCount(25)
 
-  await page.getByLabel('읽기 상태').selectOption('completed')
+  await (await libraryControl(page, '읽기 상태')).selectOption('completed')
   await expect(page.getByRole('listitem')).toHaveCount(9)
   await page.screenshot({ path: testInfo.outputPath('library-search-mobile.png'), fullPage: true })
   for (const width of [390, 768, 1440]) {
@@ -201,7 +201,7 @@ test('서재 검색·상태 필터: 서버 조건 조합, 자동 로딩, 해제 
   }
   await page.screenshot({ path: testInfo.outputPath('library-search-desktop.png') })
 
-  await page.getByLabel('서재 검색어').fill('없는 책')
+  await (await libraryControl(page, '서재 검색어')).fill('없는 책')
   await page.getByRole('button', { name: '검색', exact: true }).click()
   await expect(page.getByText('조건에 맞는 책이 없습니다.')).toBeVisible()
 
@@ -209,9 +209,9 @@ test('서재 검색·상태 필터: 서버 조건 조합, 자동 로딩, 해제 
   await expect(page.getByRole('listitem')).toHaveCount(10)
   await page.evaluate(() => window.scrollTo(0, 0))
   await page.setViewportSize({ width: 390, height: 900 })
-  await page.getByLabel('읽기 상태').selectOption('')
+  await (await libraryControl(page, '읽기 상태')).selectOption('')
   await expect(page.getByRole('listitem')).toHaveCount(20)
-  await expect(page.getByRole('button', { name: '순서 편집' })).toBeEnabled()
+  await expect((await libraryAction(page, '순서 편집'))).toBeEnabled()
   // 개발 모드 StrictMode는 첫 조회를 두 번 보내므로(앞 응답은 버림) 연속 중복만 합쳐 비교한다.
   expect(requests.filter((request, index) => request !== requests[index - 1])).toEqual([
     'offset=0',
@@ -293,7 +293,7 @@ test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변�
   await page.goto('/')
   await expect(page.getByRole('listitem')).toHaveCount(3)
 
-  await page.getByRole('button', { name: '책장 관리' }).click()
+  await (await libraryAction(page, '책장 관리')).click()
   for (const name of ['SF', '에세이']) {
     await page.getByLabel('새 책장 이름').fill(`  ${name} `)
     await page.getByRole('button', { name: '만들기' }).click()
@@ -301,8 +301,8 @@ test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변�
   }
   await page.screenshot({ path: testInfo.outputPath('shelf-manager-mobile.png'), fullPage: true })
 
-  await page.getByRole('button', { name: '책장 관리 닫기' }).click()
-  await page.getByRole('button', { name: '책 선택', exact: true }).click()
+  await (await libraryAction(page, '책장 관리 닫기')).click()
+  await (await libraryAction(page, '책 선택')).click()
   await page.getByRole('checkbox', { name: '책장 책 1 선택' }).check()
   await page.getByLabel('담을 책장').selectOption({ label: 'SF' })
   await page.getByRole('button', { name: '책장에 담기' }).click()
@@ -314,18 +314,18 @@ test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변�
   await page.screenshot({ path: testInfo.outputPath('library-shelf-selection-mobile.png'), fullPage: true })
   await page.getByRole('button', { name: '선택 마치기' }).click()
   await expect(page.getByRole('heading', { name: '내 서재' })).toBeVisible()
-  await page.getByRole('combobox', { name: '책장', exact: true }).selectOption({ label: 'SF (1권)' })
+  await (await libraryControl(page, '책장')).selectOption({ label: 'SF (1권)' })
   await expect(page.locator('ul.shelf > li')).toHaveCount(1)
-  await expect(page.getByRole('button', { name: '순서 편집' })).toBeDisabled()
+  await expect((await libraryAction(page, '순서 편집'))).toBeDisabled()
 
-  await page.getByRole('button', { name: '책 선택', exact: true }).click()
+  await (await libraryAction(page, '책 선택')).click()
   await page.getByRole('checkbox', { name: '책장 책 1 선택' }).check()
   await page.getByRole('button', { name: '책장에서 빼기' }).click()
   await expect(page.locator('ul.shelf > li')).toHaveCount(0)
   expect(members.get('shelf-2')?.has('personal-1')).toBe(true)
   await page.getByRole('button', { name: '선택 마치기' }).click()
 
-  await page.getByRole('button', { name: '책장 관리' }).click()
+  await (await libraryAction(page, '책장 관리')).click()
   await page.getByRole('button', { name: '에세이 앞으로' }).click()
   await expect(page.getByText('책장 순서를 바꿨습니다.')).toBeVisible()
   await page.getByRole('button', { name: 'SF 이름 바꾸기' }).click()
@@ -337,7 +337,7 @@ test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변�
   await expect(page.getByText('‘sf’ 책장을 삭제했습니다. 책은 서재에 그대로 있어요.')).toBeVisible()
   // 보고 있던 책장을 지우면 전체 서재로 돌아가고 책은 그대로다.
   await expect(page.locator('ul.shelf > li')).toHaveCount(3)
-  await expect(page.getByRole('button', { name: '순서 편집' })).toBeEnabled()
+  await expect((await libraryAction(page, '순서 편집'))).toBeEnabled()
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)

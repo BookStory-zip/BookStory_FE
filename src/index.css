@@ -415,6 +415,8 @@ main.app {
   min-width: 0;
 }
 
+[hidden] { display: none !important; }
+
 .library-search {
   margin-bottom: var(--space-3);
 }
@@ -428,7 +430,28 @@ main.app {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-6);
+  margin-bottom: 0;
+}
+
+.library-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.library-management { position: relative; margin-left: auto; }
+.library-management summary { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-2) var(--space-4); border: 1px solid var(--color-rule-strong); border-radius: var(--radius); cursor: pointer; list-style: none; }
+.library-management summary::-webkit-details-marker { display: none; }
+.library-management summary::after { content: '⌄'; }
+.library-management summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.library-management-actions { position: absolute; z-index: 5; top: calc(100% + 8px); right: 0; display: grid; gap: var(--space-2); width: min(18rem, calc(100vw - 32px)); padding: var(--space-3); border: 1px solid var(--color-rule-strong); border-radius: var(--radius); background: var(--color-paper); box-shadow: 0 8px 24px #0005; }
+.library-management-actions button { text-align: left; }
+.library-filter-toggle { display: none; }
+.library-conditions { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-4); overflow-wrap: anywhere; }
+.library-conditions > span { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.shelf:empty { height: 0; padding-block: 0; border-block: 0; visibility: hidden; }
+@media (max-width: 47.99rem) {
+  .library-filter-toggle { display: inline-flex; }
+  .library-filters { order: 4; flex-basis: 100%; }
+  .library-filters:not(.is-open) { display: none; }
+  .library-filter { flex: 1 1 100%; }
+  .library-filter label { width: 5rem; }
+  .library-filter select { flex: 1; }
 }
 
 .library-filter {
