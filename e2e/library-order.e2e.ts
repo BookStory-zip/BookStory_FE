@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { chromium, expect, test } from '@playwright/test'
 import { cover, json, libraryAction, libraryControl, mockBackend, signInWithMockSession } from './fixtures'
 
 test('순서 편집: 키보드·탭 이동, 불러온 범위 유지, 새로고침 후 저장된 순서', async ({ page }) => {
@@ -301,7 +301,7 @@ test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변�
   }
   await page.screenshot({ path: testInfo.outputPath('shelf-manager-mobile.png'), fullPage: true })
 
-  await (await libraryAction(page, '책장 관리 닫기')).click()
+  await page.getByRole('button', { name: '책장 관리 닫기' }).click()
   await (await libraryAction(page, '책 선택')).click()
   await page.getByRole('checkbox', { name: '책장 책 1 선택' }).check()
   await page.getByLabel('담을 책장').selectOption({ label: 'SF' })
@@ -333,8 +333,9 @@ test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변�
   await page.getByRole('button', { name: '저장', exact: true }).click()
   await expect(page.getByText('책장 이름을 바꿨습니다.')).toBeVisible()
   await page.getByRole('button', { name: 'sf 삭제' }).click()
-  await page.getByRole('dialog').getByRole('button', { name: '책장 삭제' }).click()
+  await page.getByRole('dialog', { name: /책장을 삭제할까요/ }).getByRole('button', { name: '책장 삭제' }).click()
   await expect(page.getByText('‘sf’ 책장을 삭제했습니다. 책은 서재에 그대로 있어요.')).toBeVisible()
+  await page.getByRole('button', { name: '책장 관리 닫기' }).click()
   // 보고 있던 책장을 지우면 전체 서재로 돌아가고 책은 그대로다.
   await expect(page.locator('ul.shelf > li')).toHaveCount(3)
   await expect((await libraryAction(page, '순서 편집'))).toBeEnabled()
@@ -352,4 +353,86 @@ test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변�
     'PATCH /shelves/shelf-1 {"name":"sf"}',
     'DELETE /shelves/shelf-1',
   ])
+})
+
+test('책장 모달은 목록을 밀지 않고 모바일 내부 스크롤·저장 잠금·삭제 취소·초점 복귀를 지킨다', async ({ page }, testInfo) => {
+  let shelves = Array.from({ length: 25 }, (_, i) => ({ id: `s${i}`, name: `책장 ${i}`, book_count: 0, position: i }))
+  let started = false
+  let finish!: () => void
+  const pending = new Promise<void>((resolve) => { finish = resolve })
+  await mockBackend(page, async (route, url, method) => {
+    if (url.pathname === '/shelves' && method === 'GET') return json(route, shelves).then(() => true)
+    if (url.pathname === '/shelves' && method === 'POST') {
+      started = true
+      await pending
+      const item = { id: 'new', name: route.request().postDataJSON().name, book_count: 0, position: 25 }
+      shelves = [...shelves, item]
+      return json(route, item, 201).then(() => true)
+    }
+    if (url.pathname === '/library/books') return json(route, [{ id: 'b1', book_id: 'c1', isbn13: '9788936433598', title: '보존할 책', authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-11-02T00:00:00Z' }]).then(() => true)
+    return false
+  })
+  await signInWithMockSession(page)
+  await page.setViewportSize({ width: 390, height: 650 })
+  await page.goto('/')
+  await page.locator('ul.shelf > li').first().waitFor()
+  await page.evaluate(() => document.fonts.ready)
+  await page.locator('ul.shelf').evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)))
+  const top = await page.locator('ul.shelf').evaluate((el) => el.getBoundingClientRect().top)
+  await (await libraryAction(page, '책장 관리')).click()
+  const modal = page.getByRole('dialog', { name: '책장 관리', exact: true })
+  await expect(modal).toBeVisible()
+  expect(await modal.evaluate((el) => el.matches(':modal'))).toBe(true)
+  expect(await page.locator('ul.shelf').evaluate((el) => el.getBoundingClientRect().top)).toBe(top)
+  expect(await modal.evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.width <= innerWidth })).toBe(true)
+  expect(await modal.locator('.shelf-manager').evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  await page.getByLabel('새 책장 이름').fill('새 책장')
+  await page.getByRole('button', { name: '만들기' }).click()
+  await expect.poll(() => started).toBe(true)
+  await expect(page.getByRole('button', { name: '책장 관리 닫기' })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(modal).toBeVisible()
+  finish()
+  await expect(page.getByText('‘새 책장’ 책장을 만들었습니다.')).toBeVisible()
+  await page.getByRole('button', { name: '책장 0 삭제', exact: true }).click()
+  const confirm = page.getByRole('dialog', { name: '‘책장 0’ 책장을 삭제할까요?' })
+  await expect(confirm).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(confirm).not.toBeVisible()
+  await expect(modal).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('shelf-modal-mobile.png') })
+  await page.keyboard.press('Escape')
+  await expect(modal).toHaveCount(0)
+  await expect(page.locator('.library-management summary')).toBeFocused()
+  expect(await page.evaluate(() => document.documentElement.style.overflow)).toBe('')
+})
+
+test('데스크톱 스크롤바를 잠가도 책 목록의 가로 위치와 폭을 유지한다', async () => {
+  const browser = await chromium.launch({ ignoreDefaultArgs: ['--hide-scrollbars'], args: ['--disable-features=OverlayScrollbar'] })
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1, reducedMotion: 'reduce' })
+    const books = Array.from({ length: 25 }, (_, i) => ({ id: `book-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598',
+      title: `스크롤바 확인 ${i}`, authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-11-02T00:00:00Z' }))
+    await mockBackend(page, async (route, url) => {
+      if (url.pathname !== '/library/books') return false
+      const offset = Number(url.searchParams.get('offset'))
+      return json(route, books.slice(offset, offset + Number(url.searchParams.get('limit')))).then(() => true)
+    })
+    await signInWithMockSession(page)
+    await page.goto('http://localhost:4174/')
+    await page.locator('ul.shelf > li').first().waitFor()
+    await page.evaluate(() => document.fonts.ready)
+    const geometry = () => page.locator('ul.shelf').evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      return { left: rect.left, width: rect.width }
+    })
+    await expect.poll(() => page.evaluate(() => document.documentElement.clientWidth < innerWidth)).toBe(true)
+    const before = await geometry()
+    await (await libraryAction(page, '책장 관리')).click()
+    await expect(page.getByRole('dialog', { name: '책장 관리', exact: true })).toBeVisible()
+    expect(await geometry()).toEqual(before)
+    await page.getByRole('button', { name: '책장 관리 닫기' }).click()
+    expect(await geometry()).toEqual(before)
+    expect(await page.evaluate(() => document.documentElement.style.scrollbarGutter)).toBe('')
+  } finally { await browser.close() }
 })

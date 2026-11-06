@@ -479,6 +479,46 @@ main.app {
   background-color: var(--color-veil-bottom);
 }
 
+.shelf-manager-dialog {
+  width: min(40rem, calc(100% - 2rem));
+  max-height: min(46rem, calc(100dvh - 2rem));
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+  box-shadow: 0 1.5rem 3rem var(--color-case-shade);
+}
+.shelf-manager-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.shelf-manager-dialog::backdrop { background: var(--color-dialog-backdrop); }
+.shelf-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-rule);
+}
+.shelf-manager-header h2 { margin: 0; font-size: 1.125rem; }
+.shelf-manager-dialog .shelf-manager {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.inline-help { color: var(--color-muted); font-size: 0.875rem; }
+.inline-help summary { width: fit-content; min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+.inline-help summary::after { content: '⌄'; margin-left: var(--space-2); }
+.inline-help p { margin-top: var(--space-2); }
+
 .shelf-manager h2 {
   margin: 0;
   font-size: 1.125rem;

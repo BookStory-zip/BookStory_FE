@@ -12,9 +12,10 @@ type Props = {
   // 책장 목록을 다시 조회한다. 쓰기 결과는 항상 서버 목록으로 확인한다(보던 책장이 없어지면 부모가 전체로 돌린다).
   refresh: () => Promise<boolean>
   onBusyChange: (busy: boolean) => void
+  onClose: () => void
 }
 
-export default function ShelfManager({ shelves, refresh, onBusyChange }: Props) {
+export default function ShelfManager({ shelves, refresh, onBusyChange, onClose }: Props) {
   const [newName, setNewName] = useState('')
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
   const [remove, setRemove] = useState<Shelf | null>(null)
@@ -23,6 +24,24 @@ export default function ShelfManager({ shelves, refresh, onBusyChange }: Props) 
   const [notice, setNotice] = useState('')
   const active = useRef(true)
   const busy = useRef(false)
+  const dialog = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => {
+    const element = dialog.current!
+    const root = document.documentElement
+    const overflow = root.style.overflow
+    const gutter = root.style.scrollbarGutter
+    if (root.clientWidth < window.innerWidth && !getComputedStyle(root).scrollbarGutter?.includes('stable')) root.style.scrollbarGutter = 'stable'
+    root.style.overflow = 'hidden'
+    if (typeof element.showModal === 'function') element.showModal()
+    else element.setAttribute('open', '')
+    return () => {
+      root.style.overflow = overflow
+      root.style.scrollbarGutter = gutter
+      if (typeof element.showModal === 'function') element.close()
+      else element.removeAttribute('open')
+    }
+  }, [])
 
   useEffect(() => {
     active.current = true
@@ -106,9 +125,21 @@ export default function ShelfManager({ shelves, refresh, onBusyChange }: Props) 
   }
 
   return (
-    <section className="shelf-manager" aria-labelledby="shelf-manager-title">
-      <h2 id="shelf-manager-title">책장 관리</h2>
-      <p className="result-note">책장은 서재의 책을 모아 보는 묶음이에요. 한 책을 여러 책장에 넣을 수 있고, 책장 안의 순서는 서재 순서를 따릅니다.</p>
+    <dialog ref={dialog} className="shelf-manager-dialog" aria-labelledby="shelf-manager-title" aria-busy={saving}
+      onCancel={(event) => {
+        if (event.target !== event.currentTarget) return
+        event.preventDefault()
+        if (!busy.current && !remove) onClose()
+      }}>
+      <div className="shelf-manager-header">
+        <h2 id="shelf-manager-title">책장 관리</h2>
+        <button type="button" className="secondary compact" aria-label="책장 관리 닫기" disabled={saving || remove !== null}
+          onClick={() => { if (!busy.current) onClose() }}>닫기</button>
+      </div>
+      <div className="shelf-manager">
+      <details className="inline-help"><summary>책장 사용법</summary>
+        <p>한 책을 여러 책장에 넣을 수 있습니다. 책장 안의 책 순서는 전체 서재 순서를 따릅니다.</p>
+      </details>
       <form className="search-form" onSubmit={(event) => void create(event)}>
         <label htmlFor="new-shelf" className="visually-hidden">새 책장 이름</label>
         <input id="new-shelf" value={newName} disabled={saving} placeholder={`새 책장 이름(${SHELF_NAME_LIMIT}자까지)`} autoComplete="off"
@@ -116,7 +147,7 @@ export default function ShelfManager({ shelves, refresh, onBusyChange }: Props) 
         <button type="submit" disabled={saving}>만들기</button>
       </form>
       {error && <p className="library-note" role="alert">{error}</p>}
-      <p aria-live="polite" className="result-note">{notice}</p>
+      <p aria-live="polite" className="result-note">{saving ? '변경 사항을 저장하고 목록을 확인하는 중…' : notice}</p>
       {shelves.length === 0 ? <p className="result-note">아직 만든 책장이 없습니다.</p> : (
         <ul className="shelf-list">
           {shelves.map((shelf, index) => (
@@ -147,6 +178,7 @@ export default function ShelfManager({ shelves, refresh, onBusyChange }: Props) 
       <ConfirmDialog open={remove !== null} title={`‘${remove?.name ?? ''}’ 책장을 삭제할까요?`}
         message="책장만 삭제하며 책은 서재에 그대로 남습니다. 책장에 넣은 정보는 되돌릴 수 없습니다." confirmLabel="책장 삭제" danger
         onConfirm={() => void confirmRemove()} onCancel={() => setRemove(null)} />
-    </section>
+      </div>
+    </dialog>
   )
 }
