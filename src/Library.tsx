@@ -515,7 +515,11 @@ export default function Library() {
       {sortError && <p id="library-sort-error" className="library-note" role="alert">{sortError}</p>}
       {shelvesError && <div className="library-note" role="alert"><p>{shelvesError}</p>
         <button type="button" className="secondary compact" onClick={() => void loadShelves()}>책장 다시 불러오기</button></div>}
-      {managing && shelves && <ShelfManager shelves={shelves} refresh={refreshShelves} onBusyChange={setShelfBusy} />}
+      {managing && shelves && <ShelfManager shelves={shelves} refresh={refreshShelves} onBusyChange={setShelfBusy}
+        onClose={() => {
+          setManaging(false)
+          requestAnimationFrame(() => management.current?.querySelector('summary')?.focus())
+        }} />}
       {editing && <div className="library-order">
         <button ref={editButton} type="button" className="secondary compact" disabled={saving || loadingMore || dragging || needsRefresh}
           onClick={() => { setEditing(false); setNotice(''); setOrderError('') }}>편집 마치기</button>
