@@ -8,6 +8,7 @@ import { Link } from 'react-router'
 import CabinIcon from './CabinIcon'
 import ShelfManager from './ShelfManager'
 import LibraryShelfActions from './LibraryShelfActions'
+import OrderHandle from './OrderHandle'
 
 export const PAGE_SIZE = 20
 const MAX_LIMIT = 100
@@ -53,7 +54,7 @@ export default function Library() {
   const [notice, setNotice] = useState('')
   const [orderError, setOrderError] = useState('')
   const [dragTarget, setDragTarget] = useState<number | null>(null)
-  const dragRef = useRef<{ from: number; to: number; pointerId: number; x: number; y: number } | null>(null)
+  const dragRef = useRef<{ from: number; to: number; pointerId: number; x: number; y: number; started: boolean } | null>(null)
   const dragging = dragTarget !== null
   const shelf = useRef<HTMLUListElement>(null)
   const listStart = useRef<HTMLDivElement>(null)
@@ -271,7 +272,7 @@ export default function Library() {
   }
 
   function loadMore(limit = PAGE_SIZE) {
-    if (!hasMore || busy.current || locked || dragRef.current || shelfBusy) return
+    if (!hasMore || busy.current || locked || dragRef.current?.started || shelfBusy) return
     setError(null)
     setLoadingMore(true)
     void load(books.length, false, limit)
@@ -419,6 +420,8 @@ export default function Library() {
   function updateDrag(event: { pointerId: number; clientX: number; clientY: number }) {
     const current = dragRef.current
     if (!current || current.pointerId !== event.pointerId) return
+    if (!current.started && Math.hypot(event.clientX - current.x, event.clientY - current.y) <= 6) return
+    current.started = true
     current.x = event.clientX
     current.y = event.clientY
     current.to = bookIndexAt(shelf.current, current.x, current.y) ?? current.from
@@ -522,8 +525,13 @@ export default function Library() {
         }} />}
       {editing && <div className="library-order">
         <button ref={editButton} type="button" className="secondary compact" disabled={saving || loadingMore || dragging || needsRefresh}
-          onClick={() => { setEditing(false); setNotice(''); setOrderError('') }}>편집 마치기</button>
-        <p id="order-help">손잡이를 끌거나 앞·뒤 버튼으로 옮겨요. 키보드는 손잡이에 초점을 두고 방향키로도 옮길 수 있어요. 이동할 때마다 저장돼요.</p>
+          onClick={() => {
+            setEditing(false); setNotice(''); setOrderError('')
+            requestAnimationFrame(() => management.current?.querySelector('summary')?.focus())
+          }}>편집 마치기</button>
+        <details className="inline-help"><summary>순서 옮기는 방법</summary>
+          <p id="order-help">손잡이를 끌거나 눌러 이동 메뉴를 열 수 있습니다. 손잡이에 초점을 두고 방향키로도 옮길 수 있으며 이동할 때마다 저장됩니다.</p>
+        </details>
       </div>}
       {selecting && <div className="library-selection">
         <button type="button" className="secondary compact" disabled={saving || shelfBusy || needsRefresh}
@@ -607,24 +615,13 @@ export default function Library() {
               </Link>
               {editing && (
                 <div className="book-order" role="group" aria-label={`${book.title} 순서`}>
-                  <button type="button" className="secondary order-handle" aria-label={`${book.title} 이동 손잡이`}
-                    aria-describedby="order-help" disabled={locked}
+                  <OrderHandle label={book.title} previous={!dragging && index > 0} next={!dragging && index < books.length - 1}
+                    onMove={(direction) => void move(index, index + direction)} aria-describedby="order-help" disabled={locked}
                     data-user-book-id={book.id}
-                    onKeyDown={(event) => {
-                      if (locked || dragging) return
-                      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-                        event.preventDefault()
-                        void move(index, index - 1)
-                      } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-                        event.preventDefault()
-                        void move(index, index + 1)
-                      }
-                    }}
                     onPointerDown={(event) => {
                       if (locked || busy.current || !event.isPrimary || event.button !== 0) return
                       event.currentTarget.setPointerCapture(event.pointerId)
-                      dragRef.current = { from: index, to: index, pointerId: event.pointerId, x: event.clientX, y: event.clientY }
-                      setDragTarget(index)
+                      dragRef.current = { from: index, to: index, pointerId: event.pointerId, x: event.clientX, y: event.clientY, started: false }
                     }}
                     onPointerMove={updateDrag}
                     onPointerUp={(event) => {
@@ -632,16 +629,9 @@ export default function Library() {
                       updateDrag(event)
                       const current = dragRef.current!
                       cancelDrag()
-                      void move(current.from, current.to)
+                      if (current.started) void move(current.from, current.to)
                     }}
-                    onPointerCancel={cancelDrag} onLostPointerCapture={cancelDrag}>
-                    <span aria-hidden="true">⠿</span>
-                  </button>
-                  {/* 끌기·방향키를 쓰기 어려운 모바일 스크린리더도 옮길 수 있게 둔다. */}
-                  <div className="order-steps">
-                    <button type="button" className="secondary" aria-label={`${book.title} 앞으로`} disabled={locked || dragging || index === 0} onClick={() => void move(index, index - 1)}>앞</button>
-                    <button type="button" className="secondary" aria-label={`${book.title} 뒤로`} disabled={locked || dragging || index === books.length - 1} onClick={() => void move(index, index + 1)}>뒤</button>
-                  </div>
+                    onPointerCancel={cancelDrag} onLostPointerCapture={cancelDrag} />
                 </div>
               )}
             </li>

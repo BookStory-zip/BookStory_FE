@@ -1895,11 +1895,21 @@ button.compact {
   font-size: 0.875rem;
 }
 
-.order-steps {
+.order-control { display: inline-flex; }
+.order-control .order-handle { min-width: 44px; min-height: 44px; touch-action: none; cursor: grab; user-select: none; }
+.order-menu {
+  position: fixed;
+  z-index: 20;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  width: min(14rem, calc(100vw - 1rem));
+  padding: var(--space-2);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  background: var(--color-paper-2);
+  box-shadow: 0 8px 24px #0005;
 }
+.order-menu button { text-align: left; }
 
 .book-order .order-handle {
   touch-action: none;
