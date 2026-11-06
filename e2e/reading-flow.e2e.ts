@@ -99,6 +99,7 @@ test('타이머 복원·1시간 확인·같은 요청 재시도·자동 체크·
   expect(sent).toHaveLength(2)
   expect(sent[1]).toEqual(sent[0])
   expect(sent[0].duration_seconds).toBe(3600)
+  await page.getByRole('button', { name: '시간 기록 보기' }).click()
   await page.getByRole('button', { name: /시간 기록 삭제/ }).click()
   await page.getByRole('dialog').getByRole('button', { name: '시간 기록 삭제' }).click()
   await expect(page.getByText('시간 기록을 삭제했습니다. 독서 체크는 그대로 남습니다.')).toBeVisible()
@@ -107,6 +108,110 @@ test('타이머 복원·1시간 확인·같은 요청 재시도·자동 체크·
   await expect(page.getByRole('button', { name: /2026년 11월 4일, 1권:/ })).toBeVisible()
   await page.getByRole('button', { name: '로그아웃', exact: true }).click()
   await expect.poll(() => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('bookstory-reading-timer:')))).toEqual([])
+})
+
+test('타이머 기록은 기본 접고 다른 상태의 기록 조회·삭제·접기 중에도 측정을 유지한다', async ({ page }, testInfo) => {
+  const start = Date.parse('2026-11-04T10:00:00Z')
+  await page.clock.setFixedTime(new Date(start))
+  await signInWithMockSession(page)
+  const books = [book, ...(['completed', 'paused', 'abandoned'] as const).map((status) => ({
+    ...book, id: status, book_id: `catalog-${status}`, title: `${status} 책`, status,
+  }))]
+  const records = new Map(books.map((item) => [item.id, [{
+    id: `saved-${item.id}`, user_book_id: item.id, client_session_id: `client-${item.id}`,
+    read_date: '2026-11-04', started_at: new Date(start - 3600_000).toISOString(),
+    created_at: new Date(start).toISOString(), duration_seconds: item.id === book.id ? 60 : 90,
+  }]]))
+  const queries: string[] = []
+  const deleted: string[] = []
+  let finishDelete!: () => void
+  const pendingDelete = new Promise<void>((resolve) => { finishDelete = resolve })
+  await mockBackend(page, async (route, url, method) => {
+    if (url.pathname === '/library/books') {
+      const filtered = books.filter((item) => !url.searchParams.get('status') || item.status === url.searchParams.get('status'))
+      const offset = Number(url.searchParams.get('offset'))
+      return json(route, filtered.slice(offset, offset + Number(url.searchParams.get('limit')))).then(() => true)
+    }
+    if (url.pathname === `/library/books/${book.id}`) return json(route, detail).then(() => true)
+    const match = url.pathname.match(/^\/library\/books\/([^/]+)\/reading-sessions$/)
+    if (match) {
+      const id = match[1]
+      if (method === 'GET') {
+        queries.push(id)
+        const offset = Number(url.searchParams.get('offset'))
+        return json(route, (records.get(id) ?? []).slice(offset, offset + Number(url.searchParams.get('limit')))).then(() => true)
+      }
+      const body = route.request().postDataJSON() as ReadingSessionInput
+      const saved = { ...body, id: 'new-session', user_book_id: id, read_date: '2026-11-04', created_at: new Date(start).toISOString() }
+      records.set(id, [saved, ...(records.get(id) ?? [])])
+      return json(route, saved, 201).then(() => true)
+    }
+    if (url.pathname.startsWith('/reading-sessions/') && method === 'DELETE') {
+      const id = url.pathname.split('/')[2]
+      deleted.push(id)
+      await pendingDelete
+      for (const [bookId, items] of records) records.set(bookId, items.filter((item) => item.id !== id))
+      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
+    }
+    return false
+  })
+  const stored = () => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith('bookstory-reading-timer:')).map(([, value]) => JSON.parse(value)))
+  const jump = async (seconds: number) => {
+    await page.clock.setFixedTime(new Date(start + seconds * 1000))
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  }
+  await page.goto('/timer')
+  await page.getByLabel('어떤 책을 읽으시나요?').selectOption(book.id)
+  await page.getByRole('button', { name: '타이머 시작' }).click()
+  await jump(90)
+  await expect(page.getByRole('timer')).toHaveText('00:01:30')
+  await expect(page.getByRole('heading', { name: '저장한 시간' })).toHaveCount(0)
+  expect(queries).toHaveLength(0)
+  const running = await stored()
+  await page.getByRole('button', { name: '시간 기록 보기' }).click()
+  const picker = page.getByLabel('시간 기록을 확인할 책')
+  await expect(picker).toHaveValue(book.id)
+  await picker.selectOption('completed')
+  await page.getByRole('button', { name: /00:01:30 시간 기록 삭제/ }).click()
+  await expect(page.getByRole('dialog')).toContainText('독서 체크는 그대로 남습니다')
+  await page.getByRole('dialog').getByRole('button', { name: '시간 기록 삭제' }).click()
+  await expect(page.getByRole('button', { name: '시간 기록 접기' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '일시정지', exact: true })).toBeDisabled()
+  await jump(120)
+  await expect(page.getByRole('timer')).toHaveText('00:02:00')
+  expect(await stored()).toEqual(running)
+  finishDelete()
+  await expect(page.getByText('아직 저장한 시간 기록이 없습니다.')).toBeVisible()
+  await expect(page.getByRole('button', { name: '일시정지', exact: true })).toBeEnabled()
+  expect(deleted).toEqual(['saved-completed'])
+  for (const status of ['paused', 'abandoned']) {
+    await picker.selectOption(status)
+    await expect(page.getByRole('button', { name: /00:01:30 시간 기록 삭제/ })).toBeVisible()
+    await expect(page.getByLabel('어떤 책을 읽으시나요?')).toHaveValue(book.id)
+  }
+  await page.getByRole('button', { name: '일시정지', exact: true }).click()
+  const paused = await stored()
+  await page.getByRole('button', { name: '시간 기록 접기' }).click()
+  await expect(picker).toHaveCount(0)
+  expect(await stored()).toEqual(paused)
+  await page.getByRole('button', { name: '시간 기록 보기' }).click()
+  await expect(picker).toHaveValue('abandoned')
+  expect(await stored()).toEqual(paused)
+  await picker.selectOption(book.id)
+  await expect(page.locator('.timer-history > li')).toHaveCount(1)
+  await page.getByRole('button', { name: '종료·저장', exact: true }).click()
+  await expect(page.locator('.timer-history > li')).toHaveCount(2)
+  await expect(page.getByRole('timer')).toHaveText('00:00:00')
+  expect(await stored()).toHaveLength(0)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.evaluate(() => scrollTo(0, 0))
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`timer-history-open-${width}.png`) })
+  }
+  await page.getByRole('button', { name: '시간 기록 접기' }).click()
+  await page.setViewportSize({ width: 390, height: 900 })
+  await page.screenshot({ path: testInfo.outputPath('timer-history-closed-390.png') })
 })
 
 test('지난 날짜 체크 → 새로고침 → 최근 체크 날짜 → 완독 후 취소가 이어진다', async ({ page }, testInfo) => {

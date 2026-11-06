@@ -20,13 +20,40 @@ const shelves: Shelf[] = [
 ]
 const refresh = vi.fn()
 const onBusyChange = vi.fn()
-const renderManager = () => render(<ShelfManager shelves={shelves} refresh={refresh} onBusyChange={onBusyChange} />)
+const onClose = vi.fn()
+const renderManager = () => render(<ShelfManager shelves={shelves} refresh={refresh} onBusyChange={onBusyChange} onClose={onClose} />)
+
+function orderAction(name: string, direction: '앞으로' | '뒤로') {
+  fireEvent.click(screen.getByRole('button', { name: `${name} 이동 손잡이` }))
+  return screen.getByRole('button', { name: `${name} ${direction}` })
+}
 
 beforeEach(() => {
   vi.resetAllMocks()
   refresh.mockResolvedValue(true)
 })
 afterEach(cleanup)
+
+test('책장 관리는 모달이며 저장과 목록 확인 중에는 닫기와 Esc를 막는다', async () => {
+  let finish!: () => void
+  let finishRefresh!: (value: boolean) => void
+  mocks.createShelf.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve }))
+  refresh.mockReturnValueOnce(new Promise<boolean>((resolve) => { finishRefresh = resolve }))
+  renderManager()
+  const dialog = screen.getByRole('dialog', { name: '책장 관리' })
+  fireEvent.change(screen.getByLabelText('새 책장 이름'), { target: { value: '소설' } })
+  fireEvent.click(screen.getByRole('button', { name: '만들기' }))
+  const close = screen.getByRole('button', { name: '책장 관리 닫기' })
+  expect(close).toHaveProperty('disabled', true)
+  fireEvent(dialog, new Event('cancel', { cancelable: true }))
+  expect(onClose).not.toHaveBeenCalled()
+  await act(async () => finish())
+  expect(close).toHaveProperty('disabled', true)
+  await act(async () => finishRefresh(true))
+  expect(close).toHaveProperty('disabled', false)
+  fireEvent(dialog, new Event('cancel', { cancelable: true }))
+  expect(onClose).toHaveBeenCalledTimes(1)
+})
 
 test('새 책장은 이름을 정리해 한 번만 만들고 서버 목록을 다시 받는다', async () => {
   let finish!: (shelf: Shelf) => void
@@ -74,11 +101,12 @@ test('이름 바꾸기는 대소문자만 바뀌어도 보내고, 완전히 같�
 test('순서 이동은 기준 책장 뒤로 보내고, 맨 앞은 null이며 끝에서는 더 옮기지 않는다', async () => {
   mocks.moveShelf.mockResolvedValue(undefined)
   renderManager()
-  expect(screen.getByRole('button', { name: 'SF 앞으로' })).toHaveProperty('disabled', true)
-  expect(screen.getByRole('button', { name: '시 뒤로' })).toHaveProperty('disabled', true)
-  fireEvent.click(screen.getByRole('button', { name: '에세이 앞으로' }))
+  expect(screen.queryByRole('button', { name: 'SF 앞으로' })).toBeNull()
+  expect(orderAction('SF', '앞으로')).toHaveProperty('disabled', true)
+  expect(orderAction('시', '뒤로')).toHaveProperty('disabled', true)
+  fireEvent.click(orderAction('에세이', '앞으로'))
   await screen.findByText('책장 순서를 바꿨습니다.')
-  fireEvent.click(screen.getByRole('button', { name: 'SF 뒤로' }))
+  fireEvent.click(orderAction('SF', '뒤로'))
   await vi.waitFor(() => expect(mocks.moveShelf).toHaveBeenCalledTimes(2))
   expect(mocks.moveShelf.mock.calls.map((call) => call.slice(1))).toEqual([['s2', null], ['s1', 's2']])
 })
@@ -86,7 +114,7 @@ test('순서 이동은 기준 책장 뒤로 보내고, 맨 앞은 null이며 끝
 test('순서 이동 404는 원인을 추정하지 않고 책장 목록만 다시 받는다', async () => {
   mocks.moveShelf.mockRejectedValueOnce(new ApiError(404, 'Shelf not found'))
   renderManager()
-  fireEvent.click(screen.getByRole('button', { name: '시 앞으로' }))
+  fireEvent.click(orderAction('시', '앞으로'))
   expect((await screen.findByRole('alert')).textContent).toContain('최신 책장 목록을 불러왔어요')
   expect(refresh).toHaveBeenCalledTimes(1)
   expect(mocks.moveShelf).toHaveBeenCalledTimes(1)
@@ -96,7 +124,7 @@ test('결과가 불명확한 쓰기는 다시 보내지 않고 목록만 확인�
   mocks.deleteShelf.mockRejectedValueOnce(new TypeError('Failed to fetch'))
   renderManager()
   fireEvent.click(screen.getByRole('button', { name: '에세이 삭제' }))
-  fireEvent.click(within(screen.getByRole('dialog', { hidden: true })).getByRole('button', { name: '책장 삭제', hidden: true }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: /책장을 삭제할까요/, hidden: true })).getByRole('button', { name: '책장 삭제', hidden: true }))
   expect((await screen.findByRole('alert')).textContent).toContain('저장 결과를 확인하지 못했습니다')
   expect(mocks.deleteShelf).toHaveBeenCalledTimes(1)
   expect(refresh).toHaveBeenCalledTimes(1)
@@ -106,7 +134,7 @@ test('책장 삭제는 책이 서재에 남는다고 안내하고, 성공하면 
   mocks.deleteShelf.mockResolvedValueOnce(undefined)
   renderManager()
   fireEvent.click(screen.getByRole('button', { name: 'SF 삭제' }))
-  const dialog = screen.getByRole('dialog', { hidden: true })
+  const dialog = screen.getByRole('dialog', { name: /책장을 삭제할까요/, hidden: true })
   expect(dialog.textContent).toContain('책은 서재에 그대로 남습니다')
   fireEvent.click(within(dialog).getByRole('button', { name: '책장 삭제', hidden: true }))
   await screen.findByText('‘SF’ 책장을 삭제했습니다. 책은 서재에 그대로 있어요.')
@@ -130,7 +158,7 @@ test('이름을 고치던 책장이 사라지면(404) 편집을 버리고 다른
   fireEvent.change(screen.getByLabelText('SF 새 이름'), { target: { value: '공상' } })
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
   await screen.findByRole('alert')
-  view.rerender(<ShelfManager shelves={shelves.slice(1)} refresh={refresh} onBusyChange={onBusyChange} />)
+  view.rerender(<ShelfManager shelves={shelves.slice(1)} refresh={refresh} onBusyChange={onBusyChange} onClose={onClose} />)
   expect(screen.getByRole('button', { name: '에세이 삭제' })).toHaveProperty('disabled', false)
   expect(screen.queryByLabelText('SF 새 이름')).toBeNull()
 })

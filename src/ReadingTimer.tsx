@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ApiError, deleteReadingSession, getReadingSessions, saveReadingSession } from './lib/api'
-import type { ReadingSession, ReadingStatus } from './lib/api'
+import { ApiError, saveReadingSession } from './lib/api'
+import type { ReadingStatus } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { commonErrorMessage, isUnclearWrite } from './lib/errors'
-import { spokenDate } from './lib/dates'
 import { clearTimer, finishTimer, getTimerSeconds, pauseTimer, readTimer, resumeTimer, settleTimer, startTimer, subscribeTimer, TIMER_MIN_SECONDS, timerPayload, writeTimer } from './lib/timer'
 import type { TimerDraft } from './lib/timer'
 import ConfirmDialog from './ConfirmDialog'
@@ -16,11 +15,7 @@ type Props = {
   blocked: boolean
   onSaved: () => Promise<ReadingStatus | null>
   onBusyChange: (busy: boolean) => void
-  historyOnly?: boolean
 }
-type History = { items: ReadingSession[]; offset: number; more: boolean }
-type Remove = { kind: 'draft'; id: string } | { kind: 'saved'; id: string }
-const PAGE_SIZE = 20
 const STORAGE_ERROR = '이 기기에 타이머를 보관하지 못했습니다. 브라우저 저장소 설정을 확인한 뒤 새로고침해주세요.'
 const clock = (seconds: number) => [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(n => String(n).padStart(2, '0')).join(':')
 
@@ -47,19 +42,14 @@ function saveError(error: unknown): string {
 }
 
 // 부모의 계정·책 key로 재마운트한다. 측정 중 화면을 떠나도 시각과 일시정지 누계만 로컬에 보관한다.
-export default function ReadingTimer({ userId, userBookId, status, blocked, onSaved, onBusyChange, historyOnly = false }: Props) {
+export default function ReadingTimer({ userId, userBookId, status, blocked, onSaved, onBusyChange }: Props) {
   const [local, setLocal] = useState(() => initialTimer(userId))
   const [now, setNow] = useState(Date.now)
-  const [history, setHistory] = useState<History | null>(null)
-  const [historyError, setHistoryError] = useState('')
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [note, setNote] = useState('')
-  const [remove, setRemove] = useState<Remove | null>(null)
+  const [remove, setRemove] = useState<string | null>(null)
   const active = useRef(true)
   const busy = useRef(false)
-  const historyBusy = useRef(false)
-  const historyVersion = useRef(0)
   const draft = local.draft
   const own = draft?.userBookId === userBookId
   const seconds = draft ? getTimerSeconds(draft, now) : 0
@@ -85,7 +75,6 @@ export default function ReadingTimer({ userId, userBookId, status, blocked, onSa
     document.addEventListener('visibilitychange', refresh)
     return () => {
       active.current = false
-      historyVersion.current += 1
       unsubscribe()
       clearInterval(interval)
       window.removeEventListener('focus', refresh)
@@ -93,32 +82,6 @@ export default function ReadingTimer({ userId, userBookId, status, blocked, onSa
       onBusyChange(false)
     }
   }, [userId, onBusyChange])
-
-  const load = useCallback((offset: number) => {
-    const version = ++historyVersion.current
-    historyBusy.current = true
-    return withAccessToken(token => getReadingSessions(token, userBookId, PAGE_SIZE, offset)).then(page => {
-      if (!active.current || version !== historyVersion.current) return
-      setHistory(previous => ({
-        items: offset === 0 ? page : [...new Map([...(previous?.items ?? []), ...page].map(item => [item.id, item])).values()],
-        offset: offset + page.length, more: page.length === PAGE_SIZE,
-      }))
-    }, (error: unknown) => {
-      if (active.current && version === historyVersion.current) setHistoryError(commonErrorMessage(error, '시간 기록을 불러오지 못했습니다'))
-    }).finally(() => {
-      if (active.current && version === historyVersion.current) { setLoading(false); historyBusy.current = false }
-    })
-  }, [userBookId])
-
-  function refreshHistory(offset = 0) {
-    setLoading(true)
-    setHistoryError('')
-    return load(offset)
-  }
-
-  useEffect(() => {
-    void load(0)
-  }, [load])
 
   function persist(next: TimerDraft | null): boolean {
     try {
@@ -137,7 +100,7 @@ export default function ReadingTimer({ userId, userBookId, status, blocked, onSa
     if (locked || busy.current || status !== 'reading') return
     try {
       if (readTimer(userId)) { setNote('다른 화면에서 시작한 타이머가 있어요. 진행 중인 기록을 먼저 확인해주세요.'); return }
-      if (persist(startTimer(userId, userBookId, Date.now(), crypto.randomUUID()))) setNote('1시간마다 계속 읽고 있는지 확인합니다. 저장하면 시작한 날짜에 독서 체크가 됩니다.')
+      if (persist(startTimer(userId, userBookId, Date.now(), crypto.randomUUID()))) setNote('')
     } catch { setLocal(previous => ({ ...previous, error: STORAGE_ERROR })) }
   }
 
@@ -168,7 +131,7 @@ export default function ReadingTimer({ userId, userBookId, status, blocked, onSa
       if (!active.current) return
       const unchanged = readTimer(userId)?.clientSessionId === finished.clientSessionId
       const cleared = unchanged && persist(null)
-      const [, freshStatus] = await Promise.all([refreshHistory(), onSaved().catch(() => null)])
+      const freshStatus = await onSaved().catch(() => null)
       if (!active.current) return
       setNote('시간 기록을 저장했습니다. 시작한 날짜의 독서 체크도 반영됐어요.')
       if (continueReading && cleared && freshStatus === 'reading' && !readTimer(userId)) {
@@ -184,65 +147,41 @@ export default function ReadingTimer({ userId, userBookId, status, blocked, onSa
     }
   }
 
-  async function confirmRemove() {
+  function confirmRemove() {
     const target = remove
     setRemove(null)
     if (!target || locked || busy.current) return
-    if (target.kind === 'draft') {
-      try {
-        if (readTimer(userId)?.clientSessionId === target.id && persist(null)) setNote('저장하지 않은 측정을 버렸습니다.')
-      } catch { setLocal(previous => ({ ...previous, error: STORAGE_ERROR })) }
-      return
-    }
-    busy.current = true
-    setSaving(true)
-    onBusyChange(true)
     try {
-      await withAccessToken(token => deleteReadingSession(token, target.id))
-      if (!active.current) return
-      setNote('시간 기록을 삭제했습니다. 독서 체크는 그대로 남습니다.')
-      await Promise.all([refreshHistory(), onSaved().catch(() => null)])
-    } catch (error) {
-      if (!active.current) return
-      setNote(isUnclearWrite(error) ? '삭제 결과를 확인하지 못했습니다. 최신 시간 기록을 확인해주세요.' : commonErrorMessage(error, '시간 기록을 삭제하지 못했습니다'))
-      if (isUnclearWrite(error) || (error instanceof ApiError && error.status === 404)) await refreshHistory()
-    } finally {
-      busy.current = false
-      if (active.current) { setSaving(false); onBusyChange(false) }
-    }
+      if (readTimer(userId)?.clientSessionId === target && persist(null)) setNote('저장하지 않은 측정을 버렸습니다.')
+    } catch { setLocal(previous => ({ ...previous, error: STORAGE_ERROR })) }
   }
 
   return <section className="detail-card reading-timer" aria-labelledby="timer-title">
-    <h2 id="timer-title">{historyOnly ? '독서 시간 기록' : '독서 타이머'}</h2>
-    {!historyOnly && (draft && !own ? <div>
+    <h2 id="timer-title">독서 타이머</h2>
+    {draft && !own ? <div>
       <p className="result-note">다른 책의 측정이 남아 있어요. <Link to={`/timer?book=${encodeURIComponent(draft.userBookId)}`}>진행 중인 타이머로 이동</Link></p>
-      <button type="button" className="link-button" disabled={locked} onClick={() => setRemove({ kind: 'draft', id: draft.clientSessionId })}>측정 버리기</button>
+      <button type="button" className="link-button" disabled={locked} onClick={() => setRemove(draft.clientSessionId)}>측정 버리기</button>
     </div> : <>
       <p className="timer-clock" role="timer" aria-label="측정 시간" aria-live="off">{clock(seconds)}</p>
       <progress max={3600} value={seconds} aria-label="한 구간 최대 1시간" />
       {draft?.phase === 'finished' && seconds === 3600 && <p>1시간을 읽었어요. 계속 읽고 계신가요? 확인 전까지 시간은 더해지지 않아요.</p>}
-      {!draft && <p className="result-note">1분부터 저장할 수 있어요. 1시간마다 계속 읽는지 확인하고, 일시정지한 시간은 빼요.</p>}
-      {draft?.phase === 'paused' && <p className="result-note">일시정지 중입니다. 쉬는 시간은 더하지 않아요.</p>}
+      {draft && seconds < TIMER_MIN_SECONDS && <p className="result-note">1분부터 저장할 수 있어요.</p>}
+      {draft?.phase === 'paused' && <p className="result-note">일시정지 중입니다.</p>}
       <div className="timer-actions">
         {!draft && <button type="button" disabled={locked || status !== 'reading'} onClick={begin}>타이머 시작</button>}
         {draft && draft.phase !== 'finished' && <button type="button" disabled={locked || (draft.phase === 'paused' && status !== 'reading')} onClick={togglePause}>{draft.phase === 'running' ? '일시정지' : '다시 읽기'}</button>}
         {draft?.phase === 'finished' && seconds === 3600 && <button type="button" disabled={locked || status !== 'reading'} onClick={() => void save(true)}>계속 읽기</button>}
         {draft && <button type="button" className="secondary" disabled={locked || seconds < TIMER_MIN_SECONDS} onClick={() => void save()}>{saving ? '저장하는 중…' : draft.phase === 'finished' && seconds < 3600 ? '다시 저장' : '종료·저장'}</button>}
-        {draft && <button type="button" className="link-button" disabled={locked} onClick={() => setRemove({ kind: 'draft', id: draft.clientSessionId })}>측정 버리기</button>}
+        {draft && <button type="button" className="link-button" disabled={locked} onClick={() => setRemove(draft.clientSessionId)}>측정 버리기</button>}
       </div>
       {status !== 'reading' && <p className="result-note">읽는 중인 책만 새 측정을 시작할 수 있어요.</p>}
-    </>)}
+    </>}
     {local.error && <p role="alert">{local.error}</p>}
     <p aria-live="polite">{note}</p>
-    <h3>저장한 시간</h3>
-    {loading && !history && <p className="result-note">시간 기록을 불러오는 중…</p>}
-    {historyError && <div role="alert"><p>{historyError}</p><button type="button" className="secondary compact" disabled={loading || saving} onClick={() => void refreshHistory()}>시간 기록 다시 확인</button></div>}
-    {history?.items.length === 0 && <p className="result-note">아직 저장한 시간 기록이 없습니다.</p>}
-    {history && history.items.length > 0 && <ul className="timer-history">{history.items.map(item => <li key={item.id}>
-      <span><time dateTime={item.read_date}>{spokenDate(item.read_date)}</time><strong>{clock(item.duration_seconds)}</strong></span>
-      <button type="button" className="link-button" disabled={locked} aria-label={`${spokenDate(item.read_date)} ${clock(item.duration_seconds)} 시간 기록 삭제`} onClick={() => setRemove({ kind: 'saved', id: item.id })}>삭제</button>
-    </li>)}</ul>}
-    {history?.more && <button type="button" className="secondary" disabled={loading || saving} onClick={() => { if (!historyBusy.current) void refreshHistory(history.offset) }}>{loading ? '불러오는 중…' : '시간 기록 더 보기'}</button>}
-    <ConfirmDialog open={remove !== null} title={remove?.kind === 'draft' ? '측정을 버릴까요?' : '시간 기록을 삭제할까요?'} message={remove?.kind === 'draft' ? '아직 저장하지 않은 측정은 복구할 수 없습니다.' : '이 시간 기록만 삭제합니다. 그날의 독서 체크는 그대로 남습니다.'} confirmLabel={remove?.kind === 'draft' ? '측정 버리기' : '시간 기록 삭제'} danger onConfirm={() => void confirmRemove()} onCancel={() => setRemove(null)} />
+    <details className="inline-help"><summary>타이머 사용법</summary>
+      <p>1분부터 저장할 수 있습니다. 한 구간은 최대 1시간이며 계속 읽기를 확인해야 다음 구간이 시작됩니다. 일시정지한 시간은 제외하고 저장한 구간의 시작 날짜에 독서 체크를 반영합니다.</p>
+    </details>
+    <ConfirmDialog open={remove !== null} title="측정을 버릴까요?" message="아직 저장하지 않은 측정은 복구할 수 없습니다."
+      confirmLabel="측정 버리기" danger onConfirm={confirmRemove} onCancel={() => setRemove(null)} />
   </section>
 }

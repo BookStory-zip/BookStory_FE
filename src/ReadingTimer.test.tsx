@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
 import { clearTimer, readTimer, startTimer, writeTimer } from './lib/timer'
 import ReadingTimer from './ReadingTimer'
+import ReadingSessionHistory from './ReadingSessionHistory'
 
 const mocks = vi.hoisted(() => ({ getReadingSessions: vi.fn(), saveReadingSession: vi.fn(), deleteReadingSession: vi.fn() }))
 vi.mock('./lib/api', async (original) => ({ ...await original<typeof import('./lib/api')>(), ...mocks }))
@@ -15,6 +16,7 @@ const onSaved = vi.fn()
 const onBusyChange = vi.fn()
 const props = { userId: 'user-a', userBookId: 'book-a', status: 'reading' as const, blocked: false, onSaved, onBusyChange }
 function show(overrides = {}) { return render(<MemoryRouter><ReadingTimer {...props} {...overrides} /></MemoryRouter>) }
+function showHistory() { return render(<ReadingSessionHistory userBookId="book-a" blocked={false} onBusyChange={onBusyChange} />) }
 function later(ms: number) { act(() => { vi.setSystemTime(now + ms); window.dispatchEvent(new Event('focus')) }) }
 
 beforeEach(() => {
@@ -136,7 +138,7 @@ test('1분 전 저장은 막고 일시정지한 시간은 더하지 않는다', 
 test('시간 기록 삭제는 확인 후 요청하며 독서 체크가 남는다고 안내한다', async () => {
   mocks.getReadingSessions.mockResolvedValueOnce([{ id: 'saved-1', read_date: '2026-11-04', duration_seconds: 90 }])
   mocks.deleteReadingSession.mockResolvedValue(undefined)
-  show()
+  showHistory()
   fireEvent.click(await screen.findByRole('button', { name: /시간 기록 삭제/ }))
   const dialog = screen.getByRole('dialog')
   expect(dialog.textContent).toContain('독서 체크는 그대로 남습니다')
@@ -144,7 +146,7 @@ test('시간 기록 삭제는 확인 후 요청하며 독서 체크가 남는다
   fireEvent.click(within(dialog).getByRole('button', { name: '시간 기록 삭제' }))
   await screen.findByText('시간 기록을 삭제했습니다. 독서 체크는 그대로 남습니다.')
   expect(mocks.deleteReadingSession).toHaveBeenCalledWith('token', 'saved-1')
-  expect(onSaved).toHaveBeenCalledTimes(1)
+  expect(mocks.getReadingSessions).toHaveBeenCalledTimes(2)
 })
 
 test('로컬 저장소를 쓸 수 없으면 저장되지 않는 타이머를 시작하지 않는다', async () => {
@@ -159,13 +161,46 @@ test('로컬 저장소를 쓸 수 없으면 저장되지 않는 타이머를 시
 test('더 보기 실패는 기존 기록을 유지하고 같은 offset에서 다시 받는다', async () => {
   const firstPage = Array.from({ length: 20 }, (_, id) => ({ id: String(id), read_date: '2026-11-04', duration_seconds: 60 }))
   mocks.getReadingSessions.mockResolvedValueOnce(firstPage).mockRejectedValueOnce(new ApiError(503)).mockResolvedValueOnce([{ ...firstPage[0], id: 'next' }])
-  show()
+  showHistory()
   fireEvent.click(await screen.findByRole('button', { name: '시간 기록 더 보기' }))
   await screen.findByRole('alert')
   expect(screen.getAllByRole('listitem')).toHaveLength(20)
   fireEvent.click(screen.getByRole('button', { name: '시간 기록 더 보기' }))
   await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(21))
   expect(mocks.getReadingSessions.mock.calls.map(call => call[3])).toEqual([0, 20, 20])
+})
+
+test.each([new TypeError('network'), new ApiError(404)])('기록 삭제 결과가 불명확하거나 없어도 %s면 재전송 없이 최신 기록을 확인한다', async (failure) => {
+  mocks.getReadingSessions.mockResolvedValueOnce([{ id: 'old', read_date: '2026-11-04', duration_seconds: 90 }]).mockResolvedValueOnce([])
+  mocks.deleteReadingSession.mockRejectedValueOnce(failure)
+  showHistory()
+  fireEvent.click(await screen.findByRole('button', { name: /시간 기록 삭제/ }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '시간 기록 삭제' }))
+  await screen.findByText('아직 저장한 시간 기록이 없습니다.')
+  expect(mocks.deleteReadingSession).toHaveBeenCalledTimes(1)
+  expect(mocks.getReadingSessions).toHaveBeenCalledTimes(2)
+  await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false))
+})
+
+test('기록 조회 실패는 빈 기록으로 숨기지 않고 수동 재시도한다', async () => {
+  mocks.getReadingSessions.mockRejectedValueOnce(new ApiError(503)).mockResolvedValueOnce([{ id: 'old', read_date: '2026-11-04', duration_seconds: 90 }])
+  showHistory()
+  await screen.findByRole('alert')
+  expect(screen.queryByText('아직 저장한 시간 기록이 없습니다.')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '시간 기록 다시 확인' }))
+  await screen.findByRole('button', { name: /시간 기록 삭제/ })
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('다른 책으로 전환한 뒤 도착한 이전 기록 응답은 표시하지 않는다', async () => {
+  let finish!: (value: unknown) => void
+  mocks.getReadingSessions.mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    .mockResolvedValueOnce([{ id: 'new', read_date: '2026-11-04', duration_seconds: 120 }])
+  const view = showHistory()
+  view.rerender(<ReadingSessionHistory key="book-b" userBookId="book-b" blocked={false} onBusyChange={onBusyChange} />)
+  await screen.findByRole('button', { name: /00:02:00 시간 기록 삭제/ })
+  await act(async () => finish([{ id: 'old', read_date: '2026-11-04', duration_seconds: 90 }]))
+  expect(screen.queryByRole('button', { name: /00:01:30 시간 기록 삭제/ })).toBeNull()
 })
 
 test('서버가 미래 측정을 거부하면 기기 시계를 안내하고 값을 보존한다', async () => {

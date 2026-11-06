@@ -1,6 +1,23 @@
 import type { Page, Route } from '@playwright/test'
 
 export const API = 'https://api.e2e.test'
+
+export async function libraryAction(page: Page, name: string) {
+  const menu = page.locator('.library-management')
+  if (await menu.getAttribute('open') === null) await menu.locator('summary').click()
+  return menu.getByRole('button', { name, exact: true })
+}
+
+export async function libraryControl(page: Page, label: string) {
+  const menu = page.locator('.library-management')
+  if (await menu.getAttribute('open') !== null) await menu.locator('summary').click()
+  const control = page.getByLabel(label, { exact: true })
+  if (!(await control.isVisible())) {
+    const toggle = page.getByRole('button', { name: label === '검색 기준' || label === '서재 검색어' ? '서재 검색' : '필터·정렬', exact: true })
+    await toggle.click()
+  }
+  return control
+}
 const SUPABASE = 'https://e2etestproject000000.supabase.co'
 const STORAGE_KEY = 'sb-e2etestproject000000-auth-token'
 

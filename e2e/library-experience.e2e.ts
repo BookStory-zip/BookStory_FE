@@ -1,5 +1,46 @@
 import { expect, test } from '@playwright/test'
-import { cover, json, mockBackend, signInWithMockSession } from './fixtures'
+import { cover, json, libraryAction, libraryControl, mockBackend, signInWithMockSession } from './fixtures'
+
+test('보이는 마지막 행을 채우고 검색 접기와 창 확대 후에도 스크롤 없이 보충한다', async ({ page }, testInfo) => {
+  const books = Array.from({ length: 141 }, (_, i) => ({ id: `fill-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598',
+    title: `화면 채우기 ${i}`, authors: ['독서가'], thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-05T00:00:00Z' }))
+  const requests: { offset: number; limit: number }[] = []
+  await mockBackend(page, async (route, url) => {
+    if (url.pathname !== '/library/books') return false
+    const offset = Number(url.searchParams.get('offset')), limit = Number(url.searchParams.get('limit'))
+    requests.push({ offset, limit })
+    return json(route, books.slice(offset, offset + limit)).then(() => true)
+  })
+  await signInWithMockSession(page)
+  await page.setViewportSize({ width: 1440, height: 1100 })
+  await page.goto('/')
+  await page.locator('ul.shelf > li').first().waitFor()
+  const visibleRowsFilled = () => page.evaluate(() => {
+    const shelf = document.querySelector('ul.shelf')!
+    const columns = getComputedStyle(shelf).gridTemplateColumns.split(' ').length
+    const items = [...shelf.children]
+    if (!items.length) return false
+    const last = items.at(-1)!.getBoundingClientRect()
+    return last.top >= innerHeight || items.length % columns === 0
+  })
+  await expect.poll(visibleRowsFilled).toBe(true)
+  expect(requests[0].limit).not.toBe(20)
+  await page.getByRole('button', { name: '서재 검색', exact: true }).click()
+  await page.getByRole('button', { name: '서재 검색', exact: true }).click()
+  await expect.poll(visibleRowsFilled).toBe(true)
+  await page.setViewportSize({ width: 1440, height: 2400 })
+  await expect.poll(visibleRowsFilled).toBe(true)
+  expect(requests.every(({ limit }) => limit > 0 && limit <= 100)).toBe(true)
+  expect(await page.evaluate(() => scrollY)).toBe(0)
+  await page.screenshot({ path: testInfo.outputPath('library-filled.png') })
+  await page.setViewportSize({ width: 1440, height: 10000 })
+  await expect(page.locator('ul.shelf > li')).toHaveCount(141)
+  expect(requests.every(({ limit }) => limit > 0 && limit <= 100)).toBe(true)
+  const endRequests = requests.length
+  await page.setViewportSize({ width: 1440, height: 11000 })
+  await expect(page.locator('ul.shelf > li')).toHaveCount(141)
+  expect(requests).toHaveLength(endRequests)
+})
 
 test('서재 정렬은 서버 순서·추가 로딩을 따르고 직접 정한 순서를 보존한다', async ({ page }, testInfo) => {
   const books = Array.from({ length: 25 }, (_, index) => ({
@@ -21,11 +62,11 @@ test('서재 정렬은 서버 순서·추가 로딩을 따르고 직접 정한 �
   })
   await page.goto('/')
   const first = page.locator('ul.shelf > li').first()
-  const sort = page.getByLabel('서재 정렬')
+  const sort = (await libraryControl(page, '서재 정렬'))
   await expect(first).toContainText('정렬 책 5')
   await sort.selectOption('created')
   await expect(first).toContainText('정렬 책 24')
-  await expect(page.getByRole('button', { name: '순서 편집' })).toBeDisabled()
+  await expect((await libraryAction(page, '순서 편집'))).toBeDisabled()
   await page.locator('ul.shelf > li').last().scrollIntoViewIfNeeded()
   await expect(page.locator('ul.shelf > li')).toHaveCount(25)
   expect(requests).toContainEqual({ sort: 'created', offset: 20 })
@@ -39,7 +80,7 @@ test('서재 정렬은 서버 순서·추가 로딩을 따르고 직접 정한 �
   }
   await sort.selectOption('custom')
   await expect(first).toContainText('정렬 책 5')
-  await expect(page.getByRole('button', { name: '순서 편집' })).toBeEnabled()
+  await expect((await libraryAction(page, '순서 편집'))).toBeEnabled()
   expect(writes).toBe(0)
   expect(requests).toContainEqual({ sort: 'started', offset: 0 })
 })
@@ -62,7 +103,7 @@ test('큰 화면은 스크롤 없이 다음 책으로 채우고 모든 책을 �
   await page.goto('/')
   await expect(page.locator('ul.shelf > li')).toHaveCount(41)
   expect(await page.evaluate(() => scrollY)).toBe(0)
-  expect([...new Set(offsets)]).toEqual([0, 20, 40])
+  expect([...new Set(offsets)]).toEqual([0])
   await expect(page.getByText('숲의 책', { exact: true })).toHaveAttribute('title', '숲의 책 (스페셜 에디션)')
   await expect(page.getByRole('button', { name: '더 보기' })).toHaveCount(0)
   for (const width of [390, 768, 1440]) {
