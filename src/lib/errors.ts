@@ -50,6 +50,8 @@ const CODE_MESSAGES: Record<string, string> = {
   recent_login_required: '보안을 위해 비밀번호를 다시 입력해주세요.',
   account_deletion_failed: '계정 삭제를 마치지 못했습니다. 기록은 이미 지워졌으니 다시 시도해주세요.',
   internal_error: '서버에 문제가 생겼습니다. 잠시 후 다시 시도해주세요.',
+  page_out_of_range: '쪽수 범위를 확인해주세요. 현재 쪽은 전체 쪽수를 넘을 수 없어요.',
+  progress_not_allowed: '읽는 중·중단·포기 상태에서만 현재 쪽을 기록할 수 있어요. 최신 상태를 확인해주세요.',
 }
 
 export function codeMessage(error: unknown): string | undefined {

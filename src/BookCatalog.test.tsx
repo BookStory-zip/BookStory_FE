@@ -12,7 +12,7 @@ vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
 vi.mock('./lib/auth', async (original) => ({ ...await original<typeof import('./lib/auth')>(), withAccessToken: (request: (token: string) => Promise<unknown>) => request('test-token') }))
 
 const isbn = '9788936433598'
-const book = { isbn13: isbn, title: '채식주의자', authors: ['한강'], publisher: null, published_date: '2007-10-30', thumbnail_url: null, description: null, source_url: 'https://example.test/book', reviews: { total_reviews: 0, rating_count: 0, average_rating: null } }
+const book = { isbn13: isbn, title: '채식주의자', authors: ['한강'], publisher: null, published_date: '2007-10-30', thumbnail_url: null, description: null, source_url: 'https://example.test/book', page_count: null, reviews: { total_reviews: 0, rating_count: 0, average_rating: null } }
 const review = { id: 'review-1', author_name: '독서가', memo: '다시 읽고 싶은 책', rating: null, published_at: '2026-11-02T00:00:00Z', updated_at: '2026-11-02T00:00:00Z', is_mine: false }
 
 beforeEach(() => {
@@ -119,4 +119,13 @@ test('새로 불러온 뒤 도착한 이전 페이지의 후기를 버린다', a
   await screen.findByText('아직 공개된 후기가 없습니다.')
   await act(async () => finish([{ ...review, id: 'stale', memo: '늦은 후기' }]))
   expect(screen.queryByText('늦은 후기')).toBeNull()
+})
+
+test('공개 책 정보는 국립중앙도서관 쪽수가 있을 때만 쪽수를 보여 준다', async () => {
+  open()
+  expect((await screen.findByText(/2007-10-30/)).textContent).toBe('2007-10-30')
+  cleanup()
+  mocks.getCatalogBook.mockResolvedValue({ ...book, page_count: 247 })
+  open()
+  expect((await screen.findByText(/247쪽/)).textContent).toBe('2007-10-30 · 247쪽')
 })

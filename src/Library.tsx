@@ -616,6 +616,8 @@ export default function Library() {
               )}
               <p className={`book-status status-${book.status}`}>
                 {statusLabels[book.status]}
+                {/* 완독은 항상 100%라 상태만 보여 주고, 전체 쪽수를 모르면(null) 진도를 숨긴다. */}
+                {book.progress_percent !== null && book.status !== 'completed' && ` · ${book.progress_percent}%`}
               </p>
               </Link>
               {editing && (

@@ -12,8 +12,9 @@ import {
   statusLabels,
   updateLibraryRecord,
   updateLibraryStatus,
+  updateReadingProgress,
 } from './lib/api'
-import type { LibraryBookDetail, ReadingStatus, StatusChange } from './lib/api'
+import type { LibraryBookDetail, ProgressPatch, ReadingStatus, StatusChange } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { codeMessage, commonErrorMessage, isAuthFailure, isUnclearWrite, RELOGIN_MESSAGE } from './lib/errors'
 import {
@@ -30,8 +31,9 @@ import { spokenDate } from './lib/dates'
 import { useKstToday } from './useKstToday'
 import ReadingNotes from './ReadingNotes'
 import PastReadingDays from './PastReadingDays'
+import ReadingProgress from './ReadingProgress'
 
-type Pending = 'status' | 'record' | 'delete' | 'check' | 'refresh' | null
+type Pending = 'status' | 'record' | 'progress' | 'delete' | 'check' | 'refresh' | null
 // conflict: 409. 화면이 오래된 상태라 서버 기준으로 다시 불러와야 한다.
 type WriteResult = 'ok' | 'failed' | 'unclear' | 'conflict'
 
@@ -335,6 +337,20 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     )
   }
 
+  // 결과가 불명확하거나 409면 다시 보내지 않고 상세를 다시 불러온다. 422는 입력을 그대로 둔다.
+  async function saveProgress(patch: ProgressPatch) {
+    if (!book) return
+    await run(
+      'progress',
+      (token) => updateReadingProgress(token, book.id, patch),
+      '진도를 저장했습니다.',
+      {
+        conflict: '지금 상태에서는 현재 쪽을 바꿀 수 없어요. 최신 상태를 불러왔습니다.',
+        refresh: async (result) => { if (result !== 'failed') await reload() },
+      },
+    )
+  }
+
   async function submitDelete() {
     setConfirming(null)
     if (!book) return
@@ -498,7 +514,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
             {nextStatus === book.status
               ? '바꾼 날짜만 고칩니다. 비워도 기존 날짜는 지워지지 않습니다. 날짜는 한국 시간 기준입니다.'
               : nextStatus === 'reading' && book.status !== 'paused'
-                ? '새로 읽기 시작합니다. 시작일을 비워 두면 오늘부터 시작하고, 이전 완독일은 유지됩니다. 날짜는 한국 시간 기준입니다.'
+                ? `새로 읽기 시작합니다. 시작일을 비워 두면 오늘부터 시작하고, 이전 완독일은 유지됩니다.${book.status === 'completed' ? ' 현재 쪽은 비워지고 전체 쪽수는 유지됩니다.' : ''} 날짜는 한국 시간 기준입니다.`
                 : '그대로 두면 기존 날짜를 유지하고, 비우면 서버 규칙에 따라 비워 두거나 현재 시각으로 기록합니다. 날짜는 한국 시간 기준입니다.'}
           </p>
         )}
@@ -511,6 +527,13 @@ function BookDetail({ userBookId }: { userBookId: string }) {
               : '상태 바꾸기'}
         </button>
       </form>
+
+      {/* 서버 진도 값이나 상태가 바뀌면 새로 만들어 입력을 맞추고, 실패한 저장의 입력은 그대로 둔다. */}
+      <ReadingProgress
+        key={`${book.status}:${book.page_count}:${book.total_pages}:${book.current_page}`}
+        book={book} busy={busy} saving={pending === 'progress'} onSave={saveProgress}
+        onNoChange={() => setNotice({ kind: 'ok', text: '바뀐 진도가 없습니다.' })}
+      />
 
       <form className="detail-card" onSubmit={handleRecord} aria-labelledby="record-title">
         <h2 id="record-title">나의 기록</h2>
@@ -612,8 +635,8 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         title="읽고 싶음으로 되돌릴까요?"
         message={
           book.has_completed
-            ? '시작일·중단일·중단 사유가 초기화됩니다. 완독 경험이 있어 완독일·별점·메모와 공개 상태는 유지됩니다.'
-            : '시작일·중단일·중단 사유와 함께 완독일·별점·메모와 공개 후기도 초기화됩니다.'
+            ? '시작일·중단일·중단 사유와 현재 쪽이 초기화됩니다. 완독 경험이 있어 완독일·별점·메모와 공개 상태, 전체 쪽수는 유지됩니다.'
+            : '시작일·중단일·중단 사유·현재 쪽과 함께 완독일·별점·메모와 공개 후기도 초기화됩니다. 전체 쪽수는 유지됩니다.'
         }
         confirmLabel="되돌리기"
         onConfirm={() => void submitStatus()}

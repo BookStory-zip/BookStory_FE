@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getLibraryBook: vi.fn(),
   updateLibraryStatus: vi.fn(),
   updateLibraryRecord: vi.fn(),
+  updateReadingProgress: vi.fn(),
   deleteLibraryBook: vi.fn(),
   getReadingLogs: vi.fn(),
   checkReadingToday: vi.fn(),
@@ -53,6 +54,10 @@ function detail(overrides: Partial<LibraryBookDetail> = {}): LibraryBookDetail {
     thumbnail_url: null,
     status: 'reading',
     created_at: '2026-10-01T00:00:00Z',
+    page_count: null,
+    total_pages: null,
+    current_page: null,
+    progress_percent: null,
     publisher: null,
     published_date: '2014-05-19',
     description: null,
@@ -649,4 +654,114 @@ test('독서 노트는 공개 후기 메모와 따로 저장하고 독서 체크
   expect(mocks.updateLibraryRecord).not.toHaveBeenCalled()
   expect(mocks.checkReadingToday).not.toHaveBeenCalled()
   expect(screen.getByLabelText('메모')).toHaveProperty('value', '공개 후기 메모')
+})
+
+const reading = { status: 'reading' as const, page_count: 300, total_pages: null, current_page: 120, progress_percent: 40 }
+const progressCard = () => screen.getByRole('heading', { name: '읽기 진도' }).closest('form') as HTMLFormElement
+
+test('진도는 서버 %와 쪽을 보여 주고, 바뀐 칸만 보낸 뒤 상세를 다시 불러와 입력을 맞춘다', async () => {
+  mocks.getLibraryBook.mockResolvedValueOnce(detail(reading))
+    .mockResolvedValueOnce(detail({ ...reading, current_page: 150, progress_percent: 50 }))
+  mocks.updateReadingProgress.mockResolvedValueOnce(undefined)
+  renderDetail()
+  await screen.findByText('40%')
+  const card = within(progressCard())
+  expect(card.getByText('120 / 300쪽')).toBeTruthy()
+  expect(card.getByText(/비워 두면 도서 정보의 300쪽을 써요/)).toBeTruthy()
+
+  fireEvent.click(card.getByRole('button', { name: '진도 저장' }))
+  expect(await screen.findByText('바뀐 진도가 없습니다.')).toBeTruthy()
+  expect(mocks.updateReadingProgress).not.toHaveBeenCalled()
+
+  fireEvent.change(card.getByLabelText('현재 쪽'), { target: { value: '150' } })
+  fireEvent.click(card.getByRole('button', { name: '진도 저장' }))
+  await screen.findByText('진도를 저장했습니다.')
+  expect(mocks.updateReadingProgress).toHaveBeenCalledWith('test-token', 'user-book-1', { current_page: 150 })
+  await screen.findByText('50%')
+  expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2)
+  expect((within(progressCard()).getByLabelText('현재 쪽') as HTMLInputElement).value).toBe('150')
+})
+
+test('전체 쪽수를 모르면 진도를 숨기고 %를 막으며, 쪽수 없이 현재 쪽을 보내지 않는다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ ...reading, page_count: null, current_page: null, progress_percent: null }))
+  renderDetail()
+  await screen.findByText(/전체 쪽수를 몰라 진도를 표시하지 않아요/)
+  const card = within(progressCard())
+  expect(card.getByRole('radio', { name: '%' })).toHaveProperty('disabled', true)
+  fireEvent.change(card.getByLabelText('현재 쪽'), { target: { value: '10' } })
+  fireEvent.click(card.getByRole('button', { name: '진도 저장' }))
+  expect(card.getByText('전체 쪽수를 먼저 입력해주세요.')).toBeTruthy()
+  expect(document.activeElement).toBe(card.getByLabelText('현재 쪽'))
+  expect(mocks.updateReadingProgress).not.toHaveBeenCalled()
+
+  // 전체 쪽수와 현재 쪽을 함께 보내면 새 전체 쪽수로 검사한다.
+  mocks.updateReadingProgress.mockResolvedValueOnce(undefined)
+  fireEvent.change(card.getByLabelText('전체 쪽수'), { target: { value: '200' } })
+  fireEvent.click(card.getByRole('button', { name: '진도 저장' }))
+  await waitFor(() => expect(mocks.updateReadingProgress).toHaveBeenCalledWith('test-token', 'user-book-1', { total_pages: 200, current_page: 10 }))
+})
+
+test('%로 입력하면 반영 후 전체 쪽수로 반올림해 쪽을 보낸다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ ...reading, page_count: 301 }))
+  mocks.updateReadingProgress.mockResolvedValueOnce(undefined)
+  renderDetail()
+  await screen.findByText('40%')
+  const card = within(progressCard())
+  fireEvent.click(card.getByRole('radio', { name: '%' }))
+  expect((card.getByLabelText('현재 진도(%)') as HTMLInputElement).value).toBe('40')
+  fireEvent.change(card.getByLabelText('현재 진도(%)'), { target: { value: '50' } })
+  fireEvent.click(card.getByRole('button', { name: '진도 저장' }))
+  await waitFor(() => expect(mocks.updateReadingProgress).toHaveBeenCalledWith('test-token', 'user-book-1', { current_page: 151 }))
+})
+
+test('진도 422는 입력을 보존하고 다시 조회하지 않으며, 409는 최신 상태를 불러온다', async () => {
+  mocks.getLibraryBook.mockResolvedValueOnce(detail(reading))
+  mocks.updateReadingProgress
+    .mockRejectedValueOnce(new ApiError(422, 'current_page must be at most 300', 'page_out_of_range'))
+    .mockRejectedValueOnce(new ApiError(409, 'not allowed', 'progress_not_allowed'))
+  renderDetail()
+  await screen.findByText('40%')
+  fireEvent.change(within(progressCard()).getByLabelText('현재 쪽'), { target: { value: '200' } })
+  fireEvent.click(within(progressCard()).getByRole('button', { name: '진도 저장' }))
+  expect(await screen.findByText(/쪽수 범위를 확인해주세요/)).toBeTruthy()
+  expect((within(progressCard()).getByLabelText('현재 쪽') as HTMLInputElement).value).toBe('200')
+  expect(mocks.getLibraryBook).toHaveBeenCalledTimes(1)
+
+  mocks.getLibraryBook.mockResolvedValueOnce(detail({ ...reading, status: 'completed', current_page: 300, progress_percent: 100 }))
+  fireEvent.click(within(progressCard()).getByRole('button', { name: '진도 저장' }))
+  expect(await screen.findByText('지금 상태에서는 현재 쪽을 바꿀 수 없어요. 최신 상태를 불러왔습니다.')).toBeTruthy()
+  await screen.findByText('완독한 책은 100%로 표시돼요.')
+  expect(within(progressCard()).queryByLabelText('현재 쪽')).toBeNull()
+  expect(mocks.updateReadingProgress).toHaveBeenCalledTimes(2)
+})
+
+test('진도 저장 결과가 불명확하면 다시 보내지 않고, 다시 불러온 서버 값으로 입력을 맞춘다', async () => {
+  // 다른 기기에서 140쪽으로 바뀐 상태라면 보내려던 150이 아니라 서버 값을 보여 준다.
+  mocks.getLibraryBook.mockResolvedValueOnce(detail(reading)).mockResolvedValueOnce(detail({ ...reading, current_page: 140, progress_percent: 46 }))
+  mocks.updateReadingProgress.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  renderDetail()
+  await screen.findByText('40%')
+  fireEvent.change(within(progressCard()).getByLabelText('현재 쪽'), { target: { value: '150' } })
+  fireEvent.click(within(progressCard()).getByRole('button', { name: '진도 저장' }))
+  await screen.findByText('46%')
+  expect((within(progressCard()).getByLabelText('현재 쪽') as HTMLInputElement).value).toBe('140')
+  expect(mocks.updateReadingProgress).toHaveBeenCalledTimes(1)
+  expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2)
+})
+
+test('읽고 싶음은 전체 쪽수만 받고, 초기화 안내에 현재 쪽 삭제·전체 쪽수 유지를 알린다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ ...reading, status: 'reading', current_page: 120 }))
+  renderDetail()
+  await screen.findByText('40%')
+  fireEvent.click(screen.getByRole('radio', { name: /읽고 싶음/ }))
+  fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
+  expect(screen.getByRole('dialog', { name: '읽고 싶음으로 되돌릴까요?', hidden: true }).textContent).toContain('현재 쪽')
+  expect(screen.getByRole('dialog', { name: '읽고 싶음으로 되돌릴까요?', hidden: true }).textContent).toContain('전체 쪽수는 유지됩니다')
+  cleanup()
+
+  mocks.getLibraryBook.mockResolvedValue(detail({ ...reading, status: 'want_to_read', current_page: null, progress_percent: null }))
+  renderDetail()
+  await screen.findByText('읽기 시작하면 현재 쪽을 기록할 수 있어요.')
+  expect(within(progressCard()).queryByLabelText('현재 쪽')).toBeNull()
+  expect(within(progressCard()).getByLabelText('전체 쪽수')).toBeTruthy()
 })

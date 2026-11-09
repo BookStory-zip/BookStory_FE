@@ -1,11 +1,11 @@
 import { chromium, expect, test } from '@playwright/test'
-import { cover, json, libraryAction, libraryControl, mockBackend, signInWithMockSession } from './fixtures'
+import { cover, json, libraryAction, libraryControl, mockBackend, signInWithMockSession, noProgress } from './fixtures'
 
 test('순서 편집: 키보드·탭 이동, 불러온 범위 유지, 새로고침 후 저장된 순서', async ({ page }) => {
   let books = Array.from({ length: 23 }, (_, i) => ({
     id: `personal-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598',
     title: `서재 책 ${i}`, authors: ['독서가'], thumbnail_url: cover('#48594b'),
-    status: 'want_to_read', created_at: '2026-11-02T00:00:00Z',
+    status: 'want_to_read', created_at: '2026-11-02T00:00:00Z', ...noProgress,
   }))
   const moves: unknown[] = []
   await mockBackend(page, async (route, url, method) => {
@@ -56,7 +56,7 @@ test('손잡이 드래그: 이동·동일 위치·Escape·영역 밖 취소와 �
   let books = Array.from({ length: 3 }, (_, i) => ({
     id: `personal-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598',
     title: `드래그 책 ${i}`, authors: [], thumbnail_url: cover('#8d714e'),
-    status: 'reading', created_at: '2026-11-02T00:00:00Z',
+    status: 'reading', created_at: '2026-11-02T00:00:00Z', ...noProgress,
   }))
   const anchors: (string | null)[] = []
   await mockBackend(page, async (route, url, method) => {
@@ -130,7 +130,7 @@ test('손잡이 드래그: 화면 가장자리에서 자동 스크롤해 보이�
   let books = Array.from({ length: 20 }, (_, i) => ({
     id: `personal-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598',
     title: `스크롤 책 ${i}`, authors: [], thumbnail_url: cover('#48594b'),
-    status: 'reading', created_at: '2026-11-02T00:00:00Z',
+    status: 'reading', created_at: '2026-11-02T00:00:00Z', ...noProgress,
   }))
   const anchors: (string | null)[] = []
   await mockBackend(page, async (route, url, method) => {
@@ -188,7 +188,7 @@ test('서재 검색·상태 필터: 서버 조건 조합, 자동 로딩, 해제 
   const books = Array.from({ length: 30 }, (_, i) => ({
     id: `personal-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598',
     title: i % 2 ? `숲의 노래 ${i}` : `바다 이야기 ${i}`, authors: [i < 25 ? '한강' : '김작가'], thumbnail_url: cover('#48594b'),
-    status: i % 3 ? 'reading' : 'completed', created_at: '2026-11-02T00:00:00Z',
+    status: i % 3 ? 'reading' : 'completed', created_at: '2026-11-02T00:00:00Z', ...noProgress,
   }))
   const requests: string[] = []
   await mockBackend(page, async (route, url, method) => {
@@ -250,7 +250,7 @@ test('서재 검색·상태 필터: 서버 조건 조합, 자동 로딩, 해제 
 test('서브 책장: 만들기·서재에서 담기·빼기·필터·이름 변경·삭제 후 책 보존', async ({ page }, testInfo) => {
   const books = Array.from({ length: 3 }, (_, i) => ({
     id: `personal-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598', title: `책장 책 ${i}`, authors: ['독서가'],
-    thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-02T00:00:00Z',
+    thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-02T00:00:00Z', ...noProgress,
   }))
   let shelves: { id: string; name: string; position: number }[] = []
   const members = new Map<string, Set<string>>()
@@ -475,7 +475,7 @@ test('책장 모달은 목록을 밀지 않고 모바일 내부 스크롤·저�
       shelves = [...shelves, item]
       return json(route, item, 201).then(() => true)
     }
-    if (url.pathname === '/library/books') return json(route, [{ id: 'b1', book_id: 'c1', isbn13: '9788936433598', title: '보존할 책', authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-11-02T00:00:00Z' }]).then(() => true)
+    if (url.pathname === '/library/books') return json(route, [{ id: 'b1', book_id: 'c1', isbn13: '9788936433598', title: '보존할 책', authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-11-02T00:00:00Z', ...noProgress }]).then(() => true)
     return false
   })
   await signInWithMockSession(page)
@@ -518,7 +518,7 @@ test('데스크톱 스크롤바를 잠가도 책 목록의 가로 위치와 폭�
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1, reducedMotion: 'reduce' })
     const books = Array.from({ length: 25 }, (_, i) => ({ id: `book-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598',
-      title: `스크롤바 확인 ${i}`, authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-11-02T00:00:00Z' }))
+      title: `스크롤바 확인 ${i}`, authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-11-02T00:00:00Z', ...noProgress }))
     await mockBackend(page, async (route, url) => {
       if (url.pathname !== '/library/books') return false
       const offset = Number(url.searchParams.get('offset'))

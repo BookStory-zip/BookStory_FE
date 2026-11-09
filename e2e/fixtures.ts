@@ -1,6 +1,8 @@
 import type { Page, Route } from '@playwright/test'
 
 export const API = 'https://api.e2e.test'
+// 서재 응답의 필수 진도 필드. 전체 쪽수를 모르는 책이다.
+export const noProgress = { page_count: null, total_pages: null, current_page: null, progress_percent: null }
 
 export async function libraryAction(page: Page, name: string) {
   const menu = page.locator('.library-management')

@@ -118,7 +118,7 @@ function BookCatalog({ isbn13 }: { isbn13: string }) {
           <h1 id="catalog-title">{book?.title ?? '책 정보'}</h1>
           {book && <>
             <p className="book-authors">{book.authors.join(', ') || '저자 정보 없음'}</p>
-            <p className="result-note">{[book.publisher, book.published_date].filter(Boolean).join(' · ') || '출판 정보 없음'}</p>
+            <p className="result-note">{[book.publisher, book.published_date, book.page_count && `${book.page_count}쪽`].filter(Boolean).join(' · ') || '출판 정보 없음'}</p>
             <p className="result-note">ISBN {book.isbn13}</p>
           </>}
         </div>

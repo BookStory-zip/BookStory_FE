@@ -158,6 +158,24 @@ BE PR #25의 `docs/frontend-api.md`·구현과 사용자 회신을 대조했습�
 - FE는 계정당 로컬 측정 하나를 보관하며 일시정지를 빼고 시각 차이로 시간을 복원합니다. 1시간에서 멈추고 직접 계속 읽기를 누르면 이전 구간을 저장한 뒤 새 시각·새 ID로 시작합니다. 확인 대기·서버 저장 대기는 새 구간에 포함하지 않습니다. 자동 서버 저장은 없습니다.
 - 저장 전 종료 시간과 ID를 고정합니다. 결과 불명확·409 등 실패 시 보관하고 직접 재시도하게 하며 자동 재전송하지 않습니다. 겹침은 "이미 기록된 시간과 겹칩니다"로 안내합니다. 로그아웃·계정 변경은 측정을 정리하고 늦은 응답으로 복원하지 않습니다. 다른 책의 측정도 확인 후 버릴 수 있어 삭제된 책의 측정 때문에 막히지 않습니다.
 
+## 읽기 진도 (2026-11-09 BE 회신 확정, 운영 반영 전)
+
+BE 회신(2026-11-09)으로 확정한 계약입니다. BE 브랜치 코드와 운영 OpenAPI는 아직 직접 대조하지 않았습니다. 운영 반영은 목표 일괄 저장과 함께 하며, FE는 그 뒤에 배포합니다.
+
+| API | 계약 |
+| --- | --- |
+| `GET /library/books`, `GET /library/books/{id}`, `GET /library/books/by-isbn/{isbn13}` | 필수·nullable `page_count`·`total_pages`·`current_page`·`progress_percent` |
+| `GET /books/{isbn13}`(공개) | 필수·nullable `page_count` |
+| `PATCH /library/books/{id}/progress` | `{current_page?, total_pages?}` → 200 `{id, page_count, total_pages, current_page, progress_percent}`. 생략은 그대로, null은 지우기 |
+
+- `page_count`: 등록·정기 갱신 때 BE가 국립중앙도서관 ISBN 서지정보에서 가져온 쪽수(본문+부록). 없으면 null. 키는 BE 환경에만 둡니다.
+- 전체 쪽수 = `total_pages` ?? `page_count`. `progress_percent`는 완독 100, 읽고 싶음 null, 전체 쪽수나 현재 쪽이 없으면 null, 그 외 floor(current_page / 전체 쪽수 × 100). 정기 갱신으로 `page_count`가 현재 쪽보다 작아지면 100에서 막고 현재 쪽은 바꾸지 않습니다.
+- 검사는 반영 후 값으로 합니다. `total_pages` 1~99999, `current_page` 0~전체 쪽수. 전체 쪽수가 없는데 현재 쪽을 보내거나, `total_pages`를 지워 기준이 사라지거나 현재 쪽보다 작아지는 경우도 422 `page_out_of_range`(영어 문자열 `detail`, `loc` 없음)이며 아무것도 바뀌지 않습니다. 정수가 아닌 값은 422 `validation_error`.
+- `total_pages`는 모든 상태에서, `current_page`는 읽는 중·중단·포기에서만 바꿀 수 있습니다. 읽고 싶음·완독에서 `current_page`를 보내면 409 `progress_not_allowed`. 완독에서 `total_pages`를 바꾸면 현재 쪽을 새 전체 쪽수로 맞춥니다. 타인·없는 항목 404, 미인증 401.
+- 상태 전환: 읽고 싶음 초기화와 재독(완독 → 읽는 중)은 현재 쪽을 지우고 전체 쪽수를 유지합니다. 완독 전환은 전체 쪽수를 알면 현재 쪽을 맞춥니다. 읽는 중·중단·포기 사이는 유지합니다.
+- 제외(다음 단계): 날짜별 진도 이력, 기간별 읽은 쪽수 통계, 쪽수로 읽은 날 자동 체크.
+- FE: 상세의 읽기 진도 카드에서 전체 쪽수와 현재 쪽(쪽 또는 %)을 입력합니다. %는 반영 후 전체 쪽수로 반올림해 쪽으로 보내며, 전체 쪽수를 모르면 고를 수 없습니다. `page_out_of_range`에 칸 위치가 없으므로 같은 규칙으로 먼저 검사하고(`src/lib/progress.ts`) 바뀐 칸만 보냅니다. 422는 입력을 그대로 두고, 409·결과 불명확은 다시 보내지 않고 상세를 다시 불러옵니다. 서버 진도 값이 바뀌면 입력을 새 값으로 맞춥니다. 서재 카드는 완독이 아닌 책에 %를 붙이고, 공개 책 정보에 쪽수를 표시합니다.
+
 ## 독서 목표 (2026-11-04 BE PR #26, 운영 반영)
 
 BE PR #26(`110e215`)의 `app/schemas.py`·`app/reading_goals.py`·`docs/frontend-api.md` "독서 목표"와 BE 회신을 대조했습니다. 운영 OpenAPI에 `/me/goals`가 있음을 읽기 전용으로 확인했으며, 운영 DB의 migration `d4426d74f2e1` 적용은 확인하지 않았습니다.

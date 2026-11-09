@@ -134,6 +134,24 @@ export type LibraryBookItem = {
   thumbnail_url: string | null
   status: ReadingStatus
   created_at: string
+} & ReadingProgress
+
+// 전체 쪽수 = total_pages(사용자) ?? page_count(국립중앙도서관). 모르면 진도(%)는 null이다.
+// 완독은 항상 100, 읽고 싶음은 null이며 계산은 서버가 한다.
+export type ReadingProgress = {
+  page_count: number | null
+  total_pages: number | null
+  current_page: number | null
+  progress_percent: number | null
+}
+
+const isPageCount = (value: unknown) => value === null || (Number.isInteger(value) && Number(value) >= 1)
+
+function isReadingProgress(item: Record<string, unknown>) {
+  return isPageCount(item.page_count) && isPageCount(item.total_pages) &&
+    (item.current_page === null || (Number.isInteger(item.current_page) && Number(item.current_page) >= 0)) &&
+    (item.progress_percent === null ||
+      (Number.isInteger(item.progress_percent) && Number(item.progress_percent) >= 0 && Number(item.progress_percent) <= 100))
 }
 
 function isLibraryBookItem(value: unknown): value is LibraryBookItem {
@@ -148,7 +166,8 @@ function isLibraryBookItem(value: unknown): value is LibraryBookItem {
     item.authors.every((author) => typeof author === 'string') &&
     (item.thumbnail_url === null || typeof item.thumbnail_url === 'string') &&
     readingStatuses.includes(item.status as ReadingStatus) &&
-    typeof item.created_at === 'string'
+    typeof item.created_at === 'string' &&
+    isReadingProgress(item)
   )
 }
 
@@ -409,6 +428,19 @@ export async function updateLibraryStatus(
     method: 'PATCH',
     body: change,
   })
+}
+
+// 생략은 그대로, null은 지우기. 범위는 반영 후 값으로 서버가 다시 검사한다(422 page_out_of_range).
+// 읽고 싶음·완독에서 current_page를 보내면 409 progress_not_allowed다.
+export type ProgressPatch = { total_pages?: number | null; current_page?: number | null }
+
+// 응답은 형식만 확인하고, 화면은 상세를 다시 조회한다.
+export async function updateReadingProgress(accessToken: string, userBookId: string, patch: ProgressPatch): Promise<void> {
+  const data = await apiRequest(`${libraryBookPath(userBookId)}/progress`, accessToken, { method: 'PATCH', body: patch })
+  if (typeof data !== 'object' || data === null || (data as Record<string, unknown>).id !== userBookId ||
+      !isReadingProgress(data as Record<string, unknown>)) {
+    throw new Error('진도 응답 형식이 올바르지 않습니다.')
+  }
 }
 
 export type RecordPatch = {
