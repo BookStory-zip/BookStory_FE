@@ -20,11 +20,14 @@ test('검색 기준·정렬·빈 페이지 더 보기와 조건 초기화가 이
     }).then(() => true)
   })
   await page.goto('/search')
+  await expect(page.getByLabel('검색 결과 정렬')).toHaveCount(0)
   await page.getByLabel('검색 기준').selectOption('person')
-  await page.getByLabel('검색 결과 정렬').selectOption('latest')
   expect(requests).toHaveLength(0)
   await page.getByRole('searchbox').fill('한강')
   await page.getByRole('button', { name: '검색', exact: true }).click()
+  await expect(page.getByText('담을 수 있는 책이 이 페이지에 없습니다. 더 보기를 눌러 주세요.')).toBeVisible()
+  await page.getByLabel('검색 결과 정렬').selectOption('latest')
+  await expect.poll(() => requests.length).toBe(2)
   await expect(page.getByText('담을 수 있는 책이 이 페이지에 없습니다. 더 보기를 눌러 주세요.')).toBeVisible()
   await page.getByRole('button', { name: '결과 더 보기' }).click()
   await expect(page.getByRole('link', { name: '저자 최신 결과' })).toBeVisible()
@@ -41,8 +44,9 @@ test('검색 기준·정렬·빈 페이지 더 보기와 조건 초기화가 이
   await expect(page.getByRole('link', { name: '출판사 정확도 결과' })).toBeVisible()
   await page.getByLabel('검색 기준').selectOption('')
   await expect(page.getByRole('link', { name: '전체 정확도 결과' })).toBeVisible()
-  await expect(page.getByText('‘한강’ · 전체 · 정확도순')).toBeVisible()
+  await expect(page.getByText('‘한강’ · 전체', { exact: true })).toBeVisible()
   expect(requests).toEqual([
+    { query: '한강', page: '1', target: 'person', sort: null },
     { query: '한강', page: '1', target: 'person', sort: 'latest' },
     { query: '한강', page: '2', target: 'person', sort: 'latest' },
     { query: '한강', page: '1', target: 'publisher', sort: 'latest' },

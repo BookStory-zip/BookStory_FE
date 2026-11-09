@@ -5,7 +5,7 @@ import { getCatalogBook, getPublicReviews } from './catalog'
 const book = {
   isbn13: '9788936433598', title: '채식주의자', authors: ['한강'],
   publisher: null, published_date: null, thumbnail_url: null, description: null,
-  source_url: 'https://example.test/book',
+  source_url: 'https://example.test/book', page_count: null,
   reviews: { total_reviews: 0, rating_count: 0, average_rating: null },
 }
 const review = {
@@ -15,6 +15,7 @@ const review = {
 
 const ownBook = {
   ...book, id: 'own-1', book_id: 'book-1', status: 'reading', created_at: '2026-11-02T00:00:00Z',
+  total_pages: null, current_page: null, progress_percent: null,
   started_at: null, last_read_at: null, last_read_date: null, past_log_range: null, completed_at: null, stopped_at: null, stop_reason: null,
   memo: '개인 메모', rating: null, has_completed: false, updated_at: '2026-11-02T00:00:00Z',
   allowed_statuses: ['reading'], is_review_public: false, review_published_at: null, review_updated_at: null, shelves: [],

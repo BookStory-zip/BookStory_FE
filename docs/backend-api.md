@@ -39,7 +39,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩. 항목의 `completed_at`·`status`·`has_completed`는 현재 기록(체크 당시 아님) | 마지막 페이지까지 전부 조회. 체크한 날 표시에만 사용 |
 | `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
 | `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`·`reading_minutes`·`goals`) | 기록 화면 통계 탭에서만 요청. 아래 통계·독서 목표 참고 |
-| `PUT·DELETE /me/goals` | JSON 본문, `month` 필수(연은 null), 204 | 통계 탭 목표 설정·끄기·이어받기·합계 복귀. 아래 독서 목표 참고 |
+| `PUT /me/goals/batch` | JSON `{year, month, goals}`, 204, 한 트랜잭션 | 통계 탭 목표 팝업의 일괄 저장. 단건 `PUT·DELETE /me/goals`는 BE에 남아 있지만 FE는 쓰지 않음. 아래 독서 목표 참고 |
 | 독서 노트 5개 API | 책별 작성·목록·수정·삭제, 기간 타임라인. 운영 제공 | 책 상세 노트 카드·기록 노트 탭. 아래 독서 노트 참고 |
 | `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 운영 제공 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
 | `DELETE /me` | 204. 비밀번호 인증 5분 이내 토큰만, 아니면 403 `recent_login_required`, 로그인 계정 삭제 실패 503 `account_deletion_failed`(재시도 가능) | 계정 화면 탈퇴. 비밀번호 재로그인 후 요청 |
@@ -158,6 +158,24 @@ BE PR #25의 `docs/frontend-api.md`·구현과 사용자 회신을 대조했습�
 - FE는 계정당 로컬 측정 하나를 보관하며 일시정지를 빼고 시각 차이로 시간을 복원합니다. 1시간에서 멈추고 직접 계속 읽기를 누르면 이전 구간을 저장한 뒤 새 시각·새 ID로 시작합니다. 확인 대기·서버 저장 대기는 새 구간에 포함하지 않습니다. 자동 서버 저장은 없습니다.
 - 저장 전 종료 시간과 ID를 고정합니다. 결과 불명확·409 등 실패 시 보관하고 직접 재시도하게 하며 자동 재전송하지 않습니다. 겹침은 "이미 기록된 시간과 겹칩니다"로 안내합니다. 로그아웃·계정 변경은 측정을 정리하고 늦은 응답으로 복원하지 않습니다. 다른 책의 측정도 확인 후 버릴 수 있어 삭제된 책의 측정 때문에 막히지 않습니다.
 
+## 읽기 진도 (BE 6차 main `8dda50e`, 2026-11-09 운영 반영)
+
+BE 회신(2026-11-09)으로 확정한 계약입니다. 운영 OpenAPI(필수·nullable 네 필드, `ReadingProgress` 응답, `ReadingProgressUpdate` 본문)와 BE main `app/reading_progress.py`를 FE가 직접 대조했습니다. 기존 서재 책 23권 중 20권의 쪽수를 BE가 채웠습니다(BE 안내).
+
+| API | 계약 |
+| --- | --- |
+| `GET /library/books`, `GET /library/books/{id}`, `GET /library/books/by-isbn/{isbn13}` | 필수·nullable `page_count`·`total_pages`·`current_page`·`progress_percent` |
+| `GET /books/{isbn13}`(공개) | 필수·nullable `page_count` |
+| `PATCH /library/books/{id}/progress` | `{current_page?, total_pages?}` → 200 `{id, page_count, total_pages, current_page, progress_percent}`. 생략은 그대로, null은 지우기 |
+
+- `page_count`: 책이 처음 등록될 때 BE가 국립중앙도서관 ISBN 서지정보에서 한 번 가져온 쪽수(본문+부록, "1,024 p." → 1024). 여러 권 묶음("2책")이나 없는 책은 null이며, 정기 갱신으로 바뀌지 않습니다(2026-11-09 BE 리뷰 반영). 키는 BE 환경에만 둡니다.
+- 전체 쪽수 = `total_pages` ?? `page_count`. `progress_percent`는 전체 쪽수를 모르면 null(완독 포함), 완독 100, 읽고 싶음 null, 현재 쪽이 없으면 null, 그 외 floor(current_page / 전체 쪽수 × 100)이며 100을 넘지 않습니다.
+- 검사는 반영 후 값으로 합니다. `total_pages` 1~99999, `current_page` 0~전체 쪽수. 전체 쪽수가 없는데 현재 쪽을 보내거나, `total_pages`를 지워 기준이 사라지거나 현재 쪽보다 작아지는 경우도 422 `page_out_of_range`(영어 문자열 `detail`, `loc` 없음)이며 아무것도 바뀌지 않습니다. 정수가 아닌 값은 422 `validation_error`.
+- `total_pages`는 모든 상태에서, `current_page`는 읽는 중·중단·포기에서만 바꿀 수 있습니다. 읽고 싶음·완독에서 `current_page`를 보내면 409 `progress_not_allowed`. 완독에서 `total_pages`를 바꾸면 현재 쪽을 새 전체 쪽수로 맞춥니다. 타인·없는 항목 404, 미인증 401.
+- 상태 전환: 읽고 싶음 초기화, 재독(완독 → 읽는 중), 다시 시작(포기 → 읽는 중, 2026-11-09 BE 리뷰 반영)은 현재 쪽을 지우고 전체 쪽수를 유지합니다. 완독 전환은 전체 쪽수를 알면 현재 쪽을 맞춥니다. 재개(중단 → 읽는 중)와 읽는 중·중단 → 포기는 유지합니다.
+- 제외(다음 단계): 날짜별 진도 이력, 기간별 읽은 쪽수 통계, 쪽수로 읽은 날 자동 체크.
+- FE: 상세의 읽기 진도 카드에서 전체 쪽수와 현재 쪽(쪽 또는 %)을 입력합니다. %는 반영 후 전체 쪽수로 올림해 쪽으로 보내며(서버가 %를 내림하므로 입력한 %보다 낮게 보이지 않게), 전체 쪽수를 바꾸면 그대로 둔 %도 새 기준으로 다시 보냅니다. 입력 중인 전체 쪽수(비우면 도서 정보 쪽수)를 모르면 %를 고를 수 없습니다. `page_out_of_range`에 칸 위치가 없으므로 같은 규칙으로 먼저 검사하고(`src/lib/progress.ts`) 바뀐 칸만 보냅니다. 다시 보내지 않고 결과와 관계없이 상세를 다시 불러옵니다. 서버 진도 값이 바뀌면 입력을 새 값으로 맞추고, 그대로면(422 등) 입력을 남깁니다. 상태만 바뀌어도 입력은 남습니다. 서재 카드는 완독이 아닌 책에 %를 붙이고, 공개 책 정보에 쪽수를 표시합니다.
+
 ## 독서 목표 (2026-11-04 BE PR #26, 운영 반영)
 
 BE PR #26(`110e215`)의 `app/schemas.py`·`app/reading_goals.py`·`docs/frontend-api.md` "독서 목표"와 BE 회신을 대조했습니다. 운영 OpenAPI에 `/me/goals`가 있음을 읽기 전용으로 확인했으며, 운영 DB의 migration `d4426d74f2e1` 적용은 확인하지 않았습니다.
@@ -172,7 +190,8 @@ BE PR #26(`110e215`)의 `app/schemas.py`·`app/reading_goals.py`·`docs/frontend
 - `GET /me/statistics`의 필수 `period.goals`: `[{metric, target, current, source}]`, 순서는 위 `metric` 순. `source`는 `set`, 월 응답의 `inherited`, 연 응답의 `sum`. 한 번도 정하지 않은 지표는 빠지고, 끈 목표는 `target: 0`으로 포함됩니다.
 - 월 목표는 직접 설정이 없으면 가장 최근 이전 달(이전 해 포함) 값을 이어받고, 일수·분 목표는 그 달 상한으로 줄여 응답합니다. 연 목표는 직접 설정이 우선이며 없으면 12개월 적용 목표의 합계입니다. 응답 `target`에는 입력 상한을 적용하지 않으므로 연 완독 합계는 9999를 넘을 수 있습니다.
 - `current`: 일수·분은 같은 응답의 `period` 값, 완독은 그 기간(KST)에 `completed_at`이 있는 완독 경험 책 수로 `library.completed_books`와 다릅니다.
-- FE: 기록 화면 통계 탭의 기존 월간·연간 선택에 붙입니다. 지표별 `current / target`, 100%에서 멈추는 진행 막대(실제 수치 유지), 출처(직접 설정·이전 달에서 이어받음·월 목표 합계), "목표 꺼짐"·"목표를 설정해보세요"를 구분합니다. 한 번에 한 지표만 편집하며 입력 상한만 FE에서 계산하고(`src/lib/goals.ts`) 상속·합계는 서버 응답을 씁니다. 빈 입력은 0으로 바꾸지 않고, 끄기(`target: 0`)·"이전 목표 이어받기"(월 DELETE)·"월 목표 합계로 전환"(연 DELETE)은 별도 버튼입니다. 저장 중에는 기간·탭 이동을 막고 성공 후 통계를 다시 조회합니다. 422·결과 불명확(자동 재전송 없음)·저장 후 재조회 실패("설정은 저장됐지만 최신 상태를 확인하지 못했습니다")에서 입력과 기존 통계를 보존하고 최신 상태 확인을 제공합니다. 화면을 떠난 뒤 늦게 끝난 저장은 재조회하지 않습니다.
+- 일괄 저장 `PUT /me/goals/batch`(2026-11-09 BE 회신으로 확정, 운영 반영 전): JSON `{year, month, goals: [{metric, target}]}` → 204. 모든 항목을 검증한 뒤 한 트랜잭션으로 저장하므로 모두 저장되거나 하나도 저장되지 않습니다. `target` 정수는 직접 설정(0은 그 기간부터 끄기), `null`은 기존 DELETE와 같은 직접 설정 해제(대상 없어도 오류 없음), 목록에 없는 지표는 변경 없음입니다. 빈 `goals`, 알 수 없는 `metric`, 같은 `metric` 중복(`loc: ["body","goals"]`)은 422 `validation_error`입니다. 한도 초과는 `loc: ["body","goals",<index>,"target"]`로 오며, 단건 `PUT /me/goals`의 `loc: ["body"]`는 그대로입니다.
+- FE: 기록 화면 통계 탭의 기존 월간·연간 선택에 붙입니다. 지표별 `current / target`, 100%에서 멈추는 진행 막대(실제 수치 유지), 출처(직접 설정·이전 달에서 이어받음·월 목표 합계), "목표 꺼짐"·"목표를 설정해보세요"를 구분합니다. 세 목표는 한 팝업에서 입력하고 일괄 저장으로 바뀐 지표만 보냅니다. 입력칸에는 그 기간에 직접 정한 값(`source: set`)만 채우며, 비우면 `null`(월은 이전 달 이어받기, 연은 월 목표 합계), 0이면 끄기입니다. 이어받은 값·합계는 입력칸 아래에 안내합니다. 입력 상한만 FE에서 계산하고(`src/lib/goals.ts`) 상속·합계는 서버 응답을 씁니다. 저장 중에는 기간·탭 이동과 팝업 닫기를 막고 성공 후 통계를 다시 조회합니다. 422·결과 불명확(자동 재전송 없음)·저장 후 재조회 실패("설정은 저장됐지만 최신 상태를 확인하지 못했습니다")에서 입력과 기존 통계를 보존하고 최신 상태 확인을 제공합니다. 확인 뒤 다시 저장하면 이미 반영된 지표는 보내지 않습니다. 422 항목 위치(`loc`)는 FE가 같은 상한으로 미리 검사하므로 읽지 않고 공통 안내를 띄웁니다. 화면을 떠난 뒤 늦게 끝난 저장은 재조회하지 않습니다.
 
 ## 서재 검색·상태 필터 (D-1, 2026-11-04 합의, 운영 반영)
 

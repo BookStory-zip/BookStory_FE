@@ -18,6 +18,7 @@ import {
   moveLibraryBook,
   searchBooks,
   updateLibraryRecord,
+  updateReadingProgress,
   updateNickname,
   updateReminderSettings,
 } from './api'
@@ -70,7 +71,7 @@ test('과거 읽은 날 기간은 개인 id 경로에 from·to만 보내고 빈 
 
 const detailBody = {
   id: 'own-1', book_id: 'common-1', isbn13: '9788936433598', title: '소년이 온다', authors: ['한강'], thumbnail_url: null,
-  status: 'completed', created_at: '2026-01-01T00:00:00Z', publisher: null, published_date: null, description: null,
+  status: 'completed', created_at: '2026-01-01T00:00:00Z', page_count: 300, total_pages: null, current_page: 300, progress_percent: 100, publisher: null, published_date: null, description: null,
   source_url: 'https://example.test', started_at: null, last_read_at: null, last_read_date: null, completed_at: '2025-03-01T00:00:00Z',
   stopped_at: null, stop_reason: null, rating: null, memo: null, is_review_public: false, review_published_at: null,
   review_updated_at: null, has_completed: true, updated_at: '2026-01-01T00:00:00Z', allowed_statuses: ['reading'], shelves: [],
@@ -86,6 +87,35 @@ test.each([undefined, {}, { start: null }, { start: '2025/01/02', end: '2025-03-
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ ...detailBody, past_log_range: range })))
   vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
   await expect(getLibraryBook('token', 'own-1')).rejects.toThrow('책 상세 응답 형식')
+})
+
+test.each([
+  { page_count: undefined },
+  { total_pages: 0 },
+  { current_page: -1 },
+  { progress_percent: 101 },
+  { progress_percent: 40.5 },
+  { current_page: '12' },
+])('진도 필드 %j는 생략·범위·형식 오류로 처리한다', async (patch) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ ...detailBody, past_log_range: null, ...patch })))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getLibraryBook('token', 'own-1')).rejects.toThrow('책 상세 응답 형식')
+})
+
+test('진도 PATCH는 생략과 null을 구분한 본문을 보내고 응답 id·필드를 확인한다', async () => {
+  const progress = { page_count: 300, total_pages: 280, current_page: null, progress_percent: null }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(Response.json({ id: 'own-1', ...progress }))
+    .mockResolvedValueOnce(Response.json({ id: 'other', ...progress }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+
+  await expect(updateReadingProgress('token', 'own-1', { total_pages: 280, current_page: null })).resolves.toBeUndefined()
+  const [url, init] = fetchMock.mock.calls[0]
+  expect(url).toBe('https://api.example.test/library/books/own-1/progress')
+  expect(init.method).toBe('PATCH')
+  expect(JSON.parse(init.body)).toEqual({ total_pages: 280, current_page: null })
+  await expect(updateReadingProgress('token', 'own-1', { total_pages: 280 })).rejects.toThrow('진도 응답 형식')
 })
 
 test('다른 날짜나 다른 개인 항목의 체크 응답을 성공으로 받아들이지 않는다', async () => {
@@ -216,6 +246,7 @@ test('서재 목록은 limit·offset을 보내고 표지 null을 허용한다', 
     thumbnail_url: null,
     status: 'want_to_read',
     created_at: '2026-10-27T00:00:00Z',
+    page_count: null, total_pages: null, current_page: null, progress_percent: null,
   }
   const fetchMock = vi.fn().mockImplementation(async () => Response.json([item]))
   vi.stubGlobal('fetch', fetchMock)
@@ -235,7 +266,7 @@ test('서재 목록은 limit·offset을 보내고 표지 null을 허용한다', 
 })
 
 test('서재 전체 조회는 100권씩 이어 받고 짧은 페이지에서 멈춘다', async () => {
-  const item = { id: 'user-book', book_id: 'book', isbn13: '9788936433598', title: '책', authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-10-27T00:00:00Z' }
+  const item = { id: 'user-book', book_id: 'book', isbn13: '9788936433598', title: '책', authors: [], thumbnail_url: null, status: 'reading', created_at: '2026-10-27T00:00:00Z', page_count: null, total_pages: null, current_page: null, progress_percent: null }
   const fetchMock = vi.fn()
     .mockResolvedValueOnce(Response.json(Array.from({ length: 100 }, (_, index) => ({ ...item, id: `a-${index}` }))))
     .mockResolvedValueOnce(Response.json([item]))

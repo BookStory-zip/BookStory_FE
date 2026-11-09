@@ -1,4 +1,4 @@
-import { apiRequest } from './api'
+import { apiRequest, isPageCount } from './api'
 
 export type CatalogBook = {
   isbn13: string
@@ -9,6 +9,8 @@ export type CatalogBook = {
   thumbnail_url: string | null
   description: string | null
   source_url: string
+  // 국립중앙도서관 쪽수. 모르면 null.
+  page_count: number | null
   reviews: { total_reviews: number; rating_count: number; average_rating: number | null }
 }
 
@@ -33,7 +35,8 @@ export async function getCatalogBook(isbn13: string): Promise<CatalogBook> {
   if (!object(data) || data.isbn13 !== isbn13 || !nonblank(data.title) ||
       !Array.isArray(data.authors) || !data.authors.every((author) => typeof author === 'string') ||
       !['publisher', 'published_date', 'thumbnail_url', 'description'].every((key) => data[key] === null || typeof data[key] === 'string') ||
-      !nonblank(data.source_url) || !object(data.reviews)) {
+      !nonblank(data.source_url) || !object(data.reviews) ||
+      !isPageCount(data.page_count)) {
     throw new Error('책 정보 응답 형식이 올바르지 않습니다.')
   }
   const { total_reviews, rating_count, average_rating } = data.reviews

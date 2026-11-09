@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
-import { cover, json, libraryAction, libraryControl, mockBackend, signInWithMockSession } from './fixtures'
+import { cover, json, libraryAction, libraryControl, mockBackend, signInWithMockSession, noProgress } from './fixtures'
 
 test('보이는 마지막 행을 채우고 검색 접기와 창 확대 후에도 스크롤 없이 보충한다', async ({ page }, testInfo) => {
   const books = Array.from({ length: 141 }, (_, i) => ({ id: `fill-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598',
-    title: `화면 채우기 ${i}`, authors: ['독서가'], thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-05T00:00:00Z' }))
+    title: `화면 채우기 ${i}`, authors: ['독서가'], thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-05T00:00:00Z', ...noProgress }))
   const requests: { offset: number; limit: number }[] = []
   await mockBackend(page, async (route, url) => {
     if (url.pathname !== '/library/books') return false
@@ -45,7 +45,7 @@ test('보이는 마지막 행을 채우고 검색 접기와 창 확대 후에도
 test('서재 정렬은 서버 순서·추가 로딩을 따르고 직접 정한 순서를 보존한다', async ({ page }, testInfo) => {
   const books = Array.from({ length: 25 }, (_, index) => ({
     id: `sort-${index}`, book_id: `catalog-${index}`, isbn13: '9788936433598', title: `정렬 책 ${index}`, authors: ['독서가'],
-    thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-05T00:00:00Z',
+    thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-05T00:00:00Z', ...noProgress,
   }))
   const custom = [books[5], ...books.filter((book) => book.id !== 'sort-5')]
   const orders = { custom, created: [...books].reverse(), started: [...books.slice(10), ...books.slice(0, 10)] }
@@ -89,7 +89,7 @@ test('큰 화면은 스크롤 없이 다음 책으로 채우고 모든 책을 �
   const books = Array.from({ length: 41 }, (_, index) => ({
     id: `personal-${index}`, book_id: `catalog-${index}`, isbn13: '9788936433598',
     title: index === 0 ? '숲의 책 (스페셜 에디션)' : `서재 책 ${index}`, authors: ['독서가'],
-    thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-05T00:00:00Z',
+    thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-05T00:00:00Z', ...noProgress,
   }))
   const offsets: number[] = []
   await mockBackend(page, async (route, url) => {

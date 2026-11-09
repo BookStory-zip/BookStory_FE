@@ -134,6 +134,24 @@ export type LibraryBookItem = {
   thumbnail_url: string | null
   status: ReadingStatus
   created_at: string
+} & ProgressFields
+
+// 전체 쪽수 = total_pages(사용자) ?? page_count(국립중앙도서관). 모르면 진도(%)는 null이다.
+// 완독은 항상 100, 읽고 싶음은 null이며 계산은 서버가 한다.
+export type ProgressFields = {
+  page_count: number | null
+  total_pages: number | null
+  current_page: number | null
+  progress_percent: number | null
+}
+
+export const isPageCount = (value: unknown) => value === null || (Number.isInteger(value) && Number(value) >= 1)
+
+function isProgressFields(item: Record<string, unknown>) {
+  return isPageCount(item.page_count) && isPageCount(item.total_pages) &&
+    (item.current_page === null || (Number.isInteger(item.current_page) && Number(item.current_page) >= 0)) &&
+    (item.progress_percent === null ||
+      (Number.isInteger(item.progress_percent) && Number(item.progress_percent) >= 0 && Number(item.progress_percent) <= 100))
 }
 
 function isLibraryBookItem(value: unknown): value is LibraryBookItem {
@@ -148,7 +166,8 @@ function isLibraryBookItem(value: unknown): value is LibraryBookItem {
     item.authors.every((author) => typeof author === 'string') &&
     (item.thumbnail_url === null || typeof item.thumbnail_url === 'string') &&
     readingStatuses.includes(item.status as ReadingStatus) &&
-    typeof item.created_at === 'string'
+    typeof item.created_at === 'string' &&
+    isProgressFields(item)
   )
 }
 
@@ -411,6 +430,19 @@ export async function updateLibraryStatus(
   })
 }
 
+// 생략은 그대로, null은 지우기. 범위는 반영 후 값으로 서버가 다시 검사한다(422 page_out_of_range).
+// 읽고 싶음·완독에서 current_page를 보내면 409 progress_not_allowed다.
+export type ProgressPatch = { total_pages?: number | null; current_page?: number | null }
+
+// 응답은 형식만 확인한다. 화면은 성공·실패와 관계없이 상세를 다시 조회한다.
+export async function updateReadingProgress(accessToken: string, userBookId: string, patch: ProgressPatch): Promise<void> {
+  const data = await apiRequest(`${libraryBookPath(userBookId)}/progress`, accessToken, { method: 'PATCH', body: patch })
+  if (typeof data !== 'object' || data === null || (data as Record<string, unknown>).id !== userBookId ||
+      !isProgressFields(data as Record<string, unknown>)) {
+    throw new Error('진도 응답 형식이 올바르지 않습니다.')
+  }
+}
+
 export type RecordPatch = {
   rating?: number | null
   memo?: string | null
@@ -620,7 +652,6 @@ export type ReadingStatistics = {
 export const goalMetrics = ['reading_days', 'completed_books', 'reading_minutes'] as const
 export type GoalMetric = (typeof goalMetrics)[number]
 // month null은 연 목표다. 빠뜨리면 422이므로 선택 속성으로 두지 않는다.
-export type GoalKey = { metric: GoalMetric; year: number; month: number | null }
 // target 0은 목표 꺼짐. 한 번도 정하지 않은 지표는 goals에서 빠진다.
 export type GoalProgress = { metric: GoalMetric; target: number; current: number; source: 'set' | 'inherited' | 'sum' }
 
@@ -670,14 +701,11 @@ export async function getReadingStatistics(
   return data
 }
 
-// 같은 기간에 다시 보내면 덮어쓴다. 0은 그 기간부터 목표를 끈다.
-export async function updateGoal(accessToken: string, body: GoalKey & { target: number }): Promise<void> {
-  await apiRequest('/me/goals', accessToken, { method: 'PUT', body })
-}
-
-// 월은 이전 달 목표를 다시 이어받고, 연은 월 목표 합계로 돌아간다. 대상이 없어도 204다.
-export async function deleteGoal(accessToken: string, body: GoalKey): Promise<void> {
-  await apiRequest('/me/goals', accessToken, { method: 'DELETE', body })
+// 한 기간의 목표를 한 트랜잭션으로 저장한다(모두 저장되거나 하나도 저장되지 않음).
+// target 0은 그 기간부터 끄기, null은 직접 정한 값 해제(월은 이전 달 이어받기, 연은 월 합계). 빠진 지표는 그대로다.
+export type GoalChange = { metric: GoalMetric; target: number | null }
+export async function saveGoals(accessToken: string, body: { year: number; month: number | null; goals: GoalChange[] }): Promise<void> {
+  await apiRequest('/me/goals/batch', accessToken, { method: 'PUT', body })
 }
 
 // 공개 후기에 표시할 닉네임. null이면 공통 이름 '독서가'로 표시된다.

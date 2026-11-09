@@ -6,7 +6,7 @@ import { ApiError } from './lib/api'
 import type { GoalProgress, ReadingLogEntry, ReadingNoteEntry } from './lib/api'
 import ReadingRecords from './ReadingRecords'
 
-const mocks = vi.hoisted(() => ({ getReadingLogs: vi.fn(), getReadingCompletions: vi.fn(), getReadingStatistics: vi.fn(), getAllLibraryBooks: vi.fn(), checkReadingDate: vi.fn(), updateGoal: vi.fn(), deleteGoal: vi.fn(), getNoteTimeline: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getReadingLogs: vi.fn(), getReadingCompletions: vi.fn(), getReadingStatistics: vi.fn(), getAllLibraryBooks: vi.fn(), checkReadingDate: vi.fn(), saveGoals: vi.fn(), getNoteTimeline: vi.fn() }))
 
 vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),
@@ -15,8 +15,7 @@ vi.mock('./lib/api', async (importOriginal) => ({
   getReadingStatistics: mocks.getReadingStatistics,
   getAllLibraryBooks: mocks.getAllLibraryBooks,
   checkReadingDate: mocks.checkReadingDate,
-  updateGoal: mocks.updateGoal,
-  deleteGoal: mocks.deleteGoal,
+  saveGoals: mocks.saveGoals,
   getNoteTimeline: mocks.getNoteTimeline,
 }))
 // 환경변수 없는 CI에서도 실제 Supabase 클라이언트를 만들지 않는다.
@@ -360,150 +359,181 @@ test('목표는 출처·꺼짐·미설정을 구분하고 초과 달성 수치�
   expect(goalItem('완독 권수').textContent).toContain('4 / 119988권')
 })
 
-test('월 목표는 입력을 검사하고 저장 중 기간 변경을 막은 뒤 통계를 다시 조회한다', async () => {
+function openGoalDialog(period = '2026년 10월') {
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${period} 독서 목표 (설정|수정)$`) }))
+  return screen.getByRole('dialog', { name: `${period} 독서 목표` })
+}
+const goalInput = (label: string) => screen.getByLabelText(label) as HTMLInputElement
+
+test('한 팝업에서 세 목표를 검사하고, 바뀐 지표만 값·끄기(0)·해제(null)로 한 번에 보낸 뒤 다시 조회한다', async () => {
   let finish!: () => void
-  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([]))
-  mocks.updateGoal.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve }))
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
+    { metric: 'reading_days', target: 10, current: 3, source: 'set' },
+    { metric: 'completed_books', target: 2, current: 1, source: 'inherited' },
+  ]))
+  mocks.saveGoals.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve }))
   await openStatistics()
 
-  fireEvent.click(within(goalItem('읽은 날')).getByRole('button', { name: '읽은 날 목표 설정' }))
-  expect(screen.getByText(/다음 달에도 이어집니다/)).toBeTruthy()
-  const input = screen.getByLabelText('2026년 10월 읽은 날 목표(일)')
-  fireEvent.click(screen.getByRole('button', { name: '저장' }))
-  expect(screen.getByRole('alert').textContent).toBe('목표를 입력해주세요.')
-  fireEvent.change(input, { target: { value: '32' } })
-  fireEvent.click(screen.getByRole('button', { name: '저장' }))
-  expect(screen.getByRole('alert').textContent).toBe('최대 31까지 정할 수 있어요.')
-  expect(mocks.updateGoal).not.toHaveBeenCalled()
-  // 다른 지표는 동시에 편집하지 않는다.
-  expect(within(goalItem('완독 권수')).getByRole('button', { name: '완독 권수 목표 설정' })).toHaveProperty('disabled', true)
+  const dialog = openGoalDialog()
+  // 직접 정한 값만 채우고, 이어받은 값은 비워 둔 채 무엇을 따르는지 알려 준다.
+  expect(goalInput('읽은 날(일)').value).toBe('10')
+  expect(goalInput('완독 권수(권)').value).toBe('')
+  expect(dialog.textContent).toContain('비워 두면 이전 달 목표(2권)를 이어받아요.')
+  expect(dialog.textContent).toContain('비우면 이 달에 정한 값을 지우고, 이전 달 목표가 있으면 이어받아요.')
+  expect(dialog.textContent).toContain('다음 달에도 이어집니다')
 
-  fireEvent.change(input, { target: { value: '12' } })
-  fireEvent.click(screen.getByRole('button', { name: '저장' }))
-  fireEvent.click(screen.getByRole('button', { name: '저장하는 중…' }))
-  expect(mocks.updateGoal).toHaveBeenCalledTimes(1)
-  expect(mocks.updateGoal).toHaveBeenCalledWith('test-token', { metric: 'reading_days', year: 2026, month: 10, target: 12 })
+  fireEvent.change(goalInput('읽은 날(일)'), { target: { value: '32' } })
+  fireEvent.change(goalInput('독서 시간(분)'), { target: { value: '1.5' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: '저장' }))
+  expect(dialog.textContent).toContain('최대 31까지 정할 수 있어요.')
+  expect(dialog.textContent).toContain('0 이상의 정수로 입력해주세요.')
+  expect(document.activeElement).toBe(goalInput('읽은 날(일)'))
+  expect(goalInput('독서 시간(분)').getAttribute('aria-invalid')).toBe('true')
+  expect(mocks.saveGoals).not.toHaveBeenCalled()
+
+  fireEvent.change(goalInput('읽은 날(일)'), { target: { value: ' ' } })
+  fireEvent.change(goalInput('완독 권수(권)'), { target: { value: '0' } })
+  fireEvent.change(goalInput('독서 시간(분)'), { target: { value: '600' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: '저장' }))
+  fireEvent.click(within(dialog).getByRole('button', { name: '저장하는 중…' }))
+  fireEvent(dialog, new Event('cancel', { cancelable: true }))
+  expect(screen.getByRole('dialog')).toBe(dialog)
+  expect(mocks.saveGoals).toHaveBeenCalledTimes(1)
+  expect(mocks.saveGoals).toHaveBeenCalledWith('test-token', {
+    year: 2026, month: 10,
+    goals: [{ metric: 'reading_days', target: null }, { metric: 'completed_books', target: 0 }, { metric: 'reading_minutes', target: 600 }],
+  })
   for (const name of ['이전 달', '연간', '월간', '달력']) {
-    expect(screen.getByRole('button', { name })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name, hidden: true })).toHaveProperty('disabled', true)
   }
 
-  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_days', target: 12, current: 3, source: 'set' }]))
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
+    { metric: 'reading_days', target: 8, current: 3, source: 'inherited' },
+    { metric: 'completed_books', target: 0, current: 1, source: 'set' },
+    { metric: 'reading_minutes', target: 600, current: 42, source: 'set' },
+  ]))
   await act(async () => { finish() })
-  await waitFor(() => expect(goalItem('읽은 날').textContent).toContain('3 / 12일'))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // 저장 뒤 초점은 여는 버튼으로 돌아오고, 이름은 보이는 글자(수정)를 포함한다.
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: '2026년 10월 독서 목표 수정' }))
+  expect(goalItem('읽은 날').textContent).toContain('3 / 8일')
+  expect(goalItem('완독 권수').textContent).toContain('목표 꺼짐')
+  expect(goalItem('독서 시간').textContent).toContain('42 / 600분')
   expect(mocks.getReadingStatistics).toHaveBeenCalledTimes(2)
-  expect(screen.queryByLabelText(/읽은 날 목표\(일\)/)).toBeNull()
   expect(screen.getByRole('button', { name: '이전 달' })).toHaveProperty('disabled', false)
 })
 
-test('월 목표 끄기는 0을 보내고, 이전 목표 이어받기는 그 달 설정을 지운다', async () => {
-  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_minutes', target: 600, current: 42, source: 'set' }]))
-  mocks.updateGoal.mockResolvedValue(undefined)
-  mocks.deleteGoal.mockResolvedValue(undefined)
+test('바꾼 값이 없으면 요청 없이 닫고, 취소하면 입력을 버린다', async () => {
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_minutes', target: 0, current: 0, source: 'set' }]))
   await openStatistics()
 
-  fireEvent.click(screen.getByRole('button', { name: '독서 시간 목표 수정' }))
-  expect(screen.getByLabelText('2026년 10월 독서 시간 목표(분)')).toHaveProperty('value', '600')
-  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_minutes', target: 0, current: 42, source: 'set' }]))
-  fireEvent.click(screen.getByRole('button', { name: '목표 끄기' }))
-  await waitFor(() => expect(goalItem('독서 시간').textContent).toContain('목표 꺼짐'))
-  expect(mocks.updateGoal).toHaveBeenCalledWith('test-token', { metric: 'reading_minutes', year: 2026, month: 10, target: 0 })
+  // 꺼 둔 목표는 0으로 보여 주므로 그대로 저장해도 다시 보내지 않는다.
+  openGoalDialog()
+  expect(goalInput('독서 시간(분)').value).toBe('0')
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
 
-  fireEvent.click(screen.getByRole('button', { name: '독서 시간 목표 수정' }))
-  // 꺼진 목표의 0을 입력값으로 채워 바로 저장되지 않게 한다.
-  expect(screen.getByLabelText('2026년 10월 독서 시간 목표(분)')).toHaveProperty('value', '')
-  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_minutes', target: 300, current: 42, source: 'inherited' }]))
-  fireEvent.click(screen.getByRole('button', { name: '이전 목표 이어받기' }))
-  await waitFor(() => expect(goalItem('독서 시간').textContent).toContain('이전 달에서 이어받음'))
-  expect(mocks.deleteGoal).toHaveBeenCalledWith('test-token', { metric: 'reading_minutes', year: 2026, month: 10 })
+  openGoalDialog()
+  fireEvent.change(goalInput('읽은 날(일)'), { target: { value: '5' } })
+  fireEvent.click(screen.getByRole('button', { name: '취소' }))
+  // 브라우저가 직접 닫아도(close 이벤트) 다시 열 수 있다.
+  openGoalDialog()
+  fireEvent(screen.getByRole('dialog'), new Event('close'))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  openGoalDialog()
+  expect(goalInput('읽은 날(일)').value).toBe('')
+  expect(mocks.saveGoals).not.toHaveBeenCalled()
 })
 
-test('연 목표는 그 해 일수로 검사하고 월 목표 합계로 되돌릴 수 있다', async () => {
+test('연 목표는 그 해 일수로 검사하고 비우면 월 목표 합계로 돌아간다', async () => {
   mocks.getReadingLogs.mockResolvedValue([])
   mocks.getReadingStatistics.mockResolvedValue(withGoals([]))
   renderRecords()
   fireEvent.click(screen.getByRole('button', { name: '통계' }))
   mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
     { metric: 'reading_days', target: 150, current: 17, source: 'set' },
+    { metric: 'completed_books', target: 24, current: 4, source: 'sum' },
   ], { month: null, start_date: '2026-01-01', end_date: '2026-12-31' }))
   fireEvent.click(screen.getByRole('button', { name: '연간' }))
   await waitFor(() => expect(goalItem('읽은 날').textContent).toContain('17 / 150일'))
 
-  fireEvent.click(screen.getByRole('button', { name: '읽은 날 목표 수정' }))
-  expect(screen.queryByText(/다음 달에도 이어집니다/)).toBeNull()
-  fireEvent.change(screen.getByLabelText('2026년 읽은 날 목표(일)'), { target: { value: '366' } })
+  const dialog = openGoalDialog('2026년')
+  expect(dialog.textContent).not.toContain('다음 달에도 이어집니다')
+  expect(dialog.textContent).toContain('비우면 직접 정한 값을 지우고 월 목표 합계로 돌아가요.')
+  expect(dialog.textContent).toContain('비워 두면 월 목표 합계(24권)를 써요.')
+  fireEvent.change(goalInput('읽은 날(일)'), { target: { value: '366' } })
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
-  expect(screen.getByRole('alert').textContent).toBe('최대 365까지 정할 수 있어요.')
-  expect(screen.queryByRole('button', { name: '이전 목표 이어받기' })).toBeNull()
+  expect(dialog.textContent).toContain('최대 365까지 정할 수 있어요.')
 
-  mocks.deleteGoal.mockResolvedValueOnce(undefined)
-  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
-    { metric: 'reading_days', target: 24, current: 17, source: 'sum' },
-  ], { month: null, start_date: '2026-01-01', end_date: '2026-12-31' }))
-  fireEvent.click(screen.getByRole('button', { name: '월 목표 합계로 전환' }))
-  await waitFor(() => expect(goalItem('읽은 날').textContent).toContain('월 목표 합계'))
-  expect(mocks.deleteGoal).toHaveBeenCalledWith('test-token', { metric: 'reading_days', year: 2026, month: null })
+  mocks.saveGoals.mockResolvedValueOnce(undefined)
+  fireEvent.change(goalInput('읽은 날(일)'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(mocks.saveGoals).toHaveBeenCalledWith('test-token', { year: 2026, month: null, goals: [{ metric: 'reading_days', target: null }] })
 })
 
 test('목표 저장 422는 입력과 기존 통계를 보존하고 다시 조회하지 않는다', async () => {
   mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_days', target: 10, current: 3, source: 'set' }]))
-  mocks.updateGoal.mockRejectedValueOnce(new ApiError(422, 'invalid', 'validation_error'))
+  mocks.saveGoals.mockRejectedValueOnce(new ApiError(422, 'invalid', 'validation_error'))
   await openStatistics()
-  fireEvent.click(screen.getByRole('button', { name: '읽은 날 목표 수정' }))
-  fireEvent.change(screen.getByLabelText('2026년 10월 읽은 날 목표(일)'), { target: { value: '20' } })
+  openGoalDialog()
+  fireEvent.change(goalInput('읽은 날(일)'), { target: { value: '20' } })
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
-  expect((await screen.findByRole('alert')).textContent).toContain('최대 31')
-  expect(screen.getByLabelText('2026년 10월 읽은 날 목표(일)')).toHaveProperty('value', '20')
+  expect((await screen.findByRole('alert')).textContent).toContain('범위를 넘은 값')
+  expect(goalInput('읽은 날(일)').value).toBe('20')
   expect(goalItem('읽은 날').textContent).toContain('3 / 10일')
   expect(mocks.getReadingStatistics).toHaveBeenCalledTimes(1)
 })
 
-test('결과가 불명확하면 다시 보내지 않고 최신 상태 확인만 제공한다', async () => {
+test('결과가 불명확하면 다시 보내지 않고, 최신 상태 확인 뒤에는 이미 저장된 값을 또 보내지 않는다', async () => {
   mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([]))
-  mocks.updateGoal.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  mocks.saveGoals.mockRejectedValueOnce(new TypeError('Failed to fetch'))
   await openStatistics()
-  fireEvent.click(screen.getByRole('button', { name: '완독 권수 목표 설정' }))
-  fireEvent.change(screen.getByLabelText('2026년 10월 완독 권수 목표(권)'), { target: { value: '3' } })
+  openGoalDialog()
+  fireEvent.change(goalInput('완독 권수(권)'), { target: { value: '3' } })
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
   expect((await screen.findByRole('alert')).textContent).toContain('저장됐는지 확인하지 못했습니다')
-  expect(mocks.updateGoal).toHaveBeenCalledTimes(1)
-  expect(screen.getByLabelText('2026년 10월 완독 권수 목표(권)')).toHaveProperty('value', '3')
+  expect(mocks.saveGoals).toHaveBeenCalledTimes(1)
+  expect(goalInput('완독 권수(권)').value).toBe('3')
 
   mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'completed_books', target: 3, current: 0, source: 'set' }]))
   fireEvent.click(screen.getByRole('button', { name: '최신 상태 확인' }))
   await waitFor(() => expect(goalItem('완독 권수').textContent).toContain('0 / 3권'))
-  expect(mocks.updateGoal).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: '저장' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(mocks.saveGoals).toHaveBeenCalledTimes(1)
 })
 
-test('저장 후 재조회가 실패하면 저장 실패와 구분하고 편집 입력을 남긴 채 재조회를 제공한다', async () => {
+test('저장 후 재조회가 실패하면 저장 실패와 구분하고 입력을 남긴 채 재조회를 제공한다', async () => {
   mocks.getReadingStatistics
     .mockResolvedValueOnce(withGoals([{ metric: 'reading_days', target: 10, current: 3, source: 'set' }]))
     .mockRejectedValueOnce(new ApiError(503))
-  mocks.updateGoal.mockResolvedValueOnce(undefined)
+  mocks.saveGoals.mockResolvedValueOnce(undefined)
   await openStatistics()
-  fireEvent.click(screen.getByRole('button', { name: '읽은 날 목표 수정' }))
-  fireEvent.change(screen.getByLabelText('2026년 10월 읽은 날 목표(일)'), { target: { value: '20' } })
+  openGoalDialog()
+  fireEvent.change(goalInput('읽은 날(일)'), { target: { value: '20' } })
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
   expect((await screen.findByRole('alert')).textContent).toBe('설정은 저장됐지만 최신 상태를 확인하지 못했습니다.')
-  expect(screen.getByLabelText('2026년 10월 읽은 날 목표(일)')).toHaveProperty('value', '20')
+  expect(goalInput('읽은 날(일)').value).toBe('20')
   expect(goalItem('읽은 날').textContent).toContain('3 / 10일')
-  expect(screen.getByRole('heading', { name: '현재 서재' })).toBeTruthy()
 
   mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([{ metric: 'reading_days', target: 20, current: 3, source: 'set' }]))
   fireEvent.click(screen.getByRole('button', { name: '최신 상태 확인' }))
   await waitFor(() => expect(goalItem('읽은 날').textContent).toContain('3 / 20일'))
-  expect(mocks.updateGoal).toHaveBeenCalledTimes(1)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(mocks.saveGoals).toHaveBeenCalledTimes(1)
 })
 
 test('목표 저장 중 화면을 떠나면 늦은 성공 응답으로 다시 조회하지 않는다', async () => {
   let finish!: () => void
   mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([]))
-  mocks.updateGoal.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve }))
+  mocks.saveGoals.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve }))
   await openStatistics()
-  fireEvent.click(screen.getByRole('button', { name: '읽은 날 목표 설정' }))
-  fireEvent.change(screen.getByLabelText('2026년 10월 읽은 날 목표(일)'), { target: { value: '5' } })
+  openGoalDialog()
+  fireEvent.change(goalInput('읽은 날(일)'), { target: { value: '5' } })
   fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
   cleanup()
