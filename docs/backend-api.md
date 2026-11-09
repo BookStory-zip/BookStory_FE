@@ -39,7 +39,7 @@ Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /
 | `GET /reading-logs?start_date&end_date&limit&offset` | 양 끝 포함·최대 366일, 100개씩. 항목의 `completed_at`·`status`·`has_completed`는 현재 기록(체크 당시 아님) | 마지막 페이지까지 전부 조회. 체크한 날 표시에만 사용 |
 | `GET /reading-completions?start_date&end_date&limit&offset` | 완독일이 알려진 완독. `completed_date`는 KST 날짜, 재독·상태 변경 후에도 저장된 완독일 | 마지막 페이지까지 조회해 같은 책·같은 날의 체크와 합치고 표지에 "완독" 라벨 |
 | `GET /me/statistics?year&month` | `month` 생략 시 연간 합계. `library`(현재 서재 현황)·`period`(기간 활동, `reading_days`·`reading_minutes`·`goals`) | 기록 화면 통계 탭에서만 요청. 아래 통계·독서 목표 참고 |
-| `PUT·DELETE /me/goals` | JSON 본문, `month` 필수(연은 null), 204 | 통계 탭 목표 설정·끄기·이어받기·합계 복귀. 아래 독서 목표 참고 |
+| `PUT /me/goals/batch` | JSON `{year, month, goals}`, 204, 한 트랜잭션 | 통계 탭 목표 팝업의 일괄 저장. 단건 `PUT·DELETE /me/goals`는 BE에 남아 있지만 FE는 쓰지 않음. 아래 독서 목표 참고 |
 | 독서 노트 5개 API | 책별 작성·목록·수정·삭제, 기간 타임라인. 운영 제공 | 책 상세 노트 카드·기록 노트 탭. 아래 독서 노트 참고 |
 | `GET·PATCH /me/profile` | `{nickname: string \| null}`. PATCH는 null이면 삭제(공개 후기 이름 '독서가'), 규칙 위반 422 `invalid_nickname`. 운영 제공 | 계정 화면 닉네임. 아래 계정·안정성 참고 |
 | `DELETE /me` | 204. 비밀번호 인증 5분 이내 토큰만, 아니면 403 `recent_login_required`, 로그인 계정 삭제 실패 503 `account_deletion_failed`(재시도 가능) | 계정 화면 탈퇴. 비밀번호 재로그인 후 요청 |
@@ -172,7 +172,8 @@ BE PR #26(`110e215`)의 `app/schemas.py`·`app/reading_goals.py`·`docs/frontend
 - `GET /me/statistics`의 필수 `period.goals`: `[{metric, target, current, source}]`, 순서는 위 `metric` 순. `source`는 `set`, 월 응답의 `inherited`, 연 응답의 `sum`. 한 번도 정하지 않은 지표는 빠지고, 끈 목표는 `target: 0`으로 포함됩니다.
 - 월 목표는 직접 설정이 없으면 가장 최근 이전 달(이전 해 포함) 값을 이어받고, 일수·분 목표는 그 달 상한으로 줄여 응답합니다. 연 목표는 직접 설정이 우선이며 없으면 12개월 적용 목표의 합계입니다. 응답 `target`에는 입력 상한을 적용하지 않으므로 연 완독 합계는 9999를 넘을 수 있습니다.
 - `current`: 일수·분은 같은 응답의 `period` 값, 완독은 그 기간(KST)에 `completed_at`이 있는 완독 경험 책 수로 `library.completed_books`와 다릅니다.
-- FE: 기록 화면 통계 탭의 기존 월간·연간 선택에 붙입니다. 지표별 `current / target`, 100%에서 멈추는 진행 막대(실제 수치 유지), 출처(직접 설정·이전 달에서 이어받음·월 목표 합계), "목표 꺼짐"·"목표를 설정해보세요"를 구분합니다. 한 번에 한 지표만 편집하며 입력 상한만 FE에서 계산하고(`src/lib/goals.ts`) 상속·합계는 서버 응답을 씁니다. 빈 입력은 0으로 바꾸지 않고, 끄기(`target: 0`)·"이전 목표 이어받기"(월 DELETE)·"월 목표 합계로 전환"(연 DELETE)은 별도 버튼입니다. 저장 중에는 기간·탭 이동을 막고 성공 후 통계를 다시 조회합니다. 422·결과 불명확(자동 재전송 없음)·저장 후 재조회 실패("설정은 저장됐지만 최신 상태를 확인하지 못했습니다")에서 입력과 기존 통계를 보존하고 최신 상태 확인을 제공합니다. 화면을 떠난 뒤 늦게 끝난 저장은 재조회하지 않습니다.
+- 일괄 저장 `PUT /me/goals/batch`(2026-11-09 BE 회신으로 확정, 운영 반영 전): JSON `{year, month, goals: [{metric, target}]}` → 204. 모든 항목을 검증한 뒤 한 트랜잭션으로 저장하므로 모두 저장되거나 하나도 저장되지 않습니다. `target` 정수는 직접 설정(0은 그 기간부터 끄기), `null`은 기존 DELETE와 같은 직접 설정 해제(대상 없어도 오류 없음), 목록에 없는 지표는 변경 없음입니다. 빈 `goals`, 알 수 없는 `metric`, 같은 `metric` 중복(`loc: ["body","goals"]`)은 422 `validation_error`입니다. 한도 초과는 `loc: ["body","goals",<index>,"target"]`로 오며, 단건 `PUT /me/goals`의 `loc: ["body"]`는 그대로입니다.
+- FE: 기록 화면 통계 탭의 기존 월간·연간 선택에 붙입니다. 지표별 `current / target`, 100%에서 멈추는 진행 막대(실제 수치 유지), 출처(직접 설정·이전 달에서 이어받음·월 목표 합계), "목표 꺼짐"·"목표를 설정해보세요"를 구분합니다. 세 목표는 한 팝업에서 입력하고 일괄 저장으로 바뀐 지표만 보냅니다. 입력칸에는 그 기간에 직접 정한 값(`source: set`)만 채우며, 비우면 `null`(월은 이전 달 이어받기, 연은 월 목표 합계), 0이면 끄기입니다. 이어받은 값·합계는 입력칸 아래에 안내합니다. 입력 상한만 FE에서 계산하고(`src/lib/goals.ts`) 상속·합계는 서버 응답을 씁니다. 저장 중에는 기간·탭 이동과 팝업 닫기를 막고 성공 후 통계를 다시 조회합니다. 422·결과 불명확(자동 재전송 없음)·저장 후 재조회 실패("설정은 저장됐지만 최신 상태를 확인하지 못했습니다")에서 입력과 기존 통계를 보존하고 최신 상태 확인을 제공합니다. 확인 뒤 다시 저장하면 이미 반영된 지표는 보내지 않습니다. 422 항목 위치(`loc`)는 FE가 같은 상한으로 미리 검사하므로 읽지 않고 공통 안내를 띄웁니다. 화면을 떠난 뒤 늦게 끝난 저장은 재조회하지 않습니다.
 
 ## 서재 검색·상태 필터 (D-1, 2026-11-04 합의, 운영 반영)
 
