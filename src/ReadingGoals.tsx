@@ -56,6 +56,7 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
 
   useEffect(() => {
     const element = dialog.current
+    const button = trigger.current
     if (!open || !element) return
     // jsdom 등 showModal이 없는 환경에서는 open 속성만 켠다.
     if (typeof element.showModal === 'function') element.showModal()
@@ -64,7 +65,7 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
       if (typeof element.close === 'function') element.close()
       else element.removeAttribute('open')
       // 팝업은 닫히면서 DOM에서 빠지므로 브라우저 기본 초점 복귀 대신 여는 버튼으로 돌려놓는다.
-      trigger.current?.focus()
+      button?.focus()
     }
   }, [open])
 
