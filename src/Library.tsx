@@ -475,8 +475,8 @@ export default function Library() {
             </select>
           </div>}
         </div>
-        <details ref={management} open={managementOpen} className="library-management"
-          onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setManagementOpen(false) }} onKeyDown={(event) => {
+        {/* blur로 닫지 않는다. Safari는 탭한 버튼 대신 바깥 조상에 포커스를 줘서 클릭 전에 메뉴가 닫힌다. 바깥 탭은 pointerdown, 키보드는 Escape로 닫는다. */}
+        <details ref={management} open={managementOpen} className="library-management" onKeyDown={(event) => {
           if (event.key === 'Escape') { event.preventDefault(); closeManagement() }
         }}>
           <summary onClick={(event) => { event.preventDefault(); setManagementOpen(!managementOpen) }}>관리</summary>

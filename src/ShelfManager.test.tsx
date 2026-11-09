@@ -24,7 +24,10 @@ const onClose = vi.fn()
 const renderManager = () => render(<ShelfManager shelves={shelves} refresh={refresh} onBusyChange={onBusyChange} onClose={onClose} />)
 
 function orderAction(name: string, direction: '앞으로' | '뒤로') {
-  fireEvent.click(screen.getByRole('button', { name: `${name} 이동 손잡이` }))
+  const handle = screen.getByRole('button', { name: `${name} 이동 손잡이` })
+  // 실제 탭처럼 pointerdown이 먼저 와야 열려 있던 다른 메뉴가 닫힌다.
+  fireEvent.pointerDown(handle)
+  fireEvent.click(handle)
   return screen.getByRole('button', { name: `${name} ${direction}` })
 }
 
