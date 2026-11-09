@@ -187,27 +187,15 @@ export default function BookSearch() {
       <h1 id="search-title">책 찾기</h1>
       <p className="library-sub">숲길에서 만난 책을 오두막 책장에 담아 보세요</p>
 
-      <form className="search-form book-search-form" role="search" onSubmit={handleSearch}>
-        <div className="search-options">
-          <div className="search-option">
-            <label htmlFor="search-target">검색 기준</label>
-            <select id="search-target" value={options.target ?? ''} disabled={coolingDown}
-              onChange={(event) => changeOptions((event.target.value || undefined) as SearchTarget | undefined, options.sort)}>
-              <option value="">전체</option>
-              <option value="title">제목</option>
-              <option value="person">저자</option>
-              <option value="publisher">출판사</option>
-            </select>
-          </div>
-          <div className="search-option">
-            <label htmlFor="search-sort">검색 결과 정렬</label>
-            <select id="search-sort" value={options.sort ?? 'accuracy'} disabled={coolingDown}
-              onChange={(event) => changeOptions(options.target, event.target.value as SearchSort)}>
-              <option value="accuracy">정확도순</option>
-              <option value="latest">출간일 최신순</option>
-            </select>
-          </div>
-        </div>
+      <form className="search-form" role="search" onSubmit={handleSearch}>
+        <label htmlFor="search-target" className="visually-hidden">검색 기준</label>
+        <select id="search-target" value={options.target ?? ''} disabled={coolingDown}
+          onChange={(event) => changeOptions((event.target.value || undefined) as SearchTarget | undefined, options.sort)}>
+          <option value="">전체</option>
+          <option value="title">제목</option>
+          <option value="person">저자</option>
+          <option value="publisher">출판사</option>
+        </select>
         <label htmlFor="search-query" className="visually-hidden">
           책 제목, 저자, 출판사 또는 ISBN
         </label>
@@ -215,7 +203,6 @@ export default function BookSearch() {
           id="search-query"
           name="query"
           type="search"
-          placeholder="예: 소년이 온다, 한강, 9788936434120…"
           maxLength={200}
           enterKeyHint="search"
           autoComplete="off"
@@ -224,9 +211,17 @@ export default function BookSearch() {
           {searching ? '찾는 중…' : '검색'}
         </button>
       </form>
-      {results !== null && paging && <p className="result-note" aria-live="polite">
-        ‘{paging.query}’ · {paging.options.target ? targetLabels[paging.options.target] : '전체'} · {paging.options.sort === 'latest' ? '출간일 최신순' : '정확도순'}
-      </p>}
+      {results !== null && paging && <div className="search-summary">
+        <p className="result-note" aria-live="polite">
+          ‘{paging.query}’ · {paging.options.target ? targetLabels[paging.options.target] : '전체'}
+        </p>
+        <label htmlFor="search-sort" className="visually-hidden">검색 결과 정렬</label>
+        <select id="search-sort" value={options.sort ?? 'accuracy'} disabled={coolingDown}
+          onChange={(event) => changeOptions(options.target, event.target.value as SearchSort)}>
+          <option value="accuracy">정확도순</option>
+          <option value="latest">출간일 최신순</option>
+        </select>
+      </div>}
 
       {error && (
         <p className="library-note" role="alert">{error}</p>
