@@ -814,3 +814,18 @@ test('Safari처럼 메뉴 버튼 탭이 포커스를 바깥 조상으로 옮겨�
   fireEvent.click(action)
   expect(await screen.findByRole('dialog', { name: '책장 관리' })).toBeTruthy()
 })
+
+test('관리 메뉴는 blur 대신 바깥 탭과 Escape로 닫히고, 메뉴 안 탭으로는 닫히지 않는다', async () => {
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(2, 'A'))
+  renderInRouter(<Library />)
+  const action = await findManagementAction('책장 관리')
+  const menu = document.querySelector<HTMLDetailsElement>('.library-management')!
+  fireEvent.pointerDown(action)
+  expect(menu.open).toBe(true)
+  fireEvent.pointerDown(screen.getByText('A 책 0'))
+  expect(menu.open).toBe(false)
+  managementAction('책장 관리')
+  fireEvent.keyDown(menu, { key: 'Escape' })
+  expect(menu.open).toBe(false)
+  expect(document.activeElement).toBe(menu.querySelector('summary'))
+})

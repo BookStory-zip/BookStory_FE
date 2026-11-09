@@ -228,7 +228,7 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
                 </div>
               )
             })}
-            {failure && <p role="alert">{failure.text}</p>}
+            {failure && <p className="result-note is-error" role="alert">{failure.text}</p>}
             {failure?.recheck && (
               <button
                 type="button" className="secondary" disabled={busy}
