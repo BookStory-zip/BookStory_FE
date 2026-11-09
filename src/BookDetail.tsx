@@ -514,7 +514,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
             {nextStatus === book.status
               ? '바꾼 날짜만 고칩니다. 비워도 기존 날짜는 지워지지 않습니다. 날짜는 한국 시간 기준입니다.'
               : nextStatus === 'reading' && book.status !== 'paused'
-                ? `새로 읽기 시작합니다. 시작일을 비워 두면 오늘부터 시작하고, 이전 완독일은 유지됩니다.${book.status === 'completed' ? ' 현재 쪽은 비워지고 전체 쪽수는 유지됩니다.' : ''} 날짜는 한국 시간 기준입니다.`
+                ? `새로 읽기 시작합니다. 시작일을 비워 두면 오늘부터 시작하고, 이전 완독일은 유지됩니다.${book.status === 'completed' || book.status === 'abandoned' ? ' 현재 쪽은 비워지고 전체 쪽수는 유지됩니다.' : ''} 날짜는 한국 시간 기준입니다.`
                 : '그대로 두면 기존 날짜를 유지하고, 비우면 서버 규칙에 따라 비워 두거나 현재 시각으로 기록합니다. 날짜는 한국 시간 기준입니다.'}
           </p>
         )}

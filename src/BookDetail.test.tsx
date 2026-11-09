@@ -765,3 +765,16 @@ test('읽고 싶음은 전체 쪽수만 받고, 초기화 안내에 현재 쪽 �
   expect(within(progressCard()).queryByLabelText('현재 쪽')).toBeNull()
   expect(within(progressCard()).getByLabelText('전체 쪽수')).toBeTruthy()
 })
+
+test.each([
+  ['completed', true],
+  ['abandoned', true],
+  ['paused', false],
+] as const)('%s → 읽는 중 안내는 현재 쪽 삭제 여부(%s)를 서버 규칙대로 알린다', async (status, clears) => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ ...reading, status, progress_percent: status === 'completed' ? 100 : 40 }))
+  renderDetail()
+  await screen.findByRole('heading', { name: '읽기 진도' })
+  fireEvent.click(screen.getByRole('radio', { name: /^읽는 중/ }))
+  const hint = screen.getByText(/한국 시간 기준입니다/).textContent
+  expect(hint?.includes('현재 쪽은 비워지고 전체 쪽수는 유지됩니다.')).toBe(clears)
+})

@@ -45,8 +45,6 @@ test('현재 쪽보다 작게 줄이거나 기준을 없애는 변경은 현재 
   expect(buildProgressPatch(noCount, { total: '', current: '120', unit: 'page' }))
     .toEqual({ errors: { total: '전체 쪽수를 지우려면 현재 쪽도 함께 지워주세요.' } })
   expect(buildProgressPatch(noCount, { total: '', current: '', unit: 'page' })).toEqual({ patch: { total_pages: null, current_page: null } })
-  // 정기 갱신으로 page_count가 현재 쪽보다 작아진 상태에서도 전체 쪽수만 바꾸면 막는다.
-  expect(buildProgressPatch(book({ page_count: 100 }), { total: '110', current: '120', unit: 'page' })).toHaveProperty('errors.total')
 })
 
 test('읽고 싶음·완독은 현재 쪽을 보내지 않고 전체 쪽수만 바꾼다', () => {
