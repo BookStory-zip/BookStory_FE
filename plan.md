@@ -16,11 +16,11 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 - [x] 책 찾기: 검색 기준을 검색바 안으로, 입력 예시어 삭제, 정렬은 결과가 나온 뒤 결과 목록 위에 표시. 좁은 화면 "필터·정렬" 버튼 글자 세로 정렬 수정. BE 변경 없음.
 - [x] 독서 목표: 지표별 편집 대신 한 팝업에서 세 목표를 입력하고 `PUT /me/goals/batch`로 바뀐 지표만 보낸다. 계약은 docs/backend-api.md "독서 목표". 단건 `updateGoal`·`deleteGoal`은 FE에서 삭제.
 - [x] 단위·lint·타입 검사·빌드·Playwright(가짜 API) 통과. 검색·목표 팝업 390·1440px 캡처 확인.
-- 남은 일: BE `PUT /me/goals/batch` 운영 반영 후 운영 `/openapi.json` 확인 → self-review → push·develop 대상 PR. 실기기 메뉴 확인은 배포 후.
+- PR #34로 develop에 병합했고 BE 6차 main `8dda50e`에 `PUT /me/goals/batch`가 운영 반영됐다(운영 OpenAPI 직접 확인). 실기기 메뉴 확인은 FE 배포 후.
 
 ## 읽기 진도(쪽수) (2026-11-09, FE 구현·로컬 검증 완료, BE 운영 반영 완료)
 
-- 사용자 지시(2026-11-09)로 페이지 수 제외를 해제했다. 브랜치 `feat/reading-progress`(develop `6698538`, PR #34 병합 포함). 계약은 BE 회신(2026-11-09)이며 docs/backend-api.md "읽기 진도"에 둔다. BE `feat/reading-progress` 코드는 직접 대조하지 않았다.
+- 사용자 지시(2026-11-09)로 페이지 수 제외를 해제했다. 브랜치 `feat/reading-progress`(develop `6698538`, PR #34 병합 포함). 계약은 BE 회신(2026-11-09)이며 docs/backend-api.md "읽기 진도"에 둔다. 구현 중에는 BE 브랜치 코드를 대조하지 않았고, 운영 반영 후 BE main 코드와 운영 OpenAPI로 대조했다(아래).
 - [x] 서재 목록·상세(ID·ISBN)의 필수 진도 필드와 공개 책 상세 `page_count` 검사, `PATCH …/progress`(응답 형식 확인 후 상세 재조회), 상세의 읽기 진도 카드(전체 쪽수, 쪽·% 입력, 반영 후 값 기준 사전 검사), 서재 카드 %, 공개 책 정보 쪽수, 초기화·재독 안내에 현재 쪽 처리 추가. 의존성 추가 없음.
 - [x] 단위·lint·타입 검사·빌드·Playwright(가짜 API) 통과. 진도 화면 모바일 캡처 확인.
 - BE 6차 main `8dda50e` 운영 반영(BE 안내, 2026-11-09). 운영 OpenAPI의 `/me/goals/batch`·`…/progress`와 필수 진도 필드, BE main 진도 규칙을 에이전트가 직접 대조했다. 완독이어도 전체 쪽수를 모르면 %가 null인 점을 화면 문구에 반영했다.

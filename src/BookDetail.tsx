@@ -337,17 +337,15 @@ function BookDetail({ userBookId }: { userBookId: string }) {
     )
   }
 
-  // 결과가 불명확하거나 409면 다시 보내지 않고 상세를 다시 불러온다. 422는 입력을 그대로 둔다.
+  // 다시 보내지 않고 결과와 관계없이 상세를 다시 불러온다(2xx 뒤 응답 형식 오류도 저장됐을 수 있다).
+  // 서버 진도 값이 그대로면 카드 key가 같아 입력이 남는다.
   async function saveProgress(patch: ProgressPatch) {
     if (!book) return
     await run(
       'progress',
       (token) => updateReadingProgress(token, book.id, patch),
       '진도를 저장했습니다.',
-      {
-        conflict: '지금 상태에서는 현재 쪽을 바꿀 수 없어요. 최신 상태를 불러왔습니다.',
-        refresh: async (result) => { if (result !== 'failed') await reload() },
-      },
+      { refresh: async () => { await reload() } },
     )
   }
 
@@ -528,9 +526,9 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         </button>
       </form>
 
-      {/* 서버 진도 값이나 상태가 바뀌면 새로 만들어 입력을 맞추고, 실패한 저장의 입력은 그대로 둔다. */}
+      {/* 서버 진도 값이 바뀌면 새로 만들어 입력을 맞추고, 실패한 저장·상태만 바뀐 경우의 입력은 그대로 둔다. */}
       <ReadingProgress
-        key={`${book.status}:${book.page_count}:${book.total_pages}:${book.current_page}`}
+        key={`${book.page_count}:${book.total_pages}:${book.current_page}`}
         book={book} busy={busy} saving={pending === 'progress'} onSave={saveProgress}
         onNoChange={() => setNotice({ kind: 'ok', text: '바뀐 진도가 없습니다.' })}
       />

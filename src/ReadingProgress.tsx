@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { SubmitEvent } from 'react'
 import type { LibraryBookDetail, ProgressPatch } from './lib/api'
-import { buildProgressPatch, canEditCurrentPage, MAX_PAGES, progressInputFrom, totalPagesOf } from './lib/progress'
+import { buildProgressPatch, canEditCurrentPage, MAX_PAGES, progressInputFrom, totalPagesOf, typedTotalOf } from './lib/progress'
 import type { ProgressInput } from './lib/progress'
 
 type Props = {
@@ -73,8 +73,8 @@ export default function ReadingProgress({ book, busy, saving, onSave, onNoChange
             {(['page', 'percent'] as const).map((unit) => (
               <label key={unit} className="review-toggle">
                 <input type="radio" name="progress-unit" checked={input.unit === unit}
-                  // %는 전체 쪽수를 알 때만 쪽으로 바꿀 수 있다.
-                  disabled={unit === 'percent' && total === null}
+                  // %는 입력 중인 전체 쪽수(비우면 도서 정보 쪽수)를 알 때만 쪽으로 바꿀 수 있다.
+                  disabled={unit === 'percent' && typedTotalOf(book, input.total) === null}
                   onChange={() => { setInput({ ...progressInputFrom(book, unit), total: input.total }); setErrors({}) }} />
                 {unit === 'page' ? '쪽' : '%'}
               </label>
@@ -86,7 +86,7 @@ export default function ReadingProgress({ book, busy, saving, onSave, onNoChange
             aria-describedby={`progress-current-hint${errors.current ? ' progress-current-error' : ''}`}
             onChange={(event) => setInput({ ...input, current: event.target.value })} />
           <p id="progress-current-hint" className="result-note">
-            {input.unit === 'page' ? '0쪽부터 전체 쪽수까지 입력할 수 있어요.' : '0~100%를 입력하면 가까운 쪽으로 저장해요.'} 비우면 현재 쪽을 지워요.
+            {input.unit === 'page' ? '0쪽부터 전체 쪽수까지 입력할 수 있어요.' : '0~100%를 입력하면 해당 쪽으로 바꿔 저장해요.'} 비우면 현재 쪽을 지워요.
           </p>
           {errors.current && <p id="progress-current-error" className="result-note is-error">{errors.current}</p>}
         </div>
