@@ -92,7 +92,9 @@ export default function ReadingProgress({ book, busy, saving, onSave, onNoChange
         </div>
       ) : (
         <p className="result-note">
-          {book.status === 'completed' ? '완독한 책은 100%로 표시돼요.' : '현재 쪽은 읽는 중·중단·포기 상태에서 기록할 수 있어요.'}
+          {book.status === 'completed'
+            ? total === null ? '완독한 책은 전체 쪽수를 입력하면 100%로 표시돼요.' : '완독한 책은 100%로 표시돼요.'
+            : '현재 쪽은 읽는 중·중단·포기 상태에서 기록할 수 있어요.'}
         </p>
       )}
 

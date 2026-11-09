@@ -778,3 +778,10 @@ test.each([
   const hint = screen.getByText(/한국 시간 기준입니다/).textContent
   expect(hint?.includes('현재 쪽은 비워지고 전체 쪽수는 유지됩니다.')).toBe(clears)
 })
+
+test('완독이어도 전체 쪽수를 모르면 진도 %가 없으므로 쪽수 입력을 안내한다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ status: 'completed', page_count: null, total_pages: null, current_page: null, progress_percent: null }))
+  renderDetail()
+  await screen.findByText('완독한 책은 전체 쪽수를 입력하면 100%로 표시돼요.')
+  expect(within(progressCard()).queryByText('100%')).toBeNull()
+})
