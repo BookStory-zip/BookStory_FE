@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { deleteGoal, getReadingStatistics, updateGoal } from './api'
+import { getReadingStatistics, saveGoals } from './api'
 
 const statistics = {
   library: {
@@ -69,21 +69,18 @@ test('통계 조회 실패를 0건으로 바꾸지 않는다', async () => {
   await expect(getReadingStatistics('test-token', 2026)).rejects.toMatchObject({ status: 503 })
 })
 
-test.each([
-  ['PUT', () => updateGoal('test-token', { metric: 'reading_days', year: 2026, month: 11, target: 12 }), { metric: 'reading_days', year: 2026, month: 11, target: 12 }],
-  ['PUT', () => updateGoal('test-token', { metric: 'completed_books', year: 2026, month: null, target: 0 }), { metric: 'completed_books', year: 2026, month: null, target: 0 }],
-  ['DELETE', () => deleteGoal('test-token', { metric: 'reading_minutes', year: 2026, month: null }), { metric: 'reading_minutes', year: 2026, month: null }],
-] as const)('목표 %s는 연 목표에도 month를 명시한 JSON 본문을 보내고 204를 읽지 않는다', async (method, request, body) => {
+test('목표 일괄 저장은 연 목표에도 month를 명시하고 끄기 0과 해제 null을 구분해 보내며 204를 읽지 않는다', async () => {
   const response = new Response(null, { status: 204 })
   const json = vi.spyOn(response, 'json')
   const fetchMock = vi.fn().mockResolvedValue(response)
   vi.stubGlobal('fetch', fetchMock)
   vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  const body = { year: 2026, month: null, goals: [{ metric: 'reading_days' as const, target: 0 }, { metric: 'reading_minutes' as const, target: null }] }
 
-  await expect(request()).resolves.toBeUndefined()
+  await expect(saveGoals('test-token', body)).resolves.toBeUndefined()
   const [url, init] = fetchMock.mock.calls[0]
-  expect(url).toBe('https://api.example.test/me/goals')
-  expect(init.method).toBe(method)
+  expect(url).toBe('https://api.example.test/me/goals/batch')
+  expect(init.method).toBe('PUT')
   expect(init.headers).toEqual({ Authorization: 'Bearer test-token', 'Content-Type': 'application/json' })
   expect(JSON.parse(init.body)).toEqual(body)
   expect(json).not.toHaveBeenCalled()

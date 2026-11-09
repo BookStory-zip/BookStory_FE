@@ -45,3 +45,21 @@ test('터치 후 click은 중복 토글하지 않고 스크린리더 click으로
   expect(move).toHaveBeenCalledWith(1)
   expect(screen.queryByRole('group', { name: '책 이동' })).toBeNull()
 })
+
+test('Safari처럼 메뉴 버튼 탭이 포커스를 바깥 조상으로 옮겨도 이동 명령을 받는다', () => {
+  const move = vi.fn()
+  render(<div tabIndex={-1} data-testid="outer"><OrderHandle label="책" previous next disabled={false} onMove={move} /></div>)
+  fireEvent.click(screen.getByRole('button', { name: '책 이동 손잡이' }), { detail: 0 })
+  fireEvent.focusOut(screen.getByRole('button', { name: '책 앞으로' }), { relatedTarget: screen.getByTestId('outer') })
+  fireEvent.click(screen.getByRole('button', { name: '책 뒤로' }), { detail: 0 })
+  expect(move).toHaveBeenCalledWith(1)
+})
+
+test('키보드 Tab으로 메뉴 밖 조작으로 나가면 이동 메뉴를 닫는다', () => {
+  render(<><OrderHandle label="책" previous next disabled={false} onMove={vi.fn()} /><button type="button">바깥</button></>)
+  fireEvent.click(screen.getByRole('button', { name: '책 이동 손잡이' }), { detail: 0 })
+  fireEvent.focusOut(screen.getByRole('button', { name: '책 뒤로' }), { relatedTarget: screen.getByRole('button', { name: '책 앞으로' }) })
+  expect(screen.getByRole('group', { name: '책 이동' })).toBeTruthy()
+  fireEvent.focusOut(screen.getByRole('button', { name: '책 뒤로' }), { relatedTarget: screen.getByRole('button', { name: '바깥' }) })
+  expect(screen.queryByRole('group', { name: '책 이동' })).toBeNull()
+})

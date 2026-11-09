@@ -803,3 +803,33 @@ test('보던 책장을 지우다 이미 없던 경우(404)에도 책장 목록�
   expect(mocks.getLibraryBooks).toHaveBeenLastCalledWith('test-token', PAGE_SIZE, 0, {})
   expect(managementAction('순서 편집')).toHaveProperty('disabled', false)
 })
+
+test('Safari처럼 메뉴 버튼 탭이 포커스를 바깥 조상으로 옮겨도 책장 관리를 연다', async () => {
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(2, 'A'))
+  renderInRouter(<Library />)
+  const action = await findManagementAction('책장 관리')
+  const menu = document.querySelector<HTMLDetailsElement>('.library-management')!
+  fireEvent.focusOut(menu.querySelector('summary')!, { relatedTarget: document.querySelector('.library') })
+  expect(menu.open).toBe(true)
+  fireEvent.click(action)
+  expect(await screen.findByRole('dialog', { name: '책장 관리' })).toBeTruthy()
+})
+
+test('관리 메뉴는 바깥 탭·Escape·Tab 이탈로 닫히고, 메뉴 안 탭으로는 닫히지 않는다', async () => {
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(2, 'A'))
+  renderInRouter(<Library />)
+  const action = await findManagementAction('책장 관리')
+  const menu = document.querySelector<HTMLDetailsElement>('.library-management')!
+  fireEvent.pointerDown(action)
+  expect(menu.open).toBe(true)
+  fireEvent.pointerDown(screen.getByText('A 책 0'))
+  expect(menu.open).toBe(false)
+  managementAction('책장 관리')
+  fireEvent.keyDown(menu, { key: 'Escape' })
+  expect(menu.open).toBe(false)
+  expect(document.activeElement).toBe(menu.querySelector('summary'))
+  // 키보드 Tab으로 바깥 조작으로 나가면 닫는다.
+  managementAction('책장 관리')
+  fireEvent.focusOut(menu.querySelector('summary')!, { relatedTarget: screen.getByRole('button', { name: '서재 검색' }) })
+  expect(menu.open).toBe(false)
+})

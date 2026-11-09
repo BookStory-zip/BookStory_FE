@@ -9,6 +9,15 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 - 작업 분담: BE에서 쉽게 되는 일은 BE에서 하고 FE는 꼭 필요한 것만 구현한다. BE 몫은 아래 백엔드 전달 사항에 기록하고 FE에서 대체 구현하지 않는다(2026-10-28 사용자 지시).
 - 제외: 피드·팔로우·추천·공개 서재·회독·페이지 수·독서 알림 외 푸시·복잡한 통계·서재 꾸미기·홈 화면 추가 외 PWA 기능·오프라인. 사용자 승인한 책별 공개 후기와 21시 독서 알림(2026-11-03 BE와 확정)은 아래 범위로 구현한다. BE 배치를 FE에 옮기지 않는다.
 
+## 메뉴·검색 화면 정리와 목표 일괄 저장 (2026-11-09, FE 구현·로컬 검증 완료, BE 운영 반영 대기)
+
+- 브랜치 `feat/library-search-goals`(develop `2c9e41f` 기준). 사용자 지시로 아래 세 가지를 한 브랜치·한 PR로 모은다.
+- [x] Safari 메뉴: 서재 "관리" 메뉴와 순서 이동 메뉴가 blur로 닫혀 탭이 버튼에 닿지 않던 문제. WebKit은 summary에는 포커스를 주지만 메뉴 버튼 대신 바깥 조상으로 포커스를 옮긴다(Playwright WebKit iPhone 14로 이벤트 순서 확인). blur는 Tab 순서에 있는 바깥 요소(`tabIndex >= 0`)로 나갈 때만 닫고, 바깥 탭은 pointerdown, Escape는 키 처리로 닫는다. `ShelfManager`·`ConfirmDialog`는 기본 dialog라 해당 없음. 실기기(iOS Safari·Android Chrome)는 미검증.
+- [x] 책 찾기: 검색 기준을 검색바 안으로, 입력 예시어 삭제, 정렬은 결과가 나온 뒤 결과 목록 위에 표시. 좁은 화면 "필터·정렬" 버튼 글자 세로 정렬 수정. BE 변경 없음.
+- [x] 독서 목표: 지표별 편집 대신 한 팝업에서 세 목표를 입력하고 `PUT /me/goals/batch`로 바뀐 지표만 보낸다. 계약은 docs/backend-api.md "독서 목표". 단건 `updateGoal`·`deleteGoal`은 FE에서 삭제.
+- [x] 단위·lint·타입 검사·빌드·Playwright(가짜 API) 통과. 검색·목표 팝업 390·1440px 캡처 확인.
+- 남은 일: BE `PUT /me/goals/batch` 운영 반영 후 운영 `/openapi.json` 확인 → self-review → push·develop 대상 PR. 실기기 메뉴 확인은 배포 후.
+
 ## BE 연동 4: 가져온 책의 과거 읽은 날 (2026-11-05, FE 구현·로컬 검증 완료)
 
 - `feat/past-reading-logs`는 PR #26이 병합된 develop `b423e4e`에서 시작했다. 계약은 BE main `e4aec03`의 `docs/frontend-api.md`·`app/reading_logs.py`와 대조했고 docs/backend-api.md에 둔다. BE 변경·OCR·회독별 기록은 제외한다.

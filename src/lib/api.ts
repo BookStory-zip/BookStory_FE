@@ -620,7 +620,6 @@ export type ReadingStatistics = {
 export const goalMetrics = ['reading_days', 'completed_books', 'reading_minutes'] as const
 export type GoalMetric = (typeof goalMetrics)[number]
 // month null은 연 목표다. 빠뜨리면 422이므로 선택 속성으로 두지 않는다.
-export type GoalKey = { metric: GoalMetric; year: number; month: number | null }
 // target 0은 목표 꺼짐. 한 번도 정하지 않은 지표는 goals에서 빠진다.
 export type GoalProgress = { metric: GoalMetric; target: number; current: number; source: 'set' | 'inherited' | 'sum' }
 
@@ -670,14 +669,11 @@ export async function getReadingStatistics(
   return data
 }
 
-// 같은 기간에 다시 보내면 덮어쓴다. 0은 그 기간부터 목표를 끈다.
-export async function updateGoal(accessToken: string, body: GoalKey & { target: number }): Promise<void> {
-  await apiRequest('/me/goals', accessToken, { method: 'PUT', body })
-}
-
-// 월은 이전 달 목표를 다시 이어받고, 연은 월 목표 합계로 돌아간다. 대상이 없어도 204다.
-export async function deleteGoal(accessToken: string, body: GoalKey): Promise<void> {
-  await apiRequest('/me/goals', accessToken, { method: 'DELETE', body })
+// 한 기간의 목표를 한 트랜잭션으로 저장한다(모두 저장되거나 하나도 저장되지 않음).
+// target 0은 그 기간부터 끄기, null은 직접 정한 값 해제(월은 이전 달 이어받기, 연은 월 합계). 빠진 지표는 그대로다.
+export type GoalChange = { metric: GoalMetric; target: number | null }
+export async function saveGoals(accessToken: string, body: { year: number; month: number | null; goals: GoalChange[] }): Promise<void> {
+  await apiRequest('/me/goals/batch', accessToken, { method: 'PUT', body })
 }
 
 // 공개 후기에 표시할 닉네임. null이면 공통 이름 '독서가'로 표시된다.

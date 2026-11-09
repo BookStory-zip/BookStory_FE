@@ -510,10 +510,10 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
   await signInWithMockSession(page)
   await mockBackend(page, async (route, url, method) => {
     if (url.pathname === '/reading-logs') return json(route, []).then(() => true)
-    if (url.pathname === '/me/goals' && method === 'PUT') {
+    if (url.pathname === '/me/goals/batch' && method === 'PUT') {
       const body = route.request().postDataJSON()
       goalWrites.push(body)
-      monthGoal = body.target
+      monthGoal = body.goals[0].target
       return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
     }
     if (url.pathname === '/me/statistics') {
@@ -551,13 +551,18 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
   expect(requests.at(-1)?.has('month')).toBe(true)
   await expect(page.getByText('목표를 설정해보세요')).toHaveCount(3)
 
-  await page.getByRole('button', { name: '읽은 날 목표 설정' }).click()
-  await page.getByLabel(/읽은 날 목표\(일\)/).fill('12')
+  await page.getByRole('button', { name: /독서 목표 설정$/ }).click()
+  const goalDialog = page.getByRole('dialog', { name: /독서 목표$/ })
+  await goalDialog.getByLabel('읽은 날(일)').fill('12')
   await page.screenshot({ path: testInfo.outputPath('goal-editor-mobile.png'), fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.getByRole('button', { name: '저장', exact: true }).click()
+  await goalDialog.getByRole('button', { name: '저장', exact: true }).click()
   await expect(page.getByText('7 / 12일')).toBeVisible()
-  expect(goalWrites).toEqual([{ metric: 'reading_days', year: Number(requests.at(-1)?.get('year')), month: Number(requests.at(-1)?.get('month')), target: 12 }])
+  await expect(goalDialog).toHaveCount(0)
+  expect(goalWrites).toEqual([{
+    year: Number(requests.at(-1)?.get('year')), month: Number(requests.at(-1)?.get('month')),
+    goals: [{ metric: 'reading_days', target: 12 }],
+  }])
 
   await page.getByRole('button', { name: '연간', exact: true }).focus()
   await page.keyboard.press('Enter')

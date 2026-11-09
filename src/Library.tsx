@@ -475,8 +475,13 @@ export default function Library() {
             </select>
           </div>}
         </div>
+        {/* Safari는 탭한 버튼 대신 바깥 조상(#content, tabIndex -1)에 포커스를 줘서 click 전에 blur가 온다.
+            그래서 Tab 순서에 있는 바깥 요소로 나갈 때만 blur로 닫고, 바깥 탭은 pointerdown, Escape는 키 처리로 닫는다. */}
         <details ref={management} open={managementOpen} className="library-management"
-          onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setManagementOpen(false) }} onKeyDown={(event) => {
+          onBlur={(event) => {
+            const next = event.relatedTarget
+            if (next instanceof HTMLElement && next.tabIndex >= 0 && !event.currentTarget.contains(next)) setManagementOpen(false)
+          }} onKeyDown={(event) => {
           if (event.key === 'Escape') { event.preventDefault(); closeManagement() }
         }}>
           <summary onClick={(event) => { event.preventDefault(); setManagementOpen(!managementOpen) }}>관리</summary>

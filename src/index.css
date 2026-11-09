@@ -389,40 +389,27 @@ main.app {
   width: auto;
 }
 
-.book-search-form {
-  flex-wrap: wrap;
+.search-form select {
+  flex: none;
 }
 
-.search-options {
+.search-summary {
   display: flex;
-  flex-basis: 100%;
   flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.search-option {
-  display: flex;
   align-items: center;
-  gap: var(--space-2);
-  max-width: 100%;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
-.search-option label {
-  flex-shrink: 0;
-}
-
-.search-option select {
-  min-width: 0;
+.search-summary .result-note {
+  margin: 0;
 }
 
 [hidden] { display: none !important; }
 
 .library-search {
   margin-bottom: var(--space-3);
-}
-
-.library-search select {
-  flex: none;
 }
 
 .library-filters {
@@ -446,7 +433,7 @@ main.app {
 .library-conditions > span { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .shelf:empty { height: 0; padding-block: 0; border-block: 0; visibility: hidden; }
 @media (max-width: 47.99rem) {
-  .library-filter-toggle { display: inline-flex; }
+  .library-filter-toggle { display: inline-block; }
   .library-filters { order: 4; flex-basis: 100%; }
   .library-filters:not(.is-open) { display: none; }
   .library-filter { flex: 1 1 100%; }
@@ -1275,8 +1262,12 @@ button.link-button:hover:not(:disabled) {
   gap: var(--space-3);
 }
 
-.goal-head h4 {
+.goal-head h3,
+.goal-list h4 {
   margin: 0;
+}
+
+.goal-list h4 {
   font-size: 1rem;
 }
 
@@ -1306,19 +1297,28 @@ button.link-button:hover:not(:disabled) {
   accent-color: var(--color-accent);
 }
 
-.goal-form {
-  gap: var(--space-3);
-  padding-top: var(--space-4);
+.goal-dialog {
+  width: min(28rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
 }
 
-.goal-actions {
+.goal-form {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.goal-form h2 {
+  margin: 0;
+}
+
+.goal-form > .goal-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
 
-.goal-actions button:not(.link-button) {
+.goal-actions button {
   width: auto;
 }
 
