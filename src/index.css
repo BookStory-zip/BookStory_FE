@@ -433,7 +433,7 @@ main.app {
 .library-conditions > span { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .shelf:empty { height: 0; padding-block: 0; border-block: 0; visibility: hidden; }
 @media (max-width: 47.99rem) {
-  .library-filter-toggle { display: inline-flex; }
+  .library-filter-toggle { display: inline-block; }
   .library-filters { order: 4; flex-basis: 100%; }
   .library-filters:not(.is-open) { display: none; }
   .library-filter { flex: 1 1 100%; }
