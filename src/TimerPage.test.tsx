@@ -13,7 +13,7 @@ vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
 vi.mock('./lib/auth', async (original) => ({ ...await original<typeof import('./lib/auth')>(), withAccessToken: (request: (token: string) => Promise<unknown>) => request('token') }))
 
 function book(id: string, status: LibraryBookItem['status'] = 'reading'): LibraryBookItem {
-  return { id, book_id: `catalog-${id}`, isbn13: '9788936433598', title: `책 ${id}`, authors: [], thumbnail_url: null, status, created_at: '2026-11-01T00:00:00Z' }
+  return { id, book_id: `catalog-${id}`, isbn13: '9788936433598', title: `책 ${id}`, authors: [], thumbnail_url: null, status, created_at: '2026-11-01T00:00:00Z', page_count: null, total_pages: null, current_page: null, progress_percent: null }
 }
 
 beforeEach(() => {

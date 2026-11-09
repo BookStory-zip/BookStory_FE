@@ -44,6 +44,10 @@ function makeBooks(count: number, prefix: string): LibraryBookItem[] {
     thumbnail_url: null,
     status: 'reading',
     created_at: '2026-10-27T00:00:00Z',
+    page_count: null,
+    total_pages: null,
+    current_page: null,
+    progress_percent: null,
   }))
 }
 
@@ -832,4 +836,19 @@ test('관리 메뉴는 바깥 탭·Escape·Tab 이탈로 닫히고, 메뉴 안 �
   managementAction('책장 관리')
   fireEvent.focusOut(menu.querySelector('summary')!, { relatedTarget: screen.getByRole('button', { name: '서재 검색' }) })
   expect(menu.open).toBe(false)
+})
+
+test('서재 카드는 진도를 아는 책만 %를 붙이고, 완독은 상태만 보여 준다', async () => {
+  const [a, b, c] = makeBooks(3, 'P')
+  mocks.getLibraryBooks.mockResolvedValue([
+    { ...a, page_count: 300, current_page: 120, progress_percent: 40 },
+    { ...b, status: 'completed', page_count: 200, current_page: 200, progress_percent: 100 },
+    { ...c, page_count: null, current_page: 50, progress_percent: null },
+  ])
+  renderInRouter(<Library />)
+  await screen.findByText('P 책 0')
+  const status = (title: string) => screen.getByText(title).closest('a')!.querySelector('.book-status')!.textContent
+  expect(status('P 책 0')).toBe('읽는 중 · 40%')
+  expect(status('P 책 1')).toBe('완독')
+  expect(status('P 책 2')).toBe('읽는 중')
 })

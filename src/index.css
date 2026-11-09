@@ -750,6 +750,8 @@ main.app {
 .review-disclosure { border-top: 1px solid var(--color-rule); padding-top: var(--space-4); }
 .review-toggle { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; }
 .review-toggle input { width: 1.125rem; height: 1.125rem; margin: 0; accent-color: var(--color-accent); }
+.progress-unit { display: flex; flex-wrap: wrap; column-gap: var(--space-4); }
+.progress-unit legend { margin-bottom: var(--space-1); }
 
 fieldset {
   margin: 0;
@@ -1291,7 +1293,8 @@ button.link-button:hover:not(:disabled) {
   font-weight: 600;
 }
 
-.statistics-goals progress {
+.statistics-goals progress,
+.progress-card progress {
   width: 100%;
   height: 0.4rem;
   accent-color: var(--color-accent);

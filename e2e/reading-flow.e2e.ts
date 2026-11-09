@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { cover, json, mockBackend, signInWithMockSession } from './fixtures'
+import { cover, json, mockBackend, noProgress, signInWithMockSession } from './fixtures'
 type ReadingSessionInput = { client_session_id: string; started_at: string; duration_seconds: number }
 type ReadingSession = ReadingSessionInput & { id: string; user_book_id: string; read_date: string; created_at: string }
 
@@ -12,6 +12,7 @@ const book = {
   thumbnail_url: cover('#e9e3d4'),
   status: 'reading',
   created_at: '2026-10-01T00:00:00Z',
+  ...noProgress,
 }
 
 const detail = {
@@ -354,7 +355,7 @@ test('책 검색 → 공통 상세 → 후기 공개·수정·비공개가 연�
     }).then(() => true)
     if (url.pathname === `/books/${book.isbn13}`) return json(route, {
       isbn13: book.isbn13, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url,
-      publisher: '창비', published_date: '2014-05-19', source_url: 'https://example.test/book',
+      publisher: '창비', published_date: '2014-05-19', source_url: 'https://example.test/book', page_count: null,
       description: '오래 기억하고 싶은 이야기.\n함께 읽으며 각자의 감상을 남겨보세요.',
       reviews: { total_reviews: saved.is_review_public ? 1 : 0, rating_count: saved.is_review_public ? 1 : 0, average_rating: saved.is_review_public ? saved.rating : null },
     }).then(() => true)
@@ -643,4 +644,43 @@ test('상세에서 비공개 노트를 쓰고 고친 뒤 기록의 노트 탭에
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`note-timeline-${name}.png`), fullPage: true })
   }
+})
+
+test('상세에서 쪽·%로 진도를 저장하면 다시 불러와 서재 카드에도 %를 보여 준다', async ({ page }, testInfo) => {
+  let progress = { page_count: 300, total_pages: null as number | null, current_page: 120 as number | null, progress_percent: 40 as number | null }
+  const writes: unknown[] = []
+  await signInWithMockSession(page)
+  await mockBackend(page, async (route, url, method) => {
+    if (url.pathname === `/library/books/${book.id}/progress` && method === 'PATCH') {
+      const body = route.request().postDataJSON()
+      writes.push(body)
+      const next = { ...progress, ...body }
+      const total = next.total_pages ?? next.page_count
+      progress = { ...next, progress_percent: total && next.current_page !== null ? Math.floor((next.current_page / total) * 100) : null }
+      return json(route, { id: book.id, ...progress }).then(() => true)
+    }
+    if (url.pathname === `/library/books/${book.id}`) return json(route, { ...detail, ...progress }).then(() => true)
+    if (url.pathname === '/library/books') return json(route, [{ ...book, ...progress }]).then(() => true)
+    if (url.pathname === '/reading-logs') return json(route, []).then(() => true)
+    if (url.pathname === `/library/books/${book.id}/notes`) return json(route, []).then(() => true)
+    return false
+  })
+
+  await page.goto(`/books/${book.id}`)
+  const card = page.locator('form', { has: page.getByRole('heading', { name: '읽기 진도' }) })
+  await expect(card.getByText('40%')).toBeVisible()
+  await card.getByLabel('현재 쪽').fill('150')
+  await card.getByRole('button', { name: '진도 저장' }).click()
+  await expect(card.getByText('50%')).toBeVisible()
+  await card.getByRole('radio', { name: '%' }).check()
+  await card.getByLabel('현재 진도(%)').fill('75')
+  await card.getByLabel('전체 쪽수').fill('400')
+  await card.getByRole('button', { name: '진도 저장' }).click()
+  await expect(card.getByText('300 / 400쪽')).toBeVisible()
+  expect(writes).toEqual([{ current_page: 150 }, { total_pages: 400, current_page: 300 }])
+  await page.screenshot({ path: testInfo.outputPath('progress-mobile.png'), fullPage: true })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+
+  await page.getByRole('link', { name: '← 서재로' }).click()
+  await expect(page.getByText('읽는 중 · 75%')).toBeVisible()
 })
