@@ -12,7 +12,7 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 ## 메뉴·검색 화면 정리와 목표 일괄 저장 (2026-11-09, FE 구현·로컬 검증 완료, BE 운영 반영 대기)
 
 - 브랜치 `feat/library-search-goals`(develop `2c9e41f` 기준). 사용자 지시로 아래 세 가지를 한 브랜치·한 PR로 모은다.
-- [x] Safari 메뉴: 서재 "관리" 메뉴와 순서 이동 메뉴가 blur로 닫혀 탭이 버튼에 닿지 않던 문제. WebKit은 summary에는 포커스를 주지만 메뉴 버튼 대신 바깥 조상으로 포커스를 옮긴다(Playwright WebKit iPhone 14로 이벤트 순서 확인). blur 닫기를 없애고 기존 pointerdown·Escape로 닫는다. `ShelfManager`·`ConfirmDialog`는 기본 dialog라 해당 없음. 실기기(iOS Safari·Android Chrome)는 미검증.
+- [x] Safari 메뉴: 서재 "관리" 메뉴와 순서 이동 메뉴가 blur로 닫혀 탭이 버튼에 닿지 않던 문제. WebKit은 summary에는 포커스를 주지만 메뉴 버튼 대신 바깥 조상으로 포커스를 옮긴다(Playwright WebKit iPhone 14로 이벤트 순서 확인). blur는 Tab 순서에 있는 바깥 요소(`tabIndex >= 0`)로 나갈 때만 닫고, 바깥 탭은 pointerdown, Escape는 키 처리로 닫는다. `ShelfManager`·`ConfirmDialog`는 기본 dialog라 해당 없음. 실기기(iOS Safari·Android Chrome)는 미검증.
 - [x] 책 찾기: 검색 기준을 검색바 안으로, 입력 예시어 삭제, 정렬은 결과가 나온 뒤 결과 목록 위에 표시. 좁은 화면 "필터·정렬" 버튼 글자 세로 정렬 수정. BE 변경 없음.
 - [x] 독서 목표: 지표별 편집 대신 한 팝업에서 세 목표를 입력하고 `PUT /me/goals/batch`로 바뀐 지표만 보낸다. 계약은 docs/backend-api.md "독서 목표". 단건 `updateGoal`·`deleteGoal`은 FE에서 삭제.
 - [x] 단위·lint·타입 검사·빌드·Playwright(가짜 API) 통과. 검색·목표 팝업 390·1440px 캡처 확인.

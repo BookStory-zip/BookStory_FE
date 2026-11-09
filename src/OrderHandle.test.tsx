@@ -54,3 +54,12 @@ test('Safari처럼 메뉴 버튼 탭이 포커스를 바깥 조상으로 옮겨�
   fireEvent.click(screen.getByRole('button', { name: '책 뒤로' }), { detail: 0 })
   expect(move).toHaveBeenCalledWith(1)
 })
+
+test('키보드 Tab으로 메뉴 밖 조작으로 나가면 이동 메뉴를 닫는다', () => {
+  render(<><OrderHandle label="책" previous next disabled={false} onMove={vi.fn()} /><button type="button">바깥</button></>)
+  fireEvent.click(screen.getByRole('button', { name: '책 이동 손잡이' }), { detail: 0 })
+  fireEvent.focusOut(screen.getByRole('button', { name: '책 뒤로' }), { relatedTarget: screen.getByRole('button', { name: '책 앞으로' }) })
+  expect(screen.getByRole('group', { name: '책 이동' })).toBeTruthy()
+  fireEvent.focusOut(screen.getByRole('button', { name: '책 뒤로' }), { relatedTarget: screen.getByRole('button', { name: '바깥' }) })
+  expect(screen.queryByRole('group', { name: '책 이동' })).toBeNull()
+})

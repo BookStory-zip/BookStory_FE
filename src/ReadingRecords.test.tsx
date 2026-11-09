@@ -360,7 +360,7 @@ test('목표는 출처·꺼짐·미설정을 구분하고 초과 달성 수치�
 })
 
 function openGoalDialog(period = '2026년 10월') {
-  fireEvent.click(screen.getByRole('button', { name: `${period} 독서 목표 설정` }))
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${period} 독서 목표 (설정|수정)$`) }))
   return screen.getByRole('dialog', { name: `${period} 독서 목표` })
 }
 const goalInput = (label: string) => screen.getByLabelText(label) as HTMLInputElement
@@ -379,7 +379,7 @@ test('한 팝업에서 세 목표를 검사하고, 바뀐 지표만 값·끄기(
   expect(goalInput('읽은 날(일)').value).toBe('10')
   expect(goalInput('완독 권수(권)').value).toBe('')
   expect(dialog.textContent).toContain('비워 두면 이전 달 목표(2권)를 이어받아요.')
-  expect(dialog.textContent).toContain('비우면 이전 달 목표를 이어받아요.')
+  expect(dialog.textContent).toContain('비우면 이 달에 정한 값을 지우고, 이전 달 목표가 있으면 이어받아요.')
   expect(dialog.textContent).toContain('다음 달에도 이어집니다')
 
   fireEvent.change(goalInput('읽은 날(일)'), { target: { value: '32' } })
@@ -414,6 +414,8 @@ test('한 팝업에서 세 목표를 검사하고, 바뀐 지표만 값·끄기(
   ]))
   await act(async () => { finish() })
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // 저장 뒤 초점은 여는 버튼으로 돌아오고, 이름은 보이는 글자(수정)를 포함한다.
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: '2026년 10월 독서 목표 수정' }))
   expect(goalItem('읽은 날').textContent).toContain('3 / 8일')
   expect(goalItem('완독 권수').textContent).toContain('목표 꺼짐')
   expect(goalItem('독서 시간').textContent).toContain('42 / 600분')
@@ -434,6 +436,10 @@ test('바꾼 값이 없으면 요청 없이 닫고, 취소하면 입력을 버�
   openGoalDialog()
   fireEvent.change(goalInput('읽은 날(일)'), { target: { value: '5' } })
   fireEvent.click(screen.getByRole('button', { name: '취소' }))
+  // 브라우저가 직접 닫아도(close 이벤트) 다시 열 수 있다.
+  openGoalDialog()
+  fireEvent(screen.getByRole('dialog'), new Event('close'))
+  expect(screen.queryByRole('dialog')).toBeNull()
   openGoalDialog()
   expect(goalInput('읽은 날(일)').value).toBe('')
   expect(mocks.saveGoals).not.toHaveBeenCalled()
@@ -453,7 +459,7 @@ test('연 목표는 그 해 일수로 검사하고 비우면 월 목표 합계�
 
   const dialog = openGoalDialog('2026년')
   expect(dialog.textContent).not.toContain('다음 달에도 이어집니다')
-  expect(dialog.textContent).toContain('비우면 월 목표 합계로 돌아가요.')
+  expect(dialog.textContent).toContain('비우면 직접 정한 값을 지우고 월 목표 합계로 돌아가요.')
   expect(dialog.textContent).toContain('비워 두면 월 목표 합계(24권)를 써요.')
   fireEvent.change(goalInput('읽은 날(일)'), { target: { value: '366' } })
   fireEvent.click(screen.getByRole('button', { name: '저장' }))

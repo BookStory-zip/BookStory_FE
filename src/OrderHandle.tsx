@@ -31,7 +31,6 @@ export default function OrderHandle({ label, previous, next, disabled, onMove, o
     const close = (event: PointerEvent) => {
       if (!container.current?.contains(event.target as Node) && !menu.contains(event.target as Node)) setOpen(false)
     }
-    // blur로 닫지 않는다. Safari는 탭한 메뉴 버튼 대신 바깥 조상에 포커스를 줘서 클릭 전에 메뉴가 닫힌다.
     const closeOnScroll = () => setOpen(false)
     document.addEventListener('pointerdown', close)
     window.addEventListener('resize', closeOnScroll)
@@ -71,6 +70,11 @@ export default function OrderHandle({ label, previous, next, disabled, onMove, o
         event.preventDefault()
         event.stopPropagation()
       }
+    }}
+    // Safari는 탭한 메뉴 버튼 대신 바깥 조상(tabIndex -1)에 포커스를 준다. Tab으로 나갈 때만 blur로 닫는다.
+    onBlur={(event) => {
+      const next = event.relatedTarget
+      if (next instanceof HTMLElement && next.tabIndex >= 0 && !event.currentTarget.contains(next) && !panel.current?.contains(next)) setOpen(false)
     }}
     onKeyDown={(event) => {
       if (open && event.key === 'Escape') {

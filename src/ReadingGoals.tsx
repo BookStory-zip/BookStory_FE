@@ -46,6 +46,7 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<Failure | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
   // 화면을 떠난 뒤 늦게 끝난 저장이 재조회·상태 변경을 하지 않게 한다.
   const alive = useRef(true)
   useEffect(() => {
@@ -62,6 +63,8 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
     return () => {
       if (typeof element.close === 'function') element.close()
       else element.removeAttribute('open')
+      // 팝업은 닫히면서 DOM에서 빠지므로 브라우저 기본 초점 복귀 대신 여는 버튼으로 돌려놓는다.
+      trigger.current?.focus()
     }
   }, [open])
 
@@ -147,7 +150,7 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
   function emptyHint(metric: GoalMetric) {
     const goal = goals.find((item) => item.metric === metric)
     const { unit } = metricInfo[metric]
-    if (goal?.source === 'set') return month === null ? '비우면 월 목표 합계로 돌아가요.' : '비우면 이전 달 목표를 이어받아요.'
+    if (goal?.source === 'set') return month === null ? '비우면 직접 정한 값을 지우고 월 목표 합계로 돌아가요.' : '비우면 이 달에 정한 값을 지우고, 이전 달 목표가 있으면 이어받아요.'
     if (goal?.source === 'inherited') return `비워 두면 이전 달 목표(${goal.target ? `${goal.target}${unit}` : '꺼짐'})를 이어받아요.`
     if (goal?.source === 'sum') return `비워 두면 월 목표 합계(${goal.target}${unit})를 써요.`
     return '비워 두면 목표 없이 둬요.'
@@ -158,7 +161,8 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
       <div className="goal-head">
         <h3 id="statistics-goals-title">독서 목표</h3>
         <button
-          type="button" className="secondary compact" disabled={busy} aria-label={`${period} 독서 목표 설정`}
+          ref={trigger} type="button" className="secondary compact" disabled={busy}
+          aria-label={`${period} 독서 목표 ${goals.length ? '수정' : '설정'}`}
           onClick={() => {
             setInputs(initialInputs(goals))
             setErrors({})
@@ -200,6 +204,8 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
         <dialog
           ref={dialog} className="confirm-dialog goal-dialog" aria-labelledby="goal-dialog-title" aria-busy={busy}
           onCancel={(event) => { event.preventDefault(); close() }}
+          // 브라우저가 Esc 반복 등으로 직접 닫아도 상태를 맞춰 다시 열 수 있게 한다.
+          onClose={() => setOpen(false)}
         >
           <form className="goal-form" onSubmit={save} noValidate>
             <h2 id="goal-dialog-title">{period} 독서 목표</h2>
