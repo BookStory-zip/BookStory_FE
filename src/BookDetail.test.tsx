@@ -785,3 +785,14 @@ test('완독이어도 전체 쪽수를 모르면 진도 %가 없으므로 쪽수
   await screen.findByText('완독한 책은 전체 쪽수를 입력하면 100%로 표시돼요.')
   expect(within(progressCard()).queryByText('100%')).toBeNull()
 })
+
+test('완독 경험이 있는 책도 초기화 안내에 현재 쪽 삭제와 전체 쪽수 유지를 알린다', async () => {
+  mocks.getLibraryBook.mockResolvedValue(detail({ ...reading, has_completed: true }))
+  renderDetail()
+  await screen.findByText('40%')
+  fireEvent.click(screen.getByRole('radio', { name: /읽고 싶음/ }))
+  fireEvent.click(screen.getByRole('button', { name: '상태 바꾸기' }))
+  const message = screen.getByRole('dialog', { name: '읽고 싶음으로 되돌릴까요?', hidden: true }).textContent
+  expect(message).toContain('현재 쪽이 초기화됩니다')
+  expect(message).toContain('전체 쪽수는 유지됩니다')
+})
