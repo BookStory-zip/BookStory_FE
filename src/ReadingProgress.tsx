@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { SubmitEvent } from 'react'
 import type { LibraryBookDetail, ProgressPatch } from './lib/api'
-import { buildProgressPatch, canEditCurrentPage, MAX_PAGES, progressInputFrom, totalPagesOf, typedTotalOf } from './lib/progress'
+import { buildProgressPatch, canEditCurrentPage, progressInputFrom, totalPagesOf, typedTotalOf } from './lib/progress'
 import type { ProgressInput } from './lib/progress'
 
 type Props = {
@@ -15,14 +15,18 @@ type Props = {
 
 // 전체 쪽수를 모르면 진도(%)를 표시하지 않는다. 계산은 서버 progress_percent를 쓴다.
 export default function ReadingProgress({ book, busy, saving, onSave, onNoChange }: Props) {
-  const [input, setInput] = useState<ProgressInput>(() => progressInputFrom(book))
+  const [input, setInput] = useState<ProgressInput>(() => ({ ...progressInputFrom(book), total: String(totalPagesOf(book) ?? '') }))
+  const [editingTotal, setEditingTotal] = useState(book.page_count === null)
   const [errors, setErrors] = useState<Partial<Record<'total' | 'current', string>>>({})
   const total = totalPagesOf(book)
   const editable = canEditCurrentPage(book.status)
+  const percent = book.progress_percent
+  const current = book.current_page ?? (book.status === 'completed' ? total : null)
 
   function save(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    const result = buildProgressPatch(book, input)
+    // 표시용 도서 쪽수를 그대로 저장해 개인 쪽수로 만들지 않는다.
+    const result = buildProgressPatch(book, { ...input, total: total !== null && input.total === String(total) ? progressInputFrom(book).total : input.total })
     if ('errors' in result) {
       setErrors(result.errors)
       document.getElementById(result.errors.total ? 'progress-total' : 'progress-current')?.focus()
@@ -36,13 +40,13 @@ export default function ReadingProgress({ book, busy, saving, onSave, onNoChange
   return (
     <form className="detail-card progress-card" onSubmit={save} aria-labelledby="progress-title" noValidate>
       <h2 id="progress-title">읽기 진도</h2>
-      {book.progress_percent !== null ? (
+      {percent !== null ? (
         <>
           <p className="goal-value">
-            <strong>{book.progress_percent}%</strong>
-            {book.current_page !== null && total !== null && <span>{book.current_page} / {total}쪽</span>}
+            <strong>{percent}%</strong>
+            {current !== null && total !== null && <span>· {current}/{total}쪽</span>}
           </p>
-          <progress max={100} value={book.progress_percent} aria-labelledby="progress-title" />
+          <progress max={100} value={percent} aria-labelledby="progress-title" />
         </>
       ) : (
         <p className="result-note">
@@ -54,14 +58,18 @@ export default function ReadingProgress({ book, busy, saving, onSave, onNoChange
 
       <div>
         <label htmlFor="progress-total">전체 쪽수</label>
-        <input id="progress-total" inputMode="numeric" autoComplete="off" value={input.total} disabled={busy}
+        <input id="progress-total" inputMode="numeric" autoComplete="off" value={input.total} disabled={busy} readOnly={!editingTotal}
           aria-invalid={errors.total ? true : undefined}
           aria-describedby={`progress-total-hint${errors.total ? ' progress-total-error' : ''}`}
           onChange={(event) => setInput({ ...input, total: event.target.value })} />
+        {!editingTotal && <button type="button" className="secondary" disabled={busy} onClick={() => {
+          setEditingTotal(true)
+          document.getElementById('progress-total')?.focus()
+        }}>직접 수정</button>}
         <p id="progress-total-hint" className="result-note">
-          1~{MAX_PAGES}쪽. {book.page_count !== null
-            ? `비워 두면 도서 정보의 ${book.page_count}쪽을 써요.`
-            : '도서 정보에 쪽수가 없어요. 비워 두면 쪽수 모름으로 둬요.'}
+          {book.page_count !== null
+            ? editingTotal ? `비워 두면 도서 정보의 ${book.page_count}쪽을 써요.` : '도서 정보와 다르면 직접 수정할 수 있어요.'
+            : '페이지 정보를 직접 입력해주세요.'}
         </p>
         {errors.total && <p id="progress-total-error" className="result-note is-error">{errors.total}</p>}
       </div>

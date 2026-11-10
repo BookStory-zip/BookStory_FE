@@ -142,7 +142,7 @@ function BookCatalog({ isbn13 }: { isbn13: string }) {
               : <>
                 <div className="review-heading"><span className={`book-status status-${own.status}`}>{statusLabels[own.status]}</span><span className="review-visibility">{own.is_review_public ? '공개 후기' : '비공개'}</span></div>
                 {own.rating !== null && <p>내 별점 {own.rating} / 5</p>}
-                <p className="review-memo">{own.memo || '아직 남긴 메모가 없습니다.'}</p>
+                <p className="review-memo">{own.memo || '아직 남긴 후기가 없습니다.'}</p>
                 <Link to={`/books/${own.id}`}>내 기록 수정</Link>
               </>}
       </section>
@@ -156,12 +156,12 @@ function BookCatalog({ isbn13 }: { isbn13: string }) {
         <ul className="public-reviews">
           {reviews?.map((review) => <li key={review.id}>
             <div className="review-heading"><strong>{review.author_name}{review.is_mine && ' · 나'}</strong>{review.rating !== null && <span>★ {review.rating} / 5</span>}</div>
-            <p className="review-memo">{review.memo}</p>
-            <div className="review-heading result-note"><time dateTime={review.published_at}>{formatKstDate(review.published_at)} 공개</time>{review.updated_at !== review.published_at && <time dateTime={review.updated_at}>{formatKstDate(review.updated_at)} 수정</time>}{review.is_mine && <Link to={`/books/${review.id}`}>후기 수정</Link>}</div>
+            {review.memo !== null && <p className="review-memo">{review.memo}</p>}
+            <div className="review-heading result-note"><time dateTime={review.published_at}>{formatKstDate(review.published_at)} 작성</time>{review.updated_at !== review.published_at && <time dateTime={review.updated_at}>{formatKstDate(review.updated_at)} 수정</time>}{review.is_mine && <Link to={`/books/${review.id}`}>후기 수정</Link>}</div>
           </li>)}
         </ul>
         {hasMore && <button type="button" className="secondary" disabled={moreBusy} onClick={() => void loadMore()}>{moreBusy ? '불러오는 중…' : '후기 더 보기'}</button>}
-        <p className="result-note">공개를 선택한 메모와 별점만 보입니다.</p>
+        <p className="result-note">계정에서 공개를 허용한 후기와 별점만 보입니다.</p>
       </section>
     </section>
   )

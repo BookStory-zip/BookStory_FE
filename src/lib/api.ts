@@ -447,7 +447,6 @@ export type RecordPatch = {
   rating?: number | null
   memo?: string | null
   stop_reason?: string | null
-  is_review_public?: boolean
 }
 
 export async function updateLibraryRecord(
@@ -545,19 +544,6 @@ export async function cancelReadingDate(
 ): Promise<void> {
   await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/${encodeURIComponent(readDate)}`, accessToken, {
     method: 'DELETE',
-  })
-}
-
-// 과거 읽은 날 기간(양 끝 포함)을 한 번에 체크한다. 전부 저장되거나 하나도 저장되지 않는 204.
-export async function checkReadingRange(
-  accessToken: string,
-  userBookId: string,
-  from: string,
-  to: string,
-): Promise<void> {
-  await apiRequest(`${libraryBookPath(userBookId)}/reading-logs/range`, accessToken, {
-    method: 'POST',
-    body: { from, to },
   })
 }
 
@@ -880,6 +866,18 @@ export async function getPushPublicKey(): Promise<string> {
 }
 
 export type PushSubscriptionBody = { endpoint: string; keys: { p256dh: string; auth: string } }
+
+export async function getReviewSettings(accessToken: string): Promise<boolean> {
+  const data = await apiRequest('/me/review-settings', accessToken)
+  if (typeof data !== 'object' || data === null || !('enabled' in data) || typeof data.enabled !== 'boolean') {
+    throw new Error('후기 공개 설정 응답 형식이 올바르지 않습니다.')
+  }
+  return data.enabled
+}
+
+export async function updateReviewSettings(accessToken: string, enabled: boolean): Promise<void> {
+  await apiRequest('/me/review-settings', accessToken, { method: 'PUT', body: { enabled } })
+}
 
 export async function getReminderSettings(accessToken: string): Promise<boolean> {
   const data = await apiRequest('/me/reminder-settings', accessToken)

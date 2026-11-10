@@ -17,7 +17,7 @@ export type CatalogBook = {
 export type PublicReview = {
   id: string
   author_name: string
-  memo: string
+  memo: string | null
   rating: number | null
   published_at: string
   updated_at: string
@@ -51,7 +51,8 @@ export async function getPublicReviews(token: string, isbn13: string, limit: num
   const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   const data = await apiRequest(`/books/${encodeURIComponent(isbn13)}/reviews?${query}`, token)
   if (!Array.isArray(data) || !data.every((item: unknown) => object(item) &&
-      nonblank(item.id) && nonblank(item.author_name) && nonblank(item.memo) &&
+      nonblank(item.id) && nonblank(item.author_name) && (item.memo === null || nonblank(item.memo)) &&
+      (item.memo !== null || item.rating !== null) &&
       (item.rating === null || (rating(item.rating) && Number.isInteger(item.rating))) &&
       timestamp(item.published_at) && timestamp(item.updated_at) && typeof item.is_mine === 'boolean')) {
     throw new Error('후기 응답 형식이 올바르지 않습니다.')
