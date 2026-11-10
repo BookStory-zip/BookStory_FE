@@ -51,6 +51,8 @@ export async function mockBackend(page: Page, handle: Handler) {
     const url = new URL(request.url())
     if (await handle(route, url, request.method())) return
     if (url.pathname === '/me') return json(route, { user_id: '11111111-1111-4111-8111-111111111111' })
+    if (url.pathname === '/me/review-settings' && request.method() === 'GET') return json(route, { enabled: false })
+    if (url.pathname === '/me/profile' && request.method() === 'GET') return json(route, { nickname: null })
     if (url.pathname === '/me/reminder-settings' && request.method() === 'GET') return json(route, { enabled: false })
     // 따로 다루지 않는 테스트에서는 완독 기록이 없는 것으로 본다.
     if (url.pathname === '/reading-completions') return json(route, [])

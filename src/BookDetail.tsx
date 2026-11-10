@@ -65,7 +65,7 @@ function saveErrorMessage(error: unknown) {
 }
 
 const sameForm = (a: RecordForm, b: RecordForm) =>
-  a.rating === b.rating && a.memo === b.memo && a.stopReason === b.stopReason && a.isReviewPublic === b.isReviewPublic
+  a.rating === b.rating && a.memo === b.memo && a.stopReason === b.stopReason
 
 // 다른 책으로 이동하면 새로 마운트해 이전 책의 늦은 응답과 입력을 버린다.
 export default function BookDetailPage({ userId }: { userId: string }) {
@@ -80,7 +80,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   const [needsRefresh, setNeedsRefresh] = useState(false)
   const [notesBusy, setNotesBusy] = useState(false)
   const [pastBusy, setPastBusy] = useState(false)
-  const [form, setForm] = useState<RecordForm>({ rating: null, memo: '', stopReason: '', isReviewPublic: false })
+  const [form, setForm] = useState<RecordForm>({ rating: null, memo: '', stopReason: '' })
   const [nextStatus, setNextStatus] = useState<ReadingStatus | null>(null)
   const [startedDate, setStartedDate] = useState('')
   const [completedDate, setCompletedDate] = useState('')
@@ -88,10 +88,11 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   const [prefilled, setPrefilled] = useState({ started: '', completed: '', completedIsToday: false })
   const [pending, setPending] = useState<Pending>(null)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-  const [confirming, setConfirming] = useState<'reset' | 'delete' | 'catalog' | null>(null)
+  const [confirming, setConfirming] = useState<'reset' | 'delete' | 'catalog' | 'review-settings' | null>(null)
   const [todayLog, setTodayLog] = useState<'unknown' | 'checked' | 'unchecked' | 'error'>('unknown')
   const today = useKstToday()
   const todayRef = useRef(today)
+  const todayLogVersion = useRef(0)
   const active = useRef(true)
   const pendingRef = useRef<Pending>(null)
   const bookRef = useRef<LibraryBookDetail | null>(null)
@@ -154,13 +155,14 @@ function BookDetail({ userBookId }: { userBookId: string }) {
 
   // 오늘 체크 여부는 last_read_at이 아니라 오늘 기록(read_date + user_book_id)으로 판단한다.
   function loadTodayLog(day: string) {
+    const version = ++todayLogVersion.current
     return withAccessToken((token) => getReadingLogs(token, day, day)).then(
       (logs) => {
-        if (!active.current || day !== todayRef.current) return
+        if (!active.current || day !== todayRef.current || version !== todayLogVersion.current) return
         setTodayLog(logs.some((log) => log.user_book_id === userBookId) ? 'checked' : 'unchecked')
       },
       () => {
-        if (active.current && day === todayRef.current) setTodayLog('error')
+        if (active.current && day === todayRef.current && version === todayLogVersion.current) setTodayLog('error')
       },
     )
   }
@@ -168,6 +170,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   useEffect(() => {
     todayRef.current = today
     void loadTodayLog(today)
+    return () => { todayLogVersion.current += 1 }
     // 한국 날짜가 바뀌면 다시 확인한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [today])
@@ -221,7 +224,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         result = isConflict ? 'conflict' : isUnclearWrite(error) ? 'unclear' : 'failed'
       }
       // 재조회까지 한 작업으로 잠가 오래된 기준으로 다음 PATCH를 계산하지 않는다.
-      await options.refresh?.(result)
+      if (active.current) await options.refresh?.(result)
       return result
     } finally {
       pendingRef.current = null
@@ -434,7 +437,21 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         <div><dt>최근 체크</dt><dd>{book.last_read_date ? spokenDate(book.last_read_date) : '없음'}</dd></div>
       </dl>
 
-      <div className="detail-card today-card" aria-labelledby="today-title">
+      {book.status !== 'reading' && todayLog === 'checked' && (
+        <div className="today-actions">
+          <button type="button" className="secondary compact" disabled={busy} onClick={() => void handleCheck(true)}>
+            {pending === 'check' ? '취소하는 중…' : '오늘 체크 취소'}
+          </button>
+        </div>
+      )}
+      {book.status !== 'reading' && todayLog === 'error' && (
+        <div className="today-actions">
+          <p className="result-note">오늘 체크 여부를 확인하지 못했습니다.</p>
+          <button type="button" className="secondary compact" disabled={busy} onClick={() => void loadTodayLog(today)}>다시 확인</button>
+        </div>
+      )}
+
+      {book.status === 'reading' && <div className="detail-card today-card" aria-labelledby="today-title">
         <h2 id="today-title">오늘의 독서</h2>
         <p className="result-note">{spokenDate(today)} · 한국 시간 기준</p>
         {todayLog === 'unknown' && <p className="result-note">오늘 기록을 확인하는 중…</p>}
@@ -454,16 +471,15 @@ function BookDetail({ userBookId }: { userBookId: string }) {
             </button>
           </div>
         )}
-        {todayLog === 'unchecked' &&
-          (book.status === 'reading' ? (
+        {todayLog === 'unchecked' && (
             <button type="button" onClick={() => void handleCheck(false)} disabled={busy}>
               {pending === 'check' ? '남기는 중…' : '오늘 읽었어요'}
             </button>
-          ) : (
-            <p className="result-note">읽는 중인 책만 오늘 체크할 수 있습니다.</p>
-          ))}
-      </div>
+        )}
+      </div>}
 
+      <details className="detail-section" open={book.status !== 'reading'}>
+      <summary>독서 상태</summary>
       <form className="detail-card" onSubmit={handleStatus} aria-labelledby="status-title">
         <h2 id="status-title">독서 상태</h2>
         <fieldset className="status-options" disabled={busy}>
@@ -477,8 +493,9 @@ function BookDetail({ userBookId }: { userBookId: string }) {
                   type="radio"
                   name="status"
                   value={status}
-                  checked={nextStatus === status}
+                  checked={(nextStatus ?? book.status) === status}
                   disabled={(status === book.status && !canEditDates) || blocked}
+                  onClick={() => { if (nextStatus === null && status === book.status) chooseStatus(status) }}
                   onChange={() => chooseStatus(status)}
                 />
                 <span>{statusLabels[status]}</span>
@@ -524,15 +541,40 @@ function BookDetail({ userBookId }: { userBookId: string }) {
               ? '날짜 고치기'
               : '상태 바꾸기'}
         </button>
+        <button type="button" className="secondary remove-book" onClick={() => setConfirming('delete')} disabled={busy}>
+          {pending === 'delete' ? '빼는 중…' : '서재에서 빼기'}
+        </button>
       </form>
+      </details>
 
+      <details className="detail-section" open={book.status !== 'reading'}>
+      <summary>읽기 진도</summary>
       {/* 서버 진도 값이 바뀌면 새로 만들어 입력을 맞추고, 실패한 저장·상태만 바뀐 경우의 입력은 그대로 둔다. */}
       <ReadingProgress
         key={`${book.page_count}:${book.total_pages}:${book.current_page}`}
         book={book} busy={busy} saving={pending === 'progress'} onSave={saveProgress}
         onNoChange={() => setNotice({ kind: 'ok', text: '바뀐 진도가 없습니다.' })}
       />
+      </details>
 
+      {book.past_log_range && (
+        <details className="detail-section" open={book.status !== 'reading'}>
+          <summary>과거 읽은 날</summary>
+          <PastReadingDays
+            userBookId={book.id} range={book.past_log_range}
+            blocked={pending !== null || needsRefresh || notesBusy}
+            onChanged={reload} onBusyChange={setPastBusy}
+          />
+        </details>
+      )}
+
+      <details className="detail-section" open={book.status !== 'reading'}>
+        <summary>나의 독서 노트</summary>
+        <ReadingNotes key={book.id} userBookId={book.id} today={today} blocked={pending !== null || needsRefresh || pastBusy} onBusyChange={setNotesBusy} />
+      </details>
+
+      <details className="detail-section" open={book.status !== 'reading'}>
+      <summary>나의 기록</summary>
       <form className="detail-card" onSubmit={handleRecord} aria-labelledby="record-title">
         <h2 id="record-title">나의 기록</h2>
 
@@ -564,27 +606,22 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         </fieldset>
 
         <div>
-          <label htmlFor="memo">메모</label>
+          <label htmlFor="memo">후기</label>
           <textarea
             id="memo"
             rows={6}
             maxLength={10000}
             value={form.memo}
-            onChange={(event) => setForm({ ...form, memo: event.target.value, isReviewPublic: form.isReviewPublic && event.target.value.trim().length > 0 })}
+            onChange={(event) => setForm({ ...form, memo: event.target.value })}
             disabled={busy}
           />
           <small className="counter">{form.memo.length} / 10000</small>
         </div>
 
-        <div className="review-disclosure">
-          <label className="review-toggle">
-            <input type="checkbox" checked={form.isReviewPublic} disabled={busy || !form.memo.trim()}
-              onChange={(event) => setForm({ ...form, isReviewPublic: event.target.checked })} aria-describedby="review-help" />
-            <span>메모와 별점 공개</span>
-          </label>
-          <p id="review-help" className="result-note">공개를 선택해 저장하면 다른 독서가에게 메모와 별점이 보입니다. 수정 내용도 반영되며, 메모를 비우면 비공개로 바뀝니다.</p>
-          <p className="result-note">저장된 상태: {book.is_review_public ? '공개' : '비공개'}{book.review_updated_at && ` · ${formatKstDate(book.review_updated_at)} 수정`}</p>
-        </div>
+        <p className="result-note">공개 여부는 <Link to="/settings#review-settings" onClick={(event) => {
+          if (recordDirty) { event.preventDefault(); setConfirming('review-settings') }
+        }}>계정의 후기·별점 공개 설정</Link>을 따릅니다.</p>
+        <p className="result-note">현재 저장된 기록: {book.is_review_public ? '공개' : '비공개'}</p>
 
         {showStopReason && (
           <div>
@@ -605,36 +642,15 @@ function BookDetail({ userBookId }: { userBookId: string }) {
           {pending === 'record' ? '저장하는 중…' : '기록 저장'}
         </button>
       </form>
-
-      {/* 범위는 상세 응답의 past_log_range만 따른다. 상태·날짜가 바뀌어 null이 되면 숨긴다. */}
-      {book.past_log_range && (
-        <PastReadingDays
-          userBookId={book.id}
-          range={book.past_log_range}
-          today={today}
-          blocked={pending !== null || needsRefresh || notesBusy}
-          onChanged={reload}
-          onBusyChange={setPastBusy}
-        />
-      )}
-
-      <ReadingNotes key={book.id} userBookId={book.id} today={today} blocked={pending !== null || needsRefresh || pastBusy} onBusyChange={setNotesBusy} />
-
-      <div className="detail-card danger">
-        <h2>서재에서 빼기</h2>
-        <p className="result-note">이 책과 연결된 독서 체크·시간 기록·독서 노트와 공개 후기도 함께 삭제되고 책장에서도 빠집니다.</p>
-        <button type="button" className="secondary" onClick={() => setConfirming('delete')} disabled={busy}>
-          {pending === 'delete' ? '빼는 중…' : '서재에서 빼기'}
-        </button>
-      </div>
+      </details>
 
       <ConfirmDialog
         open={confirming === 'reset'}
         title="읽고 싶음으로 되돌릴까요?"
         message={
           book.has_completed
-            ? '시작일·중단일·중단 사유와 현재 쪽이 초기화됩니다. 완독 경험이 있어 완독일·별점·메모와 공개 상태, 전체 쪽수는 유지됩니다.'
-            : '시작일·중단일·중단 사유·현재 쪽과 함께 완독일·별점·메모와 공개 후기도 초기화됩니다. 전체 쪽수는 유지됩니다.'
+            ? '시작일·중단일·중단 사유와 현재 쪽이 초기화됩니다. 완독 경험이 있어 완독일·별점·후기, 전체 쪽수는 유지됩니다.'
+            : '시작일·중단일·중단 사유·현재 쪽과 함께 완독일·별점·후기와 공개 후기도 초기화됩니다. 전체 쪽수는 유지됩니다.'
         }
         confirmLabel="되돌리기"
         onConfirm={() => void submitStatus()}
@@ -650,11 +666,11 @@ function BookDetail({ userBookId }: { userBookId: string }) {
         onCancel={() => setConfirming(null)}
       />
       <ConfirmDialog
-        open={confirming === 'catalog'}
+        open={confirming === 'catalog' || confirming === 'review-settings'}
         title="저장하지 않은 기록이 있습니다"
-        message="수정한 메모·별점·공개 설정을 저장하지 않고 책 정보로 이동할까요?"
+        message="수정한 후기·별점을 저장하지 않고 이동할까요?"
         confirmLabel="저장하지 않고 이동"
-        onConfirm={() => navigate(`/catalog/${book.isbn13}`)}
+        onConfirm={() => navigate(confirming === 'review-settings' ? '/settings#review-settings' : `/catalog/${book.isbn13}`)}
         onCancel={() => setConfirming(null)}
       />
     </section>

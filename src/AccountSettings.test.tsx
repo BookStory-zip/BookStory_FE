@@ -6,6 +6,7 @@ import { ApiError } from './lib/api'
 import AccountSettings from './AccountSettings'
 
 vi.mock('./ReadingReminder', () => ({ default: () => <h2>독서 알림</h2> }))
+vi.mock('./ReviewSettings', () => ({ default: () => <section id="review-settings" tabIndex={-1}><h2>후기·별점 공개</h2></section> }))
 
 const mocks = vi.hoisted(() => ({ getProfile: vi.fn(), updateNickname: vi.fn(), deleteAccount: vi.fn(), isAccountDeleted: vi.fn() }))
 vi.mock('./lib/api', async (importOriginal) => ({
@@ -31,6 +32,22 @@ beforeEach(() => {
   onDeleted.mockResolvedValue(undefined)
 })
 afterEach(cleanup)
+
+test('후기 공개 설정 링크는 닉네임 조회 뒤 해당 영역으로 스크롤하고 초점을 옮긴다', async () => {
+  const scroll = vi.fn()
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scroll })
+  window.location.hash = '#review-settings'
+  try {
+    await renderSettings()
+    await waitFor(() => expect(scroll).toHaveBeenCalledWith({ block: 'start' }))
+    expect(document.activeElement?.id).toBe('review-settings')
+  } finally {
+    window.location.hash = ''
+    if (descriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', descriptor)
+    else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+  }
+})
 
 async function renderSettings() {
   render(<AccountSettings onDeleted={onDeleted} />)

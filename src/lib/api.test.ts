@@ -5,13 +5,13 @@ import {
   cancelReadingDate,
   checkReadingToday,
   checkReadingDate,
-  checkReadingRange,
   deleteLibraryBook,
   getAllLibraryBooks,
   getLibraryBook,
   getLibraryBooks,
   getMe,
   getProfile,
+  getReviewSettings,
   getReminderSettings,
   getReadingCompletions,
   getReadingLogs,
@@ -20,12 +20,31 @@ import {
   updateLibraryRecord,
   updateReadingProgress,
   updateNickname,
+  updateReviewSettings,
   updateReminderSettings,
 } from './api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
+})
+
+test('후기 공개는 계정 설정으로 조회·저장하고 204를 읽지 않는다', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ enabled: false })).mockResolvedValueOnce(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getReviewSettings('token')).resolves.toBe(false)
+  await expect(updateReviewSettings('token', true)).resolves.toBeUndefined()
+  expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
+    ['https://api.example.test/me/review-settings', undefined, undefined],
+    ['https://api.example.test/me/review-settings', 'PUT', '{"enabled":true}'],
+  ])
+})
+
+test.each([null, {}, { enabled: null }, { enabled: 'false' }])('잘못된 후기 공개 설정 %j를 비공개로 추정하지 않는다', async (body) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(body)))
+  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
+  await expect(getReviewSettings('token')).rejects.toThrow('후기 공개 설정 응답 형식')
 })
 
 test('계정 알림은 boolean을 읽고 설정 PUT의 빈 204를 처리한다', async () => {
@@ -56,16 +75,6 @@ test('지난 날짜 체크·취소는 개인 id와 날짜를 경로로 보내고
   expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
     ['https://api.example.test/library/books/own%2F1/reading-logs/2026-10-28', 'PUT', undefined],
     ['https://api.example.test/library/books/own%2F1/reading-logs/2026-10-28', 'DELETE', undefined],
-  ])
-})
-
-test('과거 읽은 날 기간은 개인 id 경로에 from·to만 보내고 빈 204를 읽는다', async () => {
-  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
-  vi.stubGlobal('fetch', fetchMock)
-  vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.test')
-  await expect(checkReadingRange('token', 'own/1', '2025-01-01', '2025-12-31')).resolves.toBeUndefined()
-  expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.body])).toEqual([
-    ['https://api.example.test/library/books/own%2F1/reading-logs/range', 'POST', '{"from":"2025-01-01","to":"2025-12-31"}'],
   ])
 })
 

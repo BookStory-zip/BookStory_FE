@@ -55,6 +55,13 @@ test('공개 후기의 페이지 조건과 현재 토큰을 전달한다', async
   })
 })
 
+test('별점만 있는 공개 후기는 null 본문을 그대로 받고 내용·별점이 모두 없는 항목은 거부한다', async () => {
+  respond([{ ...review, memo: null, rating: 5 }])
+  await expect(getPublicReviews('test-token', book.isbn13, 20, 0)).resolves.toEqual([{ ...review, memo: null, rating: 5 }])
+  respond([{ ...review, memo: null, rating: null }])
+  await expect(getPublicReviews('test-token', book.isbn13, 20, 0)).rejects.toThrow('후기 응답 형식')
+})
+
 test.each([{ ...review, is_mine: 'false' }, { ...review, memo: '' }, { ...review, rating: 0 }])(
   '불완전한 후기를 표시하지 않는다: %j', async (body) => {
     respond([body])
