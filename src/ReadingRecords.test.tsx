@@ -586,6 +586,7 @@ test('목표 저장 중 화면을 떠나면 늦은 성공 응답으로 다시 �
 
 const timelineNote = (id: string, date: string, userBookId: string, title: string, patch: Partial<ReadingNoteEntry> = {}): ReadingNoteEntry => ({
   id, user_book_id: userBookId, note_date: date, quote: `문구 ${id}`, thought: null, page: null,
+  has_photo: false, photo_url: null,
   created_at: `${date}T01:00:00Z`, updated_at: `${date}T01:00:00Z`, title, authors: ['저자'], thumbnail_url: null, ...patch,
 })
 

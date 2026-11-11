@@ -1,10 +1,16 @@
 import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js'
 import { expect, test, vi } from 'vitest'
-import { ApiError } from './api'
+import { ApiError, ApiResponseError } from './api'
 import { SessionMissingError } from './auth'
 import { commonErrorMessage, isAuthFailure, isUnclearWrite } from './errors'
 
 vi.mock('./supabase', () => ({ supabase: { auth: {} } }))
+
+test('응답 해석 실패만 불명확한 결과이며 세션 없음·사진 저장소 거절은 아니다', () => {
+  expect(isUnclearWrite(new ApiResponseError('invalid metadata'))).toBe(true)
+  expect(isUnclearWrite(new SessionMissingError())).toBe(false)
+  expect(isUnclearWrite(new ApiError(503, '', 'photo_storage_unavailable'))).toBe(false)
+})
 
 test('세션 갱신 중 연결 실패는 다시 로그인 안내가 아니라 연결 안내다', () => {
   const error = new AuthRetryableFetchError('Failed to fetch', 0)

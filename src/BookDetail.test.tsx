@@ -723,6 +723,7 @@ test('독서 노트는 공개 후기 메모와 따로 저장하고 독서 체크
   mocks.getLibraryBook.mockResolvedValue(detail({ memo: '공개 후기 메모' }))
   mocks.createReadingNote.mockResolvedValue({
     id: 'note-1', user_book_id: 'user-book-1', note_date: '2026-10-28', quote: '문장', thought: null, page: null,
+    has_photo: false, photo_url: null,
     created_at: '2026-10-28T03:00:00Z', updated_at: '2026-10-28T03:00:00Z',
   })
   renderDetail()
@@ -743,6 +744,7 @@ const reading = { status: 'reading' as const, page_count: 300, total_pages: null
 const progressCard = () => screen.getByRole('heading', { name: '읽기 진도' }).closest('form') as HTMLFormElement
 
 test('진도는 서버 %와 쪽을 보여 주고, 바뀐 칸만 보낸 뒤 상세를 다시 불러와 입력을 맞춘다', async () => {
+  mocks.getReadingLogs.mockResolvedValueOnce([]).mockResolvedValue([todayLog()])
   mocks.getLibraryBook.mockResolvedValueOnce(detail(reading))
     .mockResolvedValueOnce(detail({ ...reading, current_page: 150, progress_percent: 50 }))
   mocks.updateReadingProgress.mockResolvedValueOnce(undefined)
@@ -764,6 +766,9 @@ test('진도는 서버 %와 쪽을 보여 주고, 바뀐 칸만 보낸 뒤 상�
   expect(mocks.updateReadingProgress).toHaveBeenCalledWith('test-token', 'user-book-1', { current_page: 150 })
   await screen.findByText('50%')
   expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2)
+  await screen.findByRole('button', { name: '체크 취소' })
+  expect(mocks.getReadingLogs).toHaveBeenCalledTimes(2)
+  expect(mocks.checkReadingToday).not.toHaveBeenCalled()
   expect((within(progressCard()).getByLabelText('현재 쪽') as HTMLInputElement).value).toBe('150')
 })
 
@@ -814,6 +819,7 @@ test('진도 422는 다시 불러와도 서버 값이 같아 입력을 보존하
   expect(await screen.findByText(/쪽수 범위를 확인해주세요/)).toBeTruthy()
   await waitFor(() => expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2))
   expect((within(progressCard()).getByLabelText('현재 쪽') as HTMLInputElement).value).toBe('200')
+  expect(mocks.getReadingLogs).toHaveBeenCalledTimes(1)
 
   mocks.getLibraryBook.mockResolvedValueOnce(detail({ ...reading, status: 'completed', current_page: 300, progress_percent: 100 }))
   fireEvent.click(within(progressCard()).getByRole('button', { name: '진도 저장' }))
