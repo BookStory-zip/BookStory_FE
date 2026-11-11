@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
-import { charCount, noteInput, notePatch } from './notes'
-import type { ReadingNote } from './api'
+import { NOTE_PHOTO_MAX_BYTES, validateNotePhoto, notePhotoError, charCount, noteInput, notePatch } from './notes'
+import { ApiError, type ReadingNote } from './api'
 
 const today = '2026-11-04'
 const form = (patch: Partial<{ date: string; quote: string; thought: string; page: string }> = {}) =>
@@ -39,6 +39,7 @@ test('길이는 앞뒤 공백을 지운 뒤 글자 수(이모지 1자)로 센다
 
 const saved: ReadingNote = {
   id: 'note-1', user_book_id: 'ub-1', note_date: '2026-11-01', quote: '문구', thought: '생각', page: 3,
+  has_photo: false, photo_url: null,
   created_at: '2026-11-01T01:00:00Z', updated_at: '2026-11-01T01:00:00Z',
 }
 
@@ -47,4 +48,33 @@ test('수정은 바뀐 항목만 보내고, 지운 항목은 null로 보낸다',
   expect(notePatch(saved, { note_date: '2026-11-02', quote: '문구', thought: null, page: null })).toEqual({
     note_date: '2026-11-02', thought: null, page: null,
   })
+})
+
+test('photo-only input still validates date, page and length', () => {
+  expect(noteInput(form(), today, true)).toEqual({ input: { note_date: today, quote: null, thought: null, page: null } })
+  expect(noteInput(form({ date: '' }), today, true)).toHaveProperty('error')
+  expect(noteInput(form({ page: '0' }), today, true)).toHaveProperty('error')
+  expect(noteInput(form({ quote: 'a'.repeat(1001) }), today, true)).toHaveProperty('error')
+})
+
+test('photo validation accepts supported types and 10MiB boundary', () => {
+  for (const type of ['image/jpeg', 'image/png', 'image/webp', '']) {
+    expect(validateNotePhoto(new File(['a'], 'photo', { type }))).toBeNull()
+  }
+  expect(validateNotePhoto(new File(['a'], 'photo.heic', { type: 'image/heic' }))).toMatch(/JPEG.*PNG/)
+  const file = new File(['a'], 'photo.jpg', { type: 'image/jpeg' })
+  Object.defineProperty(file, 'size', { value: NOTE_PHOTO_MAX_BYTES, configurable: true })
+  expect(validateNotePhoto(file)).toBeNull()
+  Object.defineProperty(file, 'size', { value: NOTE_PHOTO_MAX_BYTES + 1 })
+  expect(validateNotePhoto(file)).toMatch(/10MB/)
+})
+
+test('photo errors explain rejection and uncertain outcomes', () => {
+  expect(notePhotoError(new ApiError(422, 'cannot identify image', 'invalid_image'))).toContain('사진을 읽을 수 없어요')
+  expect(notePhotoError(new ApiError(404, 'not found'))).toContain('노트를 찾을 수 없습니다')
+  expect(notePhotoError(new ApiError(401, 'unauthorized'))).toContain('다시 로그인')
+  expect(notePhotoError(new ApiError(413, '', 'image_too_large'))).toMatch(/10MB/)
+  expect(notePhotoError(new ApiError(422, '', 'unsupported_image'))).toMatch(/JPEG.*PNG/)
+  expect(notePhotoError(new ApiError(503, '', 'photo_storage_unavailable'))).toMatch(/잠시/)
+  expect(notePhotoError(new TypeError('Failed to fetch'))).toMatch(/확인/)
 })

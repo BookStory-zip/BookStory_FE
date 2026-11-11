@@ -62,15 +62,16 @@ export async function apiRequestWithStatus(
   }
 
   const headers: Record<string, string> = {}
+  const multipart = options.body instanceof FormData
   if (accessToken !== null) headers.Authorization = `Bearer ${accessToken}`
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+  if (options.body !== undefined && !multipart) headers['Content-Type'] = 'application/json'
 
   // Render 기동 지연을 기다리되, 응답이 끝나지 않는 요청이 화면을 영원히 잠그지 않게 한다.
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     ...(options.method && { method: options.method }),
-    ...(options.body !== undefined && { body: JSON.stringify(options.body) }),
+    ...(options.body !== undefined && { body: multipart ? options.body as FormData : JSON.stringify(options.body) }),
   })
 
   if (!response.ok) {
@@ -801,7 +802,7 @@ export async function removeBookFromShelf(accessToken: string, shelfId: string, 
 
 // 비공개 독서 노트. 공개 후기 memo와 별개이며 저장해도 독서 체크를 만들지 않는다.
 export type NoteInput = { note_date: string; quote: string | null; thought: string | null; page: number | null }
-export type ReadingNote = NoteInput & { id: string; user_book_id: string; created_at: string; updated_at: string }
+export type ReadingNote = NoteInput & { id: string; user_book_id: string; has_photo: boolean; photo_url: string | null; created_at: string; updated_at: string }
 export type ReadingNoteEntry = ReadingNote & { title: string; authors: string[]; thumbnail_url: string | null }
 
 const NOTE_INVALID = '노트 응답 형식이 올바르지 않습니다.'
@@ -811,7 +812,8 @@ function isReadingNote(value: unknown): value is ReadingNote {
   const item = value as Record<string, unknown>
   return typeof item.id === 'string' && typeof item.user_book_id === 'string' &&
     typeof item.note_date === 'string' && DATE_PATTERN.test(item.note_date) &&
-    isNullableString(item.quote) && isNullableString(item.thought) && (item.quote !== null || item.thought !== null) &&
+    typeof item.has_photo === 'boolean' && isNullableString(item.photo_url) && (item.has_photo || item.photo_url === null) &&
+    isNullableString(item.quote) && isNullableString(item.thought) && (item.quote !== null || item.thought !== null || item.has_photo) &&
     (item.page === null || (Number.isInteger(item.page) && Number(item.page) >= 1)) &&
     typeof item.created_at === 'string' && typeof item.updated_at === 'string'
 }
@@ -830,6 +832,29 @@ function readNote(data: unknown, userBookId?: string): ReadingNote {
 
 export async function createReadingNote(accessToken: string, userBookId: string, body: NoteInput): Promise<ReadingNote> {
   return readNote(await apiRequest(`${libraryBookPath(userBookId)}/notes`, accessToken, { method: 'POST', body }), userBookId)
+}
+
+export async function createReadingPhotoNote(accessToken: string, userBookId: string, input: NoteInput, photo: File, clientNoteId: string): Promise<ReadingNote> {
+  const body = new FormData()
+  body.append('photo', photo)
+  body.append('note_date', input.note_date)
+  body.append('client_note_id', clientNoteId)
+  if (input.quote !== null) body.append('quote', input.quote)
+  if (input.thought !== null) body.append('thought', input.thought)
+  if (input.page !== null) body.append('page', String(input.page))
+  return readNote(await apiRequest(`${libraryBookPath(userBookId)}/notes/photo`, accessToken, { method: 'POST', body }), userBookId)
+}
+
+export async function updateNotePhoto(accessToken: string, noteId: string, photo: File): Promise<ReadingNote> {
+  const body = new FormData()
+  body.append('photo', photo)
+  const note = readNote(await apiRequest(`/notes/${encodeURIComponent(noteId)}/photo`, accessToken, { method: 'PUT', body }))
+  if (note.id !== noteId) throw new Error(NOTE_INVALID)
+  return note
+}
+
+export async function deleteNotePhoto(accessToken: string, noteId: string): Promise<void> {
+  await apiRequest(`/notes/${encodeURIComponent(noteId)}/photo`, accessToken, { method: 'DELETE' })
 }
 
 export async function getReadingNotes(accessToken: string, userBookId: string, limit: number, offset: number): Promise<ReadingNote[]> {

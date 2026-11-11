@@ -1,22 +1,43 @@
 import type { NoteInput, ReadingNote } from './api'
+import { ApiError } from './api'
+import { commonErrorMessage } from './errors'
 
 export type NoteForm = { date: string; quote: string; thought: string; page: string }
 
 export const QUOTE_LIMIT = 1000
 export const THOUGHT_LIMIT = 2000
 export const PAGE_LIMIT = 99999
+export const NOTE_PHOTO_MAX_BYTES = 10_485_760
+
+export function validateNotePhoto(file: File): string | null {
+  if (file.size > NOTE_PHOTO_MAX_BYTES) return '사진은 10MB 이하로 올려주세요.'
+  if (file.type && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return 'JPEG, PNG 또는 WebP 사진을 선택해주세요. HEIC 사진은 JPEG나 PNG로 변환해주세요.'
+  return null
+}
+
+export function notePhotoError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 413 || error.code === 'image_too_large') return '사진은 10MB 이하, 4천만 화소 이하로 올려주세요.'
+    if (error.code === 'unsupported_image') return '지원하지 않는 사진이에요. JPEG, PNG 또는 WebP 사진을 선택해주세요.'
+    if (error.code === 'invalid_image') return '사진을 읽을 수 없어요. 다른 사진을 선택해주세요.'
+    if (error.code === 'photo_storage_unavailable') return '사진 저장소에 연결할 수 없어요. 잠시 후 다시 시도해주세요.'
+    if (error.status === 404) return '노트를 찾을 수 없습니다. 목록을 다시 확인해주세요.'
+    return commonErrorMessage(error, '사진을 저장하지 못했습니다')
+  }
+  return '사진 저장 결과를 확인하지 못했어요. 노트 목록을 확인한 뒤 다시 시도해주세요.'
+}
 
 // BE는 문자 수(코드 포인트)로 센다. 이모지도 1자다.
 export const charCount = (value: string) => [...value].length
 
-// BE와 같은 규칙: 앞뒤 공백 제거, 비면 null, 문구·생각 중 하나는 필수.
-export function noteInput(form: NoteForm, today: string): { input: NoteInput } | { error: string } {
+// BE와 같은 규칙: 앞뒤 공백 제거, 비면 null, 문구·생각·사진 중 하나는 필수.
+export function noteInput(form: NoteForm, today: string, hasPhoto = false): { input: NoteInput } | { error: string } {
   const quote = form.quote.trim() || null
   const thought = form.thought.trim() || null
   const page = form.page.trim()
   if (!form.date) return { error: '날짜를 선택해주세요.' }
   if (form.date > today) return { error: '오늘 이후 날짜는 선택할 수 없어요.' }
-  if (quote === null && thought === null) return { error: '문구나 생각 중 하나는 남겨주세요.' }
+  if (quote === null && thought === null && !hasPhoto) return { error: '문구나 생각 중 하나는 남겨주세요.' }
   if (quote && charCount(quote) > QUOTE_LIMIT) return { error: `문구는 ${QUOTE_LIMIT}자까지 남길 수 있어요.` }
   if (thought && charCount(thought) > THOUGHT_LIMIT) return { error: `생각은 ${THOUGHT_LIMIT}자까지 남길 수 있어요.` }
   if (page && (!/^\d+$/.test(page) || Number(page) < 1 || Number(page) > PAGE_LIMIT)) {

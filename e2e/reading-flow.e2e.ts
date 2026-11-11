@@ -643,7 +643,7 @@ test('상세에서 비공개 노트를 쓰고 고친 뒤 기록의 노트 탭에
     if (url.pathname === '/library/books/user-book-1/notes') {
       if (method === 'POST') {
         writes.push(`POST ${request.postData()}`)
-        const note = { id: `note-${notes.length + 1}`, user_book_id: book.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...request.postDataJSON() }
+        const note = { id: `note-${notes.length + 1}`, user_book_id: book.id, has_photo: false, photo_url: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...request.postDataJSON() }
         notes.unshift(note)
         return json(route, note, 201).then(() => true)
       }
@@ -694,6 +694,9 @@ test('상세에서 비공개 노트를 쓰고 고친 뒤 기록의 노트 탭에
 })
 
 test('상세에서 쪽·%로 진도를 저장하면 다시 불러와 서재 카드에도 %를 보여 준다', async ({ page }, testInfo) => {
+  let checked = false
+  let explicitChecks = 0
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
   let progress = { page_count: 300, total_pages: null as number | null, current_page: 120 as number | null, progress_percent: 40 as number | null }
   const writes: unknown[] = []
   await signInWithMockSession(page)
@@ -702,13 +705,15 @@ test('상세에서 쪽·%로 진도를 저장하면 다시 불러와 서재 카�
       const body = route.request().postDataJSON()
       writes.push(body)
       const next = { ...progress, ...body }
+      if (body.current_page > (progress.current_page ?? 0)) checked = true
       const total = next.total_pages ?? next.page_count
       progress = { ...next, progress_percent: total && next.current_page !== null ? Math.floor((next.current_page / total) * 100) : null }
       return json(route, { id: book.id, ...progress }).then(() => true)
     }
     if (url.pathname === `/library/books/${book.id}`) return json(route, { ...detail, ...progress }).then(() => true)
     if (url.pathname === '/library/books') return json(route, [{ ...book, ...progress }]).then(() => true)
-    if (url.pathname === '/reading-logs') return json(route, []).then(() => true)
+    if (url.pathname === '/reading-logs') return json(route, checked ? [{ id: 'progress-log', user_book_id: book.id, book_id: book.book_id, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url, read_date: today, created_at: new Date().toISOString() }] : []).then(() => true)
+    if (url.pathname.includes('/reading-logs/') && method === 'PUT') { explicitChecks++; return route.fulfill({ status: 204 }).then(() => true) }
     if (url.pathname === `/library/books/${book.id}/notes`) return json(route, []).then(() => true)
     return false
   })
@@ -723,6 +728,8 @@ test('상세에서 쪽·%로 진도를 저장하면 다시 불러와 서재 카�
   await card.getByLabel('현재 쪽').fill('150')
   await card.getByRole('button', { name: '진도 저장' }).click()
   await expect(card.getByText('50%')).toBeVisible()
+  await expect(page.getByText('오늘 읽은 날로 남겼어요')).toBeVisible()
+  expect(explicitChecks).toBe(0)
   await card.getByRole('radio', { name: '%' }).check()
   await card.getByLabel('현재 진도(%)').fill('75')
   await card.getByRole('button', { name: '직접 수정' }).click()

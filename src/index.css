@@ -1095,6 +1095,46 @@ button.link-button:hover:not(:disabled) {
   padding-top: var(--space-4);
 }
 
+.note-photo-image,
+.note-photo-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 32rem;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius);
+}
+
+.note-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.note-photo-actions label {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 12rem;
+}
+
+.note-photo-actions input {
+  width: 100%;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.note-photo-error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+.note-photo-preview + p {
+  overflow-wrap: anywhere;
+}
+
 .note-list {
   display: grid;
   gap: var(--space-4);

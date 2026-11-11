@@ -58,6 +58,24 @@ export default function NoteTimeline({ month, today, onMove }: Props) {
     load(offset)
   }
 
+  async function refreshPhoto(id: string) {
+    const currentVersion = version.current
+    const { start, end } = monthRange(month)
+    let replacement: ReadingNoteEntry | undefined
+    // Search past the loaded range if new notes have shifted the target to a later page.
+    for (let offset = 0; ; offset += 100) {
+      const page = await withAccessToken((token) => getNoteTimeline(token, start, end, 100, offset))
+      if (version.current !== currentVersion) return
+      replacement = page.find((item) => item.id === id)
+      if (replacement || page.length < 100) break
+    }
+    setList((previous) => {
+      if (version.current !== currentVersion || !previous) return previous
+      if (replacement) return { ...previous, items: previous.items.map((item) => item.id === id ? replacement! : item) }
+      return { ...previous, items: previous.items.filter((item) => item.id !== id), offset: Math.max(0, previous.offset - 1) }
+    })
+  }
+
   // 부모가 달마다 key로 다시 그리므로 이 목록은 항상 현재 달의 것이다.
   const current = list
   const failure = error
@@ -95,7 +113,7 @@ export default function NoteTimeline({ month, today, onMove }: Props) {
                     {item.authors.length > 0 && <span className="book-authors">{item.authors.join(', ')}</span>}
                   </span>
                 </Link>
-                <NoteText note={item} />
+                <NoteText note={item} onRefresh={() => refreshPhoto(item.id)} />
               </li>
             ))}
           </ul>
