@@ -189,7 +189,7 @@ const monthlyStatistics = {
   },
 }
 
-test('통계는 탭을 열 때 조회하고 연간 합계와 현재 서재를 구분한다', async () => {
+test('통계는 탭을 열 때 조회하고 연간 합계와 서재 현황을 구분한다', async () => {
   mocks.getReadingLogs.mockResolvedValue([])
   mocks.getReadingStatistics.mockResolvedValueOnce(monthlyStatistics)
   renderRecords()
@@ -198,9 +198,9 @@ test('통계는 탭을 열 때 조회하고 연간 합계와 현재 서재를 �
 
   fireEvent.click(screen.getByRole('button', { name: '통계' }))
   await screen.findByText('3')
-  expect(screen.getByRole('heading', { name: '독서 시간' }).parentElement?.textContent).toContain('42분')
+  expect(goalItem('독서 시간').textContent).toContain('42분')
   expect(mocks.getReadingStatistics).toHaveBeenLastCalledWith('test-token', 2026, 10)
-  expect(screen.getByRole('heading', { name: '현재 서재' })).toBeTruthy()
+  expect(screen.getByText('서재 현황', { selector: 'summary' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: /2026년 10월 3일/ })).toBeNull()
 
   mocks.getReadingStatistics.mockResolvedValueOnce({
@@ -228,7 +228,7 @@ test('달력에서 선택한 월을 통계에서도 유지하고 과거 연도�
 
   fireEvent.click(screen.getByRole('button', { name: '연간' }))
   fireEvent.click(screen.getByRole('button', { name: '이전 해' }))
-  await screen.findByRole('heading', { name: '2025년' })
+  await screen.findByRole('heading', { name: '2025년 독서 기록' })
   expect(mocks.getReadingStatistics).toHaveBeenLastCalledWith('test-token', 2025, undefined)
 
   fireEvent.click(screen.getByRole('button', { name: '달력' }))
@@ -249,10 +249,10 @@ test('과거 12월에서 다음 해로 이동해도 월간 통계와 달력은 �
   await screen.findByText('3')
   fireEvent.click(screen.getByRole('button', { name: '연간' }))
   fireEvent.click(screen.getByRole('button', { name: '다음 해' }))
-  await screen.findByRole('heading', { name: '2026년' })
+  await screen.findByRole('heading', { name: '2026년 독서 기록' })
 
   fireEvent.click(screen.getByRole('button', { name: '월간' }))
-  await screen.findByRole('heading', { name: '2026년 10월' })
+  await screen.findByRole('heading', { name: '2026년 10월 독서 기록' })
   expect(mocks.getReadingStatistics).toHaveBeenLastCalledWith('test-token', 2026, 10)
   expect(mocks.getReadingStatistics).not.toHaveBeenCalledWith('test-token', 2026, 12)
   expect(screen.getByRole('button', { name: '다음 달' })).toHaveProperty('disabled', true)
@@ -279,7 +279,7 @@ test('월을 바꾸면 늦게 온 이전 통계가 최신 통계를 덮지 않�
 
   await act(async () => { resolveOctober(monthlyStatistics) })
 
-  expect(screen.getByRole('heading', { name: '2026년 9월' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: '2026년 9월 독서 기록' })).toBeTruthy()
   expect(screen.getByText('4')).toBeTruthy()
   expect(screen.queryByText('3')).toBeNull()
 })
@@ -322,14 +322,57 @@ test('체크 없이 완독한 날도 표시하고, 같은 날 체크·완독한 
 
 const withGoals = (goals: GoalProgress[], period: object = {}) =>
   ({ ...monthlyStatistics, period: { ...monthlyStatistics.period, ...period, goals } })
-const goalItem = (label: string) => screen.getByRole('heading', { name: `${label} 목표` }).closest('li') as HTMLElement
+const goalItem = (label: string) => screen.getByRole('heading', { name: label }).closest('li') as HTMLElement
 
 async function openStatistics() {
   mocks.getReadingLogs.mockResolvedValue([])
   renderRecords()
   fireEvent.click(screen.getByRole('button', { name: '통계' }))
-  await screen.findByRole('heading', { name: '독서 목표' })
+  await screen.findByRole('heading', { name: '독서 실적과 목표' })
 }
+
+test('기간 기록과 목표를 한곳에서 보여 주고 서재 현황은 접어 둔다', async () => {
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
+    { metric: 'reading_days', target: 12, current: 15, source: 'inherited' },
+    { metric: 'completed_books', target: 2, current: 1, source: 'set' },
+  ], { reading_days: 15 }))
+  await openStatistics()
+
+  expect(screen.getByRole('heading', { name: '2026년 10월 독서 기록' })).toBeTruthy()
+  const records = screen.getByRole('region', { name: '독서 실적과 목표' })
+  expect(within(records).getAllByRole('listitem')).toHaveLength(3)
+  expect(goalItem('읽은 날').textContent).toContain('15 / 12일')
+  expect(goalItem('읽은 날').textContent).toContain('125%')
+  expect(within(goalItem('읽은 날')).getByRole('progressbar')).toMatchObject({ value: 12, max: 12 })
+  expect(goalItem('완독 권수').textContent).toContain('1 / 2권')
+  expect(goalItem('완독 권수').textContent).toContain('50%')
+  expect(goalItem('독서 시간').textContent).toContain('42분')
+  expect(goalItem('독서 시간').textContent).toContain('목표를 설정해보세요')
+  expect(within(goalItem('독서 시간')).queryByRole('progressbar')).toBeNull()
+  expect(screen.getAllByRole('heading', { name: '읽은 날' })).toHaveLength(1)
+  expect(screen.getAllByRole('heading', { name: '독서 시간' })).toHaveLength(1)
+
+  const summary = screen.getByText('서재 현황', { selector: 'summary' })
+  expect(summary.closest('details')?.open).toBe(false)
+  fireEvent.click(summary)
+  expect(summary.closest('details')?.open).toBe(true)
+  expect(screen.getByText('선택한 기간과 관계없는 현재 현황입니다.')).toBeTruthy()
+})
+
+test('목표가 없거나 0이어도 받은 실제 기록을 남기고 완독 수를 서재에서 가져오지 않는다', async () => {
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
+    { metric: 'reading_days', target: 0, current: 0, source: 'set' },
+  ], { reading_days: 0, reading_minutes: 42 }))
+  await openStatistics()
+
+  expect(goalItem('읽은 날').textContent).toContain('0일')
+  expect(goalItem('읽은 날').textContent).toContain('목표 꺼짐')
+  expect(goalItem('독서 시간').textContent).toContain('42분')
+  expect(goalItem('완독 권수').textContent).toContain('목표를 설정해보세요')
+  expect(goalItem('완독 권수').textContent).not.toContain('2권')
+  expect(screen.queryByRole('progressbar')).toBeNull()
+  expect(screen.queryByText(/NaN|Infinity/)).toBeNull()
+})
 
 test('목표는 출처·꺼짐·미설정을 구분하고 초과 달성 수치를 그대로 보여 준다', async () => {
   mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
@@ -543,6 +586,7 @@ test('목표 저장 중 화면을 떠나면 늦은 성공 응답으로 다시 �
 
 const timelineNote = (id: string, date: string, userBookId: string, title: string, patch: Partial<ReadingNoteEntry> = {}): ReadingNoteEntry => ({
   id, user_book_id: userBookId, note_date: date, quote: `문구 ${id}`, thought: null, page: null,
+  has_photo: false, photo_url: null,
   created_at: `${date}T01:00:00Z`, updated_at: `${date}T01:00:00Z`, title, authors: ['저자'], thumbnail_url: null, ...patch,
 })
 

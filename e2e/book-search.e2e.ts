@@ -25,10 +25,11 @@ test('검색 기준·정렬·빈 페이지 더 보기와 조건 초기화가 이
   expect(requests).toHaveLength(0)
   await page.getByRole('searchbox').fill('한강')
   await page.getByRole('button', { name: '검색', exact: true }).click()
-  await expect(page.getByText('담을 수 있는 책이 이 페이지에 없습니다. 더 보기를 눌러 주세요.')).toBeVisible()
+  await expect(page.getByText('이 페이지에는 표시할 책이 없어요. 더 보기를 눌러 주세요.')).toBeVisible()
+  await expect(page.getByText('검색 결과가 없습니다.')).toHaveCount(0)
   await page.getByLabel('검색 결과 정렬').selectOption('latest')
   await expect.poll(() => requests.length).toBe(2)
-  await expect(page.getByText('담을 수 있는 책이 이 페이지에 없습니다. 더 보기를 눌러 주세요.')).toBeVisible()
+  await expect(page.getByText('이 페이지에는 표시할 책이 없어요. 더 보기를 눌러 주세요.')).toBeVisible()
   await page.getByRole('button', { name: '결과 더 보기' }).click()
   await expect(page.getByRole('link', { name: '저자 최신 결과' })).toBeVisible()
   for (const width of [390, 768, 1440]) {

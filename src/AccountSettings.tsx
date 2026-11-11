@@ -7,6 +7,7 @@ import { commonErrorMessage, isUnclearWrite, NICKNAME_RULE } from './lib/errors'
 import CabinIcon from './CabinIcon'
 import ConfirmDialog from './ConfirmDialog'
 import ReadingReminder from './ReadingReminder'
+import ReviewSettings from './ReviewSettings'
 
 // BE와 같은 규칙: 앞뒤 공백을 지우고 NFC로 정규화한 뒤 완성형 한글·영문·숫자·_·-와 한 칸 공백, 2~20자.
 const NICKNAME_PATTERN = /^[가-힣A-Za-z0-9_-]+( [가-힣A-Za-z0-9_-]+)*$/
@@ -34,6 +35,16 @@ export default function AccountSettings({ onDeleted }: Props) {
   const [deleteNote, setDeleteNote] = useState('')
   const passwordRef = useRef<HTMLInputElement>(null)
   const active = useRef(true)
+  const scrolledToReview = useRef(false)
+
+  useEffect(() => {
+    if (scrolledToReview.current || (saved === undefined && loadError === null) || window.location.hash !== '#review-settings') return
+    const target = document.getElementById('review-settings')
+    if (!target) return
+    scrolledToReview.current = true
+    target.scrollIntoView?.({ block: 'start' })
+    target.focus({ preventScroll: true })
+  }, [saved, loadError])
 
   const load = useCallback(() => {
     withAccessToken(getProfile).then(
@@ -165,11 +176,12 @@ export default function AccountSettings({ onDeleted }: Props) {
         <p role="status">{nicknameNote}</p>
       </form>
 
+      <ReviewSettings disabled={deleting || deleted} />
       <ReadingReminder disabled={deleting || deleted} />
 
       <form className="detail-card danger" aria-labelledby="delete-title" onSubmit={requestDelete}>
         <h2 id="delete-title">계정 탈퇴</h2>
-        <p className="result-note">서재·메모·별점·날짜·독서 체크·시간 기록·독서 노트·책장·공개 후기·알림 설정이 모두 바로 삭제되며 되돌릴 수 없습니다. 공통 책 정보는 남습니다.</p>
+        <p className="result-note">서재·후기·별점·날짜·독서 체크·시간 기록·독서 노트·책장·공개 설정·알림 설정이 모두 바로 삭제되며 되돌릴 수 없습니다. 공통 책 정보는 남습니다.</p>
         <label htmlFor="delete-password">비밀번호 확인</label>
         <input id="delete-password" ref={passwordRef} type="password" autoComplete="current-password" disabled={deleting || deleted} />
         <button type="submit" className="secondary" disabled={deleting || deleted}>{deleting && !deleted ? '탈퇴하는 중…' : '탈퇴하기'}</button>

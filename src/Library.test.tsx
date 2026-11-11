@@ -10,6 +10,7 @@ import LibraryShelfActions from './LibraryShelfActions'
 
 const mocks = vi.hoisted(() => ({
   getLibraryBooks: vi.fn(),
+  getAllLibraryBooks: vi.fn(),
   moveLibraryBook: vi.fn(),
   getShelves: vi.fn(),
   deleteShelf: vi.fn(),
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('./lib/api')>(),
   getLibraryBooks: mocks.getLibraryBooks,
+  getAllLibraryBooks: mocks.getAllLibraryBooks,
   moveLibraryBook: mocks.moveLibraryBook,
   getShelves: mocks.getShelves,
   deleteShelf: mocks.deleteShelf,
@@ -57,6 +59,7 @@ const renderInRouter = (ui: ReactElement) => render(<MemoryRouter>{ui}</MemoryRo
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.getShelves.mockResolvedValue([])
+  mocks.getAllLibraryBooks.mockResolvedValue([])
 })
 afterEach(cleanup)
 
@@ -631,6 +634,158 @@ test('검색 기준만 바꾸고 제출하지 않았으면 상태 변경은 적�
 
 const shelfItem = (id: string, name: string, count: number) => ({ id, name, book_count: count, position: 0 })
 
+test('담을 책장을 먼저 고르고 기존 멤버는 체크만 표시하며 새로 고른 책만 담는다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 1)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(3, 'A'))
+  mocks.getAllLibraryBooks.mockResolvedValue([makeBooks(3, 'A')[0]])
+  mocks.addBookToShelf.mockResolvedValue(undefined)
+  renderInRouter(<Library />)
+  fireEvent.click(await findManagementAction('책 선택'))
+  expect(screen.getByRole('checkbox', { name: 'A 책 1 선택' })).toHaveProperty('disabled', true)
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('checked', true))
+  expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('button', { name: '책장에 담기' })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 1 선택' }))
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  await screen.findByText('1권을 책장에 담았습니다.')
+  expect(mocks.addBookToShelf.mock.calls).toEqual([['test-token', 's1', 'A-user-book-1']])
+  expect(mocks.removeBookFromShelf).not.toHaveBeenCalled()
+  expect(mocks.getAllLibraryBooks).toHaveBeenCalledWith('test-token', { shelf_id: 's1' })
+})
+
+test('다른 책장으로 바꿔도 선택을 유지하고 늦은 멤버 응답을 버리며 오류는 재시도할 수 있다', async () => {
+  let finishOld!: (books: LibraryBookItem[]) => void
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 1), shelfItem('s2', '에세이', 1)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(3, 'A'))
+  mocks.getAllLibraryBooks.mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve }))
+    .mockRejectedValueOnce(new ApiError(503)).mockResolvedValueOnce([makeBooks(3, 'A')[1]])
+  renderInRouter(<Library />)
+  fireEvent.click(await findManagementAction('책 선택'))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's2' } })
+  await screen.findByRole('button', { name: '책장 내용 다시 불러오기' })
+  expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('button', { name: '책장 내용 다시 불러오기' }))
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 1 선택' })).toHaveProperty('checked', true))
+  await act(async () => finishOld([makeBooks(3, 'A')[0]]))
+  expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('checked', false)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 2 선택' }))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: '' } })
+  expect(screen.getByRole('checkbox', { name: 'A 책 2 선택' })).toHaveProperty('checked', true)
+})
+
+test('목적지를 왕복해도 선택을 유지하고 목적지에 이미 있는 선택 책은 담기 쓰기에서만 제외한다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 0), shelfItem('s2', '에세이', 1)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(2, 'A'))
+  mocks.getAllLibraryBooks.mockImplementation((_token: string, filter: { shelf_id: string }) =>
+    Promise.resolve(filter.shelf_id === 's2' ? [makeBooks(2, 'A')[0]] : []))
+  mocks.addBookToShelf.mockResolvedValue(undefined)
+  renderInRouter(<Library />)
+  fireEvent.click(await findManagementAction('책 선택'))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  const first = () => screen.getByRole('checkbox', { name: 'A 책 0 선택' })
+  await waitFor(() => expect(first()).toHaveProperty('disabled', false))
+  fireEvent.click(first())
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's2' } })
+  await waitFor(() => expect(first()).toHaveProperty('checked', true))
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 1 선택' })).toHaveProperty('disabled', false))
+  expect(screen.getByText('1권 선택')).toBeTruthy()
+  expect(screen.getByRole('button', { name: '책장에 담기' })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 1 선택' }))
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  await screen.findByText('1권을 책장에 담았습니다.')
+  expect(mocks.addBookToShelf.mock.calls).toEqual([['test-token', 's2', 'A-user-book-1']])
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(first()).toHaveProperty('disabled', false))
+  expect(first()).toHaveProperty('checked', true)
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  await waitFor(() => expect(mocks.addBookToShelf).toHaveBeenCalledTimes(2))
+  expect(mocks.addBookToShelf).toHaveBeenLastCalledWith('test-token', 's1', 'A-user-book-0')
+})
+
+test('목적지 기존 멤버 체크는 빼기 모드에 넘어가지 않고 현재 책장의 모든 책을 명시적으로 뺄 수 있다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 2)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(2, 'A'))
+  mocks.getAllLibraryBooks.mockResolvedValue(makeBooks(2, 'A'))
+  mocks.removeBookFromShelf.mockResolvedValue(undefined)
+  renderInRouter(<Library />)
+  fireEvent.change(await screen.findByLabelText('책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(2))
+  fireEvent.click(managementAction('책 선택'))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('checked', true))
+  expect(screen.queryByRole('button', { name: '책장에서 빼기' })).toBeNull()
+  fireEvent.change(screen.getByLabelText('책장 작업'), { target: { value: 'remove' } })
+  expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('checked', false)
+  expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', false)
+  expect(screen.getByRole('button', { name: '책장에서 빼기' })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
+  fireEvent.change(screen.getByLabelText('책장 작업'), { target: { value: 'add' } })
+  expect(screen.getByText('1권 선택')).toBeTruthy()
+  expect(screen.getByRole('checkbox', { name: 'A 책 1 선택' })).toHaveProperty('checked', true)
+  fireEvent.change(screen.getByLabelText('책장 작업'), { target: { value: 'remove' } })
+  expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('checked', true)
+  expect(screen.getByRole('checkbox', { name: 'A 책 1 선택' })).toHaveProperty('checked', false)
+  fireEvent.click(screen.getByRole('button', { name: '책장에서 빼기' }))
+  await screen.findByText('1권을 책장에서 뺐습니다.')
+  expect(mocks.removeBookFromShelf.mock.calls).toEqual([['test-token', 's1', 'A-user-book-0']])
+  expect(mocks.addBookToShelf).not.toHaveBeenCalled()
+})
+
+test('뒤늦게 더 불러온 책도 전체 책장 멤버 응답으로 체크한다', async () => {
+  const first = makeBooks(PAGE_SIZE, 'A')
+  const next = makeBooks(2, 'B')
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 101)])
+  mocks.getLibraryBooks.mockResolvedValueOnce(first).mockResolvedValueOnce(next)
+  mocks.getAllLibraryBooks.mockResolvedValue([...makeBooks(100, 'other'), next[1]])
+  renderInRouter(<Library />)
+  fireEvent.click(await findManagementAction('책 선택'))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', false))
+  fireEvent.click(screen.getByRole('button', { name: '더 보기' }))
+  await screen.findByText('B 책 1')
+  expect(screen.getByRole('checkbox', { name: 'B 책 1 선택' })).toHaveProperty('checked', true)
+  expect(mocks.getAllLibraryBooks).toHaveBeenCalledTimes(1)
+})
+
+test('불명확한 담기 결과가 재조회에서 멤버로 확인되어도 선택을 유지하며 다시 보내지 않는다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 1)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(1, 'A'))
+  mocks.getAllLibraryBooks.mockResolvedValueOnce([]).mockResolvedValueOnce(makeBooks(1, 'A'))
+  mocks.addBookToShelf.mockRejectedValueOnce(new TypeError('network'))
+  renderInRouter(<Library />)
+  fireEvent.click(await findManagementAction('책 선택'))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', false))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  await screen.findByText(/A 책 0: 저장 여부를 확인하지 못했습니다/)
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('checked', true))
+  expect(screen.getByText('1권 선택')).toBeTruthy()
+  expect(screen.getByRole('button', { name: '책장에 담기' })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  expect(mocks.addBookToShelf).toHaveBeenCalledTimes(1)
+})
+
+test('담기 뒤 멤버 재조회가 실패하면 잠그고 최신 책장 확인으로 복구한다', async () => {
+  mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 1)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(1, 'A'))
+  mocks.getAllLibraryBooks.mockResolvedValueOnce([]).mockRejectedValueOnce(new ApiError(503)).mockResolvedValueOnce(makeBooks(1, 'A'))
+  mocks.addBookToShelf.mockResolvedValue(undefined)
+  renderInRouter(<Library />)
+  fireEvent.click(await findManagementAction('책 선택'))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', false))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  fireEvent.click(await screen.findByRole('button', { name: '책장 정보 다시 확인' }))
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('checked', true)
+  expect(screen.getByRole('button', { name: '선택 마치기' })).toHaveProperty('disabled', false)
+  expect(mocks.addBookToShelf).toHaveBeenCalledTimes(1)
+})
+
 test('선택한 책을 책장에 담고 일부 실패하면 성공을 유지하며 실패한 책만 선택해 둔다', async () => {
   mocks.getShelves.mockResolvedValue([shelfItem('s1', 'SF', 0)])
   mocks.getLibraryBooks.mockResolvedValue(makeBooks(3, 'A'))
@@ -638,9 +793,10 @@ test('선택한 책을 책장에 담고 일부 실패하면 성공을 유지하�
   renderInRouter(<Library />)
   fireEvent.click(await findManagementAction('책 선택'))
   expect(managementAction('책장 관리')).toHaveProperty('disabled', true)
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', false))
   fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
   fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 2 선택' }))
-  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
   fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
   await screen.findByText(/A 책 2: 처리하지 못했습니다/)
   expect(mocks.addBookToShelf.mock.calls).toEqual([
@@ -657,8 +813,9 @@ test.each([new ApiError(503), new ApiError(401), new TypeError('network')])('책
   mocks.addBookToShelf.mockRejectedValue(failure)
   renderInRouter(<Library />)
   fireEvent.click(await findManagementAction('책 선택'))
-  for (const index of [0, 1, 2]) fireEvent.click(screen.getByRole('checkbox', { name: `A 책 ${index} 선택` }))
   fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', false))
+  for (const index of [0, 1, 2]) fireEvent.click(screen.getByRole('checkbox', { name: `A 책 ${index} 선택` }))
   fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
   await screen.findByText('남은 2권은 보내지 않았습니다. 잠시 후 다시 시도해주세요.')
   expect(mocks.addBookToShelf).toHaveBeenCalledTimes(1)
@@ -670,8 +827,9 @@ test('책별 404는 다음 책을 계속 보낸다', async () => {
   mocks.addBookToShelf.mockRejectedValueOnce(new ApiError(404)).mockResolvedValueOnce(undefined)
   renderInRouter(<Library />)
   fireEvent.click(await findManagementAction('책 선택'))
-  for (const index of [0, 1]) fireEvent.click(screen.getByRole('checkbox', { name: `A 책 ${index} 선택` }))
   fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', false))
+  for (const index of [0, 1]) fireEvent.click(screen.getByRole('checkbox', { name: `A 책 ${index} 선택` }))
   fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
   await screen.findByText('1권을 책장에 담았습니다.')
   expect(mocks.addBookToShelf).toHaveBeenCalledTimes(2)
@@ -684,8 +842,9 @@ test('책장 변경 뒤 재조회가 실패했다가 다시 확인에 성공하�
   mocks.addBookToShelf.mockResolvedValue(undefined)
   renderInRouter(<Library />)
   fireEvent.click(await findManagementAction('책 선택'))
-  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
   fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', false))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
   fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
   const recheck = await screen.findByRole('button', { name: '책장 정보 다시 확인' })
   // 재확인 전에는 눌러도 동작하지 않는 다시 불러오기를 막는다.
@@ -697,16 +856,42 @@ test('책장 변경 뒤 재조회가 실패했다가 다시 확인에 성공하�
   await screen.findByText('B 책 0')
 })
 
-test('담을 책장이 목록에서 사라지면 선택을 비우고 담기를 막는다', () => {
-  const props = { books: makeBooks(1, 'A'), blocked: false, onChanged: vi.fn(), onBusyChange: vi.fn() }
+test('부모가 유효하지 않은 목적지를 비우면 담기를 막는다', () => {
+  const props = { books: makeBooks(1, 'A'), targetId: 's1', memberIds: [], onTargetChange: vi.fn(), removing: false, onRemovingChange: vi.fn(), blocked: false, onChanged: vi.fn(), onBusyChange: vi.fn() }
   const view = render(<LibraryShelfActions {...props} shelves={[shelfItem('s1', 'SF', 0)]} />)
-  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
   expect(screen.getByRole('button', { name: '책장에 담기' })).toHaveProperty('disabled', false)
-  view.rerender(<LibraryShelfActions {...props} shelves={[shelfItem('s2', '에세이', 0)]} />)
+  view.rerender(<LibraryShelfActions {...props} targetId="" shelves={[shelfItem('s2', '에세이', 0)]} />)
   expect(screen.getByLabelText('담을 책장')).toHaveProperty('value', '')
   expect(screen.getByRole('button', { name: '책장에 담기' })).toHaveProperty('disabled', true)
   view.unmount()
   expect(props.onBusyChange).toHaveBeenLastCalledWith(false)
+})
+
+test('담기 실패 뒤 삭제된 목적지를 부모가 비우고 선택은 다른 책장에 다시 담을 수 있게 보존한다', async () => {
+  mocks.getShelves.mockResolvedValueOnce([shelfItem('s1', 'SF', 0), shelfItem('s2', '에세이', 0)])
+    .mockResolvedValue([shelfItem('s2', '에세이', 0)])
+  mocks.getLibraryBooks.mockResolvedValue(makeBooks(1, 'A'))
+  mocks.addBookToShelf.mockRejectedValueOnce(new ApiError(404)).mockResolvedValueOnce(undefined)
+  renderInRouter(<Library />)
+  fireEvent.click(await findManagementAction('책 선택'))
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's1' } })
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('disabled', false))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  await waitFor(() => expect(screen.getByLabelText('담을 책장')).toHaveProperty('value', ''))
+  await waitFor(() => expect(screen.getByRole('button', { name: '선택 마치기' })).toHaveProperty('disabled', false))
+  expect(screen.getByRole('checkbox', { name: 'A 책 0 선택' })).toHaveProperty('checked', true)
+  expect(screen.getByRole('button', { name: '책장에 담기' })).toHaveProperty('disabled', true)
+  expect(mocks.getAllLibraryBooks).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  expect(mocks.addBookToShelf).toHaveBeenCalledTimes(1)
+  fireEvent.change(screen.getByLabelText('담을 책장'), { target: { value: 's2' } })
+  await waitFor(() => expect(screen.getByRole('button', { name: '책장에 담기' })).toHaveProperty('disabled', false))
+  fireEvent.click(screen.getByRole('button', { name: '책장에 담기' }))
+  await screen.findByText('1권을 책장에 담았습니다.')
+  expect(mocks.addBookToShelf.mock.calls).toEqual([
+    ['test-token', 's1', 'A-user-book-0'], ['test-token', 's2', 'A-user-book-0'],
+  ])
 })
 
 test('보고 있는 책장에서 여러 권을 빼고 불명확한 결과는 실패로 단정하거나 자동 재전송하지 않는다', async () => {
@@ -717,6 +902,7 @@ test('보고 있는 책장에서 여러 권을 빼고 불명확한 결과는 실
   fireEvent.change(await screen.findByLabelText('책장'), { target: { value: 's1' } })
   await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(2))
   fireEvent.click(managementAction('책 선택'))
+  fireEvent.change(screen.getByLabelText('책장 작업'), { target: { value: 'remove' } })
   fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
   fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 1 선택' }))
   fireEvent.click(screen.getByRole('button', { name: '책장에서 빼기' }))
@@ -736,6 +922,7 @@ test('선택 모드에서 보던 책장이 사라져도 전체 서재로 복귀�
   fireEvent.change(await screen.findByLabelText('책장'), { target: { value: 's1' } })
   await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(2))
   fireEvent.click(managementAction('책 선택'))
+  fireEvent.change(screen.getByLabelText('책장 작업'), { target: { value: 'remove' } })
   fireEvent.click(screen.getByRole('checkbox', { name: 'A 책 0 선택' }))
   fireEvent.click(screen.getByRole('button', { name: '책장에서 빼기' }))
   await waitFor(() => expect(mocks.getLibraryBooks).toHaveBeenCalledTimes(3))

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { ApiError, getLibraryBooks, getShelves, moveLibraryBook, readingStatuses, statusLabels } from './lib/api'
+import { ApiError, getAllLibraryBooks, getLibraryBooks, getShelves, moveLibraryBook, readingStatuses, statusLabels } from './lib/api'
 import type { LibraryBookItem, LibraryFilter, LibrarySort, ReadingStatus, Shelf } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { codeMessage, commonErrorMessage, isUnclearWrite } from './lib/errors'
@@ -85,7 +85,15 @@ export default function Library() {
   const [shelfBusy, setShelfBusy] = useState(false)
   const [selecting, setSelecting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [removeSelection, setRemoveSelection] = useState(false)
+  const [targetShelf, setTargetShelf] = useState('')
+  const [memberIds, setMemberIds] = useState<string[] | null>(null)
+  const [membershipError, setMembershipError] = useState('')
+  const membershipVersion = useRef(0)
   const shelvesVersion = useRef(0)
+  const targetShelfId = selecting && shelves?.some((item) => item.id === targetShelf) ? targetShelf : ''
+  const removing = removeSelection && Boolean(filter.shelf_id)
+  const selectionLocked = shelfBusy || (!removing && (!targetShelfId || memberIds === null))
   // 필터 결과의 순서를 전체 서재 순서로 오해해 저장하지 않도록 필터 중에는 순서 편집을 막는다.
   const filtered = Boolean(filter.q || filter.status || filter.shelf_id)
   const customOrder = !filter.sort || filter.sort === 'custom'
@@ -131,13 +139,49 @@ export default function Library() {
     setSelectedIds((current) => current.filter((id) => !successfulIds.includes(id)))
     const list = await loadShelves()
     if (!list || !active.current) return false
+    let membershipFresh = true
+    if (targetShelfId && list.some((item) => item.id === targetShelfId)) {
+      membershipFresh = await loadMembership(targetShelfId)
+    } else if (targetShelfId) {
+      changeTargetShelf('')
+    }
     if (filterRef.current.shelf_id && !list.some((item) => item.id === filterRef.current.shelf_id)) {
       apply(makeFilter({ ...filterRef.current, shelf_id: undefined }))
       setNotice('보던 책장이 목록에 없어 전체 책장으로 돌아왔어요.')
       return true
     }
-    return await load(0, true, Math.max(books.length, PAGE_SIZE)) === true
+    return await load(0, true, Math.max(books.length, PAGE_SIZE)) === true && membershipFresh
   }
+
+  function changeTargetShelf(id: string) {
+    membershipVersion.current += 1
+    setTargetShelf(id)
+    setMemberIds(null)
+    setMembershipError('')
+  }
+
+  async function loadMembership(shelfId: string) {
+    const version = ++membershipVersion.current
+    setMemberIds(null)
+    setMembershipError('')
+    try {
+      const members = await withAccessToken((token) => getAllLibraryBooks(token, { shelf_id: shelfId }))
+      if (!active.current || version !== membershipVersion.current) return false
+      const ids = members.map((book) => book.id)
+      setMemberIds(ids)
+      return true
+    } catch (failure) {
+      if (active.current && version === membershipVersion.current) {
+        setMembershipError(commonErrorMessage(failure, '책장 내용을 불러오지 못했습니다'))
+      }
+      return false
+    }
+  }
+
+  useEffect(() => {
+    if (targetShelfId) void loadMembership(targetShelfId)
+    return () => { membershipVersion.current += 1 }
+  }, [targetShelfId])
 
   // book_count는 서버 값만 쓴다. 실패하면 null, 더 새 요청에 밀렸으면 undefined(그 요청이 목록을 채운다).
   function loadShelves(): Promise<Shelf[] | null | undefined> {
@@ -492,7 +536,7 @@ export default function Library() {
               disabled={phase !== 'ready' || !books.length || !customOrder || filtered || selecting || saving || loadingMore || dragging || shelfBusy}
               onClick={() => { closeManagement(); setEditing(true); setNotice(''); setOrderError('') }}>순서 편집</button>
             <button type="button" className="secondary compact" disabled={phase !== 'ready' || !books.length || editing || saving || shelfBusy || needsRefresh}
-              onClick={() => { closeManagement(); setSelecting(true); setManaging(false); setSelectedIds([]) }}>책 선택</button>
+              onClick={() => { closeManagement(); setSelecting(true); setManaging(false); setRemoveSelection(false); changeTargetShelf('') }}>책 선택</button>
             {filtered && <p className="result-note">검색·상태·책장 필터를 해제하면 전체 서재 순서를 편집할 수 있어요.</p>}
             {!customOrder && <p className="result-note">직접 정한 순서를 선택하면 서재 순서를 편집할 수 있어요.</p>}
           </div>
@@ -540,9 +584,17 @@ export default function Library() {
       </div>}
       {selecting && <div className="library-selection">
         <button type="button" className="secondary compact" disabled={saving || shelfBusy || needsRefresh}
-          onClick={() => { setSelecting(false); setSelectedIds([]) }}>선택 마치기</button>
+          onClick={() => { setSelecting(false); setSelectedIds([]); changeTargetShelf('') }}>선택 마치기</button>
         <LibraryShelfActions books={books.filter((book) => selectedIds.includes(book.id))} shelves={shelves}
+          targetId={targetShelfId} memberIds={memberIds} onTargetChange={changeTargetShelf}
+          removing={removing} onRemovingChange={setRemoveSelection}
           currentShelfId={filter.shelf_id} blocked={loadingMore || saving || needsRefresh} onChanged={refreshShelfBooks} onBusyChange={setShelfBusy} />
+        {removing && <p className="result-note">지금 보는 책장에서 뺄 책을 선택해 주세요.</p>}
+        {!removing && !targetShelfId && <p className="result-note">담을 책장을 먼저 골라 주세요.</p>}
+        {!removing && targetShelfId && memberIds === null && !membershipError && <p className="result-note" role="status">책장 내용을 확인하는 중…</p>}
+        {!removing && targetShelfId && membershipError && <div className="library-note" role="alert"><p>{membershipError}</p>
+          <button type="button" className="secondary compact" disabled={shelfBusy} onClick={() => void loadMembership(targetShelfId)}>책장 내용 다시 불러오기</button>
+        </div>}
       </div>}
       <p className="library-order-status" role="status">{saving ? (slow ? '서버 응답을 기다리는 중…' : needsRefresh ? '최신 순서를 확인하는 중…' : '순서를 저장하는 중…') : notice}</p>
       <div ref={listStart} />
@@ -583,16 +635,16 @@ export default function Library() {
           {books.map((book, index) => (
             <li key={book.id} data-book-index={index} className={dragTarget === index ? 'order-target' : undefined}>
               {selecting && <label className="book-selection">
-                <input type="checkbox" aria-label={`${book.title} 선택`} checked={selectedIds.includes(book.id)} disabled={shelfBusy}
+                <input type="checkbox" aria-label={`${book.title} 선택`} checked={Boolean(!removing && targetShelfId && memberIds?.includes(book.id)) || selectedIds.includes(book.id)} disabled={selectionLocked || Boolean(!removing && targetShelfId && memberIds?.includes(book.id))}
                   onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, book.id] : current.filter((id) => id !== book.id))} />
-                선택
+                {!removing && targetShelfId && memberIds?.includes(book.id) ? '이미 담김' : '선택'}
               </label>}
               {/* 상세 경로에는 공통 책 id가 아닌 서재 id(user_book_id)를 쓴다 */}
               <Link to={`/books/${book.id}`} className="book" draggable={false} tabIndex={selecting ? -1 : undefined}
                 onClick={(event) => {
                   if (!selecting) return
                   event.preventDefault()
-                  if (!shelfBusy) setSelectedIds((current) => current.includes(book.id) ? current.filter((id) => id !== book.id) : [...current, book.id])
+                  if (!selectionLocked && !(!removing && targetShelfId && memberIds?.includes(book.id))) setSelectedIds((current) => current.includes(book.id) ? current.filter((id) => id !== book.id) : [...current, book.id])
                 }}>
               {book.thumbnail_url ? (
                 <img

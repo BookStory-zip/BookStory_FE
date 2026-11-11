@@ -81,7 +81,7 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
           disabled={goalBusy || (mode === 'month' ? month <= '0001-01' : year <= 1)}
           onClick={() => onMove(mode === 'month' ? -1 : -12)}
         >‹</button>
-        <h2 aria-live="polite">{mode === 'month' ? spokenMonth(month) : `${year}년`}</h2>
+        <h2 aria-live="polite">{mode === 'month' ? spokenMonth(month) : `${year}년`} 독서 기록</h2>
         <button
           type="button" className="calendar-nav" aria-label={mode === 'month' ? '다음 달' : '다음 해'}
           disabled={goalBusy || atLatest} onClick={() => onMove(mode === 'month' ? 1 : 12)}
@@ -100,26 +100,13 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
         </div>
       ) : (
         <>
-          <div className="statistics-activity">
-            <h3>읽은 날</h3>
-            <p className="statistics-days"><strong>{data.period.reading_days}</strong><span>일</span></p>
-            <p className="result-note">
-              {data.period.reading_days === 0
-                ? '이 기간에는 체크한 날이 없습니다.'
-                : '같은 날 여러 권을 읽어도 하루로 셉니다.'}
-            </p>
-          </div>
-          <div className="statistics-activity">
-            <h3>독서 시간</h3>
-            <p className="statistics-days"><strong>{data.period.reading_minutes}</strong><span>분</span></p>
-            <p className="result-note">저장한 타이머 기록을 시작한 날짜 기준으로 합산합니다.</p>
-          </div>
           <ReadingGoals
             key={key} year={year} month={selectedMonth ?? null} goals={data.period.goals}
+            actuals={{ reading_days: data.period.reading_days, reading_minutes: data.period.reading_minutes }}
             refresh={refresh} onBusyChange={changeGoalBusy}
           />
-          <section className="statistics-library" aria-labelledby="statistics-library-title">
-            <h3 id="statistics-library-title">현재 서재</h3>
+          <details className="statistics-library">
+            <summary>서재 현황</summary>
             <p className="result-note">선택한 기간과 관계없는 현재 현황입니다.</p>
             <dl className="statistics-totals">
               <div><dt>서재에 담은 책</dt><dd>{data.library.total_books}<span>권</span></dd></div>
@@ -132,7 +119,7 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
             </dl>
             <p className="result-note">완독 경험은 책마다 한 번만 세며, 재독 중인 책도 포함합니다.</p>
             {data.library.total_books === 0 && <Link className="text-link" to="/search">첫 책을 서재에 담아보세요</Link>}
-          </section>
+          </details>
         </>
       )}
     </div>

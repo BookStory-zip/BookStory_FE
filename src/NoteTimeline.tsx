@@ -5,6 +5,7 @@ import type { ReadingNoteEntry } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { monthOf, monthRange, spokenDate, spokenMonth } from './lib/dates'
 import { commonErrorMessage } from './lib/errors'
+import { refreshNotePhotos, NOTE_REFRESH_PAGE_SIZE } from './lib/notes'
 import CabinIcon from './CabinIcon'
 import { NoteText } from './ReadingNotes'
 
@@ -28,6 +29,7 @@ export default function NoteTimeline({ month, today, onMove }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const version = useRef(0)
+  const photoRefresh = useRef<Promise<void> | null>(null)
 
   const load = useCallback((offset: number) => {
     const current = ++version.current
@@ -56,6 +58,21 @@ export default function NoteTimeline({ month, today, onMove }: Props) {
     setLoading(true)
     setError(null)
     load(offset)
+  }
+
+  function refreshPhotos(): Promise<void> {
+    if (photoRefresh.current) return photoRefresh.current
+    const currentVersion = version.current
+    const { start, end } = monthRange(month)
+    const isCurrent = () => version.current === currentVersion
+    const request = refreshNotePhotos(list?.items ?? [], (offset) =>
+      withAccessToken((token) => getNoteTimeline(token, start, end, NOTE_REFRESH_PAGE_SIZE, offset)), isCurrent)
+      .then((items) => {
+        if (!items || !isCurrent()) return
+        setList((previous) => !previous || !isCurrent() ? previous : { ...previous, items, offset: Math.max(0, previous.offset - (previous.items.length - items.length)) })
+      }).finally(() => { photoRefresh.current = null })
+    photoRefresh.current = request
+    return request
   }
 
   // 부모가 달마다 key로 다시 그리므로 이 목록은 항상 현재 달의 것이다.
@@ -95,7 +112,7 @@ export default function NoteTimeline({ month, today, onMove }: Props) {
                     {item.authors.length > 0 && <span className="book-authors">{item.authors.join(', ')}</span>}
                   </span>
                 </Link>
-                <NoteText note={item} />
+                <NoteText note={item} onRefresh={refreshPhotos} />
               </li>
             ))}
           </ul>

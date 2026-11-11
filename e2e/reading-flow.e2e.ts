@@ -265,12 +265,12 @@ test('지난 날짜 체크 → 새로고침 → 최근 체크 날짜 → 완독 
   expect(requests).toEqual(['PUT', 'DELETE'])
 })
 
-test('가져온 완독 책에 과거 읽은 날을 하루·기간으로 남기고 기록 달력에서 본다', async ({ page }, testInfo) => {
+test('가져온 완독 책에 과거 읽은 날을 달력에서 남기고 응답 유실 후 재조회한다', async ({ page }, testInfo) => {
   await page.clock.setFixedTime(new Date('2026-11-05T03:00:00Z'))
   await signInWithMockSession(page)
   const dates = new Set<string>()
   const writes: string[] = []
-  let rangeCalls = 0
+  let lostResponse = false
   const range = { start: '2026-09-25', end: '2026-10-10' }
   const completed = { ...detail, status: 'completed', started_at: '2026-09-24T15:00:00Z', completed_at: '2026-10-10T03:00:00Z', has_completed: true, past_log_range: range }
   const logOf = (read_date: string) => ({ id: `log-${read_date}`, user_book_id: book.id, read_date, created_at: '2026-11-05T03:00:00Z', book_id: book.book_id, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url })
@@ -282,15 +282,6 @@ test('가져온 완독 책에 과거 읽은 날을 하루·기간으로 남기�
       const end = url.searchParams.get('end_date')!
       return json(route, [...dates].filter((date) => date >= start && date <= end).map(logOf)).then(() => true)
     }
-    if (url.pathname === `/library/books/${book.id}/reading-logs/range` && method === 'POST') {
-      rangeCalls += 1
-      const { from, to } = route.request().postDataJSON() as { from: string; to: string }
-      writes.push(`POST ${from}~${to}`)
-      // 첫 요청은 응답을 잃었지만 서버에는 저장된 상황이다. 화면은 다시 보내지 않고 재조회로 확인해야 한다.
-      for (let day = new Date(`${from}T00:00:00Z`); day <= new Date(`${to}T00:00:00Z`); day.setUTCDate(day.getUTCDate() + 1)) dates.add(day.toISOString().slice(0, 10))
-      if (rangeCalls === 1) return route.abort('failed').then(() => true)
-      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
-    }
     const single = url.pathname.match(/\/reading-logs\/(\d{4}-\d{2}-\d{2})$/)
     if (single) {
       writes.push(`${method} ${single[1]}`)
@@ -299,6 +290,10 @@ test('가져온 완독 책에 과거 읽은 날을 하루·기간으로 남기�
         return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
       }
       dates.add(single[1])
+      if (single[1] === '2026-10-05' && !lostResponse) {
+        lostResponse = true
+        return route.abort('failed').then(() => true)
+      }
       return json(route, logOf(single[1])).then(() => true)
     }
     return false
@@ -313,22 +308,15 @@ test('가져온 완독 책에 과거 읽은 날을 하루·기간으로 남기�
   await expect(page.locator('.detail-dates div').filter({ has: page.getByText('최근 체크', { exact: true }) })).toContainText('2026년 10월 3일')
   await expect(past.getByRole('button', { name: '2026년 10월 11일, 고칠 수 없음' })).toBeDisabled()
 
-  await past.getByRole('button', { name: /^기간 시작/ }).click()
-  await past.getByRole('group', { name: '기간 시작 달력' }).getByRole('button', { name: '2026년 10월 5일' }).click()
-  await past.getByRole('button', { name: /^기간 끝/ }).click()
-  await past.getByRole('group', { name: '기간 끝 달력' }).getByRole('button', { name: '2026년 10월 8일' }).click()
-  await past.getByRole('button', { name: '기간 확인' }).click()
-  const dialog = page.getByRole('dialog', { name: '4일을 읽은 날로 남길까요?' })
-  await expect(dialog).toBeVisible()
-  for (const width of [390, 768, 1440]) {
-    await page.setViewportSize({ width, height: 1000 })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await page.screenshot({ path: testInfo.outputPath(`past-range-confirm-${width}.png`), fullPage: true })
-  }
-  await dialog.getByRole('button', { name: '저장' }).click()
+  await expect(past.getByRole('button', { name: '기간 확인' })).toHaveCount(0)
+  await past.getByRole('button', { name: '2026년 10월 5일', exact: true }).click()
   await expect(past.getByText(/저장 결과를 확인하지 못했습니다/)).toBeVisible()
+  await expect(past.getByRole('button', { name: '2026년 10월 5일, 읽은 날' })).toHaveAttribute('aria-pressed', 'true')
+  for (const day of [6, 7, 8]) {
+    await past.getByRole('button', { name: `2026년 10월 ${day}일`, exact: true }).click()
+    await expect(past.getByRole('button', { name: `2026년 10월 ${day}일, 읽은 날` })).toBeEnabled()
+  }
   await expect(past.getByRole('button', { name: '2026년 10월 8일, 읽은 날' })).toHaveAttribute('aria-pressed', 'true')
-  expect(rangeCalls).toBe(1)
 
   await past.getByRole('button', { name: '2026년 10월 8일, 읽은 날' }).click()
   await expect(past.getByText('2026년 10월 8일 체크를 취소했습니다.')).toBeVisible()
@@ -337,19 +325,34 @@ test('가져온 완독 책에 과거 읽은 날을 하루·기간으로 남기�
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`past-days-${width}.png`), fullPage: true })
   }
-  expect(writes).toEqual(['PUT 2026-10-03', 'POST 2026-10-05~2026-10-08', 'DELETE 2026-10-08'])
+  expect(writes).toEqual(['PUT 2026-10-03', 'PUT 2026-10-05', 'PUT 2026-10-06', 'PUT 2026-10-07', 'PUT 2026-10-08', 'DELETE 2026-10-08'])
 
   await page.getByRole('link', { name: '기록', exact: true }).click()
   await page.getByRole('button', { name: '이전 달' }).click()
   await expect(page.getByText('4일 동안 1권을 읽었어요.')).toBeVisible()
 })
 
-test('책 검색 → 공통 상세 → 후기 공개·수정·비공개가 연결된다', async ({ page }, testInfo) => {
-  const saved = { ...detail, memo: '마음에 남은 문장', rating: 4, is_review_public: false,
-    review_published_at: null as string | null, review_updated_at: null as string | null }
+test('계정 공개 설정이 기존 후기·수정·별점만 있는 후기와 전체 비공개에 적용된다', async ({ page }, testInfo) => {
+  test.setTimeout(60_000)
+  const saved = { ...detail, memo: '마음에 남은 문장' as string | null, rating: 4 }
+  let enabled = false
   const patches: object[] = []
+  const toggles: unknown[] = []
   await signInWithMockSession(page)
   await mockBackend(page, async (route, url, method) => {
+    const published = enabled && (saved.memo !== null || saved.rating !== null)
+    const visibleRecord = {
+      ...saved, is_review_public: published,
+      review_published_at: published ? '2026-11-02T00:00:00Z' : null,
+      review_updated_at: published ? '2026-11-02T01:00:00Z' : null,
+    }
+    if (url.pathname === '/me/review-settings') {
+      if (method === 'GET') return json(route, { enabled }).then(() => true)
+      const input = route.request().postDataJSON() as { enabled: boolean }
+      toggles.push(input)
+      enabled = input.enabled
+      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } }).then(() => true)
+    }
     if (url.pathname === '/books/search') return json(route, {
       documents: [{ ...book, isbn13: book.isbn13, thumbnail: book.thumbnail_url, publisher: '창비' }], meta: { is_end: true },
     }).then(() => true)
@@ -357,20 +360,18 @@ test('책 검색 → 공통 상세 → 후기 공개·수정·비공개가 연�
       isbn13: book.isbn13, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url,
       publisher: '창비', published_date: '2014-05-19', source_url: 'https://example.test/book', page_count: null,
       description: '오래 기억하고 싶은 이야기.\n함께 읽으며 각자의 감상을 남겨보세요.',
-      reviews: { total_reviews: saved.is_review_public ? 1 : 0, rating_count: saved.is_review_public ? 1 : 0, average_rating: saved.is_review_public ? saved.rating : null },
+      reviews: { total_reviews: published ? 1 : 0, rating_count: published ? 1 : 0, average_rating: published ? saved.rating : null },
     }).then(() => true)
-    if (url.pathname === `/books/${book.isbn13}/reviews`) return json(route, saved.is_review_public ? [{
-      id: book.id, author_name: '독서가', memo: saved.memo, rating: saved.rating, published_at: saved.review_published_at,
-      updated_at: saved.review_updated_at, is_mine: true,
+    if (url.pathname === `/books/${book.isbn13}/reviews`) return json(route, published ? [{
+      id: book.id, author_name: '독서가', memo: saved.memo, rating: saved.rating, published_at: visibleRecord.review_published_at,
+      updated_at: visibleRecord.review_updated_at, is_mine: true,
     }] : []).then(() => true)
-    if (url.pathname === `/library/books/by-isbn/${book.isbn13}` || url.pathname === `/library/books/${book.id}`) return json(route, saved).then(() => true)
+    if (url.pathname === `/library/books/by-isbn/${book.isbn13}` || url.pathname === `/library/books/${book.id}`) return json(route, visibleRecord).then(() => true)
     if (url.pathname === '/reading-logs') return json(route, []).then(() => true)
     if (url.pathname === `/library/books/${book.id}/record` && method === 'PATCH') {
       const patch = route.request().postDataJSON()
       patches.push(patch)
       Object.assign(saved, patch)
-      saved.review_published_at = saved.is_review_public ? '2026-11-02T00:00:00Z' : null
-      saved.review_updated_at = saved.is_review_public ? '2026-11-02T01:00:00Z' : null
       return json(route, { id: saved.id }).then(() => true)
     }
     return false
@@ -382,11 +383,36 @@ test('책 검색 → 공통 상세 → 후기 공개·수정·비공개가 연�
   await expect(page.getByRole('heading', { name: '소년이 온다' })).toBeVisible()
   await expect(page.getByText('아직 공개된 후기가 없습니다.')).toBeVisible()
   await page.getByRole('link', { name: '내 기록 수정', exact: true }).click()
-  await expect(page.getByRole('checkbox', { name: '메모와 별점 공개' })).not.toBeChecked()
-  await page.getByRole('checkbox', { name: '메모와 별점 공개' }).check()
-  await page.getByRole('button', { name: '기록 저장', exact: true }).click()
-  await expect(page.getByText('저장된 상태: 공개', { exact: false })).toBeVisible()
-  expect(patches).toEqual([{ is_review_public: true }])
+  await expect(page.locator('details.detail-section[open]')).toHaveCount(0)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`detail-collapsed-${width}.png`), fullPage: true })
+    if (width === 390) {
+      await page.locator('summary').filter({ hasText: /^독서 상태$/ }).click()
+      await expect(page.getByRole('radio', { name: /읽는 중/ })).toBeChecked()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await page.screenshot({ path: testInfo.outputPath('status-current-390.png'), fullPage: true })
+      await page.getByRole('radio', { name: /^완독/ }).check()
+      await expect(page.getByRole('radio', { name: /^완독/ })).toBeChecked()
+      await expect(page.locator('.status-option.is-current')).toContainText('읽는 중')
+      await page.getByRole('radio', { name: /읽는 중/ }).check()
+      await page.locator('summary').filter({ hasText: /^독서 상태$/ }).click()
+    }
+  }
+  await page.locator('summary').filter({ hasText: /^나의 기록$/ }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByLabel('후기', { exact: true })).toHaveValue('마음에 남은 문장')
+  await expect(page.getByRole('checkbox', { name: '메모와 별점 공개' })).toHaveCount(0)
+  await page.getByRole('link', { name: '계정의 후기·별점 공개 설정' }).click()
+  await expect(page.getByText('후기·별점 비공개', { exact: true })).toBeVisible()
+  await expect(page.locator('#review-settings')).toBeFocused()
+  await expect(page.locator('#review-settings')).toBeInViewport()
+  await page.getByRole('button', { name: '후기·별점 공개 켜기', exact: true }).click()
+  await expect(page.getByRole('button', { name: '후기·별점 공개 끄기', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(patches).toEqual([])
+  await page.goto(`/books/${book.id}`)
   await page.getByRole('link', { name: '책 정보·공개 후기 보기' }).click()
   const reviews = page.getByRole('region', { name: '함께 읽은 이야기' })
   await expect(reviews.getByText('마음에 남은 문장')).toBeVisible()
@@ -397,19 +423,32 @@ test('책 검색 → 공통 상세 → 후기 공개·수정·비공개가 연�
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
   await page.getByRole('link', { name: '후기 수정', exact: true }).click()
-  await page.getByLabel('메모', { exact: true }).fill('다시 읽으며 달라진 감상')
+  await page.locator('summary').filter({ hasText: /^나의 기록$/ }).click()
+  await page.getByLabel('후기', { exact: true }).fill('다시 읽으며 달라진 감상')
   await page.getByRole('button', { name: '기록 저장', exact: true }).click()
   await expect(page.getByText('기록을 저장했습니다.')).toBeVisible()
   await page.getByRole('link', { name: '책 정보·공개 후기 보기' }).click()
   await expect(reviews.getByText('다시 읽으며 달라진 감상')).toBeVisible()
   await page.getByRole('link', { name: '후기 수정', exact: true }).click()
-  await page.getByRole('checkbox', { name: '메모와 별점 공개' }).uncheck()
+  await page.locator('summary').filter({ hasText: /^나의 기록$/ }).click()
+  await page.getByLabel('후기', { exact: true }).fill('')
   await page.getByRole('button', { name: '기록 저장', exact: true }).click()
-  await expect(page.getByText('저장된 상태: 비공개')).toBeVisible()
+  await expect(page.getByText('기록을 저장했습니다.')).toBeVisible()
   await page.getByRole('link', { name: '책 정보·공개 후기 보기' }).click()
+  await expect(reviews.getByText('★ 4 / 5', { exact: true })).toBeVisible()
+  await expect(reviews.getByText('공개 후기 1개', { exact: true })).toBeVisible()
+  await expect(reviews.getByText('★ 4.0 / 5 · 1명 평가')).toBeVisible()
+  await expect(reviews.locator('.review-memo')).toHaveCount(0)
+  await page.goto('/settings#review-settings')
+  await page.getByRole('button', { name: '후기·별점 공개 끄기', exact: true }).click()
+  await expect(page.getByRole('button', { name: '후기·별점 공개 켜기', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  await page.goto(`/catalog/${book.isbn13}`)
   await expect(reviews.getByText('아직 공개된 후기가 없습니다.')).toBeVisible()
-  await expect(page.getByText('다시 읽으며 달라진 감상')).toBeVisible()
-  expect(patches.at(-1)).toEqual({ is_review_public: false })
+  await expect(reviews.getByText('공개 후기 0개', { exact: true })).toBeVisible()
+  await expect(reviews.getByText('아직 평가 없음')).toBeVisible()
+  await expect(page.getByText('내 별점 4 / 5')).toBeVisible()
+  expect(toggles).toEqual([{ enabled: true }, { enabled: false }])
+  expect(patches).toEqual([{ memo: '다시 읽으며 달라진 감상' }, { memo: null }])
 })
 
 test('서재 → 상세 → 오늘 체크 → 기록 달력까지 이어진다', async ({ page }) => {
@@ -548,7 +587,13 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
   await expect(page.getByText('이 달에는 체크하거나 완독한 기록이 없습니다.')).toBeVisible()
   await page.getByRole('button', { name: '통계', exact: true }).click()
   await expect(page.getByText('7', { exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '현재 서재' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^\d{4}년 \d{1,2}월 독서 기록$/ })).toBeVisible()
+  const libraryStatus = page.locator('details.statistics-library')
+  await expect(libraryStatus).not.toHaveAttribute('open', '')
+  await libraryStatus.locator('summary').focus()
+  await page.keyboard.press('Enter')
+  await expect(libraryStatus.getByText('선택한 기간과 관계없는 현재 현황입니다.')).toBeVisible()
+  await libraryStatus.locator('summary').click()
   expect(requests.at(-1)?.has('month')).toBe(true)
   await expect(page.getByText('목표를 설정해보세요')).toHaveCount(3)
 
@@ -559,6 +604,7 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await goalDialog.getByRole('button', { name: '저장', exact: true }).click()
   await expect(page.getByText('7 / 12일')).toBeVisible()
+  await expect(page.getByText('58%', { exact: true })).toBeVisible()
   await expect(goalDialog).toHaveCount(0)
   expect(goalWrites).toEqual([{
     year: Number(requests.at(-1)?.get('year')), month: Number(requests.at(-1)?.get('month')),
@@ -567,19 +613,19 @@ test('기록에서 월간·연간 통계를 보고 다시 달력으로 돌아온
 
   await page.getByRole('button', { name: '연간', exact: true }).focus()
   await page.keyboard.press('Enter')
-  await expect(page.getByText('42', { exact: true })).toBeVisible()
   expect(requests.at(-1)?.has('month')).toBe(false)
   await expect(page.getByText('42 / 24일')).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^\d{4}년 독서 기록$/ })).toBeVisible()
+  await expect(page.getByText('175%', { exact: true })).toBeVisible()
+  await expect(page.getByRole('progressbar', { name: '읽은 날' })).toHaveAttribute('value', '24')
   await expect(page.getByText('월 목표 합계')).toBeVisible()
   await expect(page.getByRole('button', { name: '연간', exact: true })).toHaveAttribute('aria-pressed', 'true')
 
-  await page.screenshot({ path: testInfo.outputPath('statistics-mobile.png'), fullPage: true })
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.setViewportSize({ width: 768, height: 1024 })
-  await page.screenshot({ path: testInfo.outputPath('statistics-tablet.png'), fullPage: true })
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.screenshot({ path: testInfo.outputPath('statistics-desktop.png'), fullPage: true })
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`statistics-${width}.png`), fullPage: true })
+  }
 
   await page.getByRole('button', { name: '달력', exact: true }).click()
   await expect(page.getByText('이 달에는 체크하거나 완독한 기록이 없습니다.')).toBeVisible()
@@ -597,7 +643,7 @@ test('상세에서 비공개 노트를 쓰고 고친 뒤 기록의 노트 탭에
     if (url.pathname === '/library/books/user-book-1/notes') {
       if (method === 'POST') {
         writes.push(`POST ${request.postData()}`)
-        const note = { id: `note-${notes.length + 1}`, user_book_id: book.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...request.postDataJSON() }
+        const note = { id: `note-${notes.length + 1}`, user_book_id: book.id, has_photo: false, photo_url: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...request.postDataJSON() }
         notes.unshift(note)
         return json(route, note, 201).then(() => true)
       }
@@ -615,6 +661,7 @@ test('상세에서 비공개 노트를 쓰고 고친 뒤 기록의 노트 탭에
   })
 
   await page.goto('/books/user-book-1')
+  await page.locator('summary').filter({ hasText: /^나의 독서 노트$/ }).click()
   await expect(page.getByText('아직 남긴 노트가 없습니다.')).toBeVisible()
   await page.getByRole('button', { name: '노트 쓰기' }).click()
   await page.getByLabel('인상 깊은 문구').fill('  기억하고 싶은 문장  ')
@@ -647,6 +694,9 @@ test('상세에서 비공개 노트를 쓰고 고친 뒤 기록의 노트 탭에
 })
 
 test('상세에서 쪽·%로 진도를 저장하면 다시 불러와 서재 카드에도 %를 보여 준다', async ({ page }, testInfo) => {
+  let checked = false
+  let explicitChecks = 0
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
   let progress = { page_count: 300, total_pages: null as number | null, current_page: 120 as number | null, progress_percent: 40 as number | null }
   const writes: unknown[] = []
   await signInWithMockSession(page)
@@ -655,32 +705,46 @@ test('상세에서 쪽·%로 진도를 저장하면 다시 불러와 서재 카�
       const body = route.request().postDataJSON()
       writes.push(body)
       const next = { ...progress, ...body }
+      if (body.current_page > (progress.current_page ?? 0)) checked = true
       const total = next.total_pages ?? next.page_count
       progress = { ...next, progress_percent: total && next.current_page !== null ? Math.floor((next.current_page / total) * 100) : null }
       return json(route, { id: book.id, ...progress }).then(() => true)
     }
     if (url.pathname === `/library/books/${book.id}`) return json(route, { ...detail, ...progress }).then(() => true)
     if (url.pathname === '/library/books') return json(route, [{ ...book, ...progress }]).then(() => true)
-    if (url.pathname === '/reading-logs') return json(route, []).then(() => true)
+    if (url.pathname === '/reading-logs') return json(route, checked ? [{ id: 'progress-log', user_book_id: book.id, book_id: book.book_id, title: book.title, authors: book.authors, thumbnail_url: book.thumbnail_url, read_date: today, created_at: new Date().toISOString() }] : []).then(() => true)
+    if (url.pathname.includes('/reading-logs/') && method === 'PUT') { explicitChecks++; return route.fulfill({ status: 204 }).then(() => true) }
     if (url.pathname === `/library/books/${book.id}/notes`) return json(route, []).then(() => true)
     return false
   })
 
   await page.goto(`/books/${book.id}`)
+  await page.locator('summary').filter({ hasText: /^읽기 진도$/ }).focus()
+  await page.keyboard.press('Enter')
   const card = page.locator('form', { has: page.getByRole('heading', { name: '읽기 진도' }) })
   await expect(card.getByText('40%')).toBeVisible()
+  await expect(card.getByLabel('전체 쪽수')).toHaveValue('300')
+  await expect(card.getByLabel('전체 쪽수')).not.toBeEditable()
   await card.getByLabel('현재 쪽').fill('150')
   await card.getByRole('button', { name: '진도 저장' }).click()
   await expect(card.getByText('50%')).toBeVisible()
+  await expect(page.getByText('오늘 읽은 날로 남겼어요')).toBeVisible()
+  expect(explicitChecks).toBe(0)
   await card.getByRole('radio', { name: '%' }).check()
   await card.getByLabel('현재 진도(%)').fill('75')
+  await card.getByRole('button', { name: '직접 수정' }).click()
+  await expect(card.getByLabel('전체 쪽수')).toBeFocused()
   await card.getByLabel('전체 쪽수').fill('400')
   await card.getByRole('button', { name: '진도 저장' }).click()
-  await expect(card.getByText('300 / 400쪽')).toBeVisible()
+  await expect(card.getByText('· 300/400쪽')).toBeVisible()
   expect(writes).toEqual([{ current_page: 150 }, { total_pages: 400, current_page: 300 }])
   await page.screenshot({ path: testInfo.outputPath('progress-mobile.png'), fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
   await page.getByRole('link', { name: '← 서재로' }).click()
   await expect(page.getByText('읽는 중 · 75%')).toBeVisible()
+  await page.getByRole('link', { name: /소년이 온다/ }).click()
+  await page.locator('summary').filter({ hasText: /^읽기 진도$/ }).click()
+  await expect(card.getByLabel('전체 쪽수')).toHaveValue('400')
+  await expect(card.getByLabel('전체 쪽수')).not.toBeEditable()
 })

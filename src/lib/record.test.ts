@@ -32,12 +32,11 @@ test('없던 중단 사유를 입력하면 그 필드만 보낸다', () => {
   })
 })
 
-test('공개 스위치를 바꿀 때만 불리언을 전송한다', () => {
-  expect(buildRecordPatch(saved, { ...recordFormFrom(saved), isReviewPublic: true })).toEqual({ is_review_public: true })
+test('공개 여부는 개인 기록 입력에 넣지 않고 후기·별점만 저장한다', () => {
   const published = { ...saved, is_review_public: true }
-  expect(recordFormFrom(published).isReviewPublic).toBe(true)
+  expect(recordFormFrom(published)).not.toHaveProperty('isReviewPublic')
   expect(buildRecordPatch(published, recordFormFrom(published))).toEqual({})
-  expect(buildRecordPatch(published, { ...recordFormFrom(published), isReviewPublic: false })).toEqual({ is_review_public: false })
+  expect(buildRecordPatch(published, { ...recordFormFrom(published), memo: '' })).toEqual({ memo: null })
 })
 
 test('한국 자정 직후에도 오늘 날짜는 한국 기준이다', () => {

@@ -22,6 +22,7 @@ type Props = {
   year: number
   month: number | null
   goals: GoalProgress[]
+  actuals: { reading_days: number; reading_minutes: number }
   // 기간 통계를 다시 조회한다. 실패해도 기존 통계는 그대로 두고 false를 돌려준다.
   refresh: () => Promise<boolean>
   onBusyChange: (busy: boolean) => void
@@ -39,7 +40,7 @@ function initialInputs(goals: GoalProgress[]): Inputs {
   return inputs
 }
 
-export default function ReadingGoals({ year, month, goals, refresh, onBusyChange }: Props) {
+export default function ReadingGoals({ year, month, goals, actuals, refresh, onBusyChange }: Props) {
   const [open, setOpen] = useState(false)
   const [inputs, setInputs] = useState<Inputs>(() => initialInputs(goals))
   const [errors, setErrors] = useState<Partial<Record<GoalMetric, string>>>({})
@@ -160,7 +161,7 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
   return (
     <section className="statistics-goals" aria-labelledby="statistics-goals-title">
       <div className="goal-head">
-        <h3 id="statistics-goals-title">독서 목표</h3>
+        <h3 id="statistics-goals-title">독서 실적과 목표</h3>
         <button
           ref={trigger} type="button" className="secondary compact" disabled={busy}
           aria-label={`${period} 독서 목표 ${goals.length ? '수정' : '설정'}`}
@@ -170,15 +171,19 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
             setFailure(null)
             setOpen(true)
           }}
-        >{goals.length ? '수정' : '설정'}</button>
+        >목표 {goals.length ? '수정' : '설정'}</button>
       </div>
       <ul className="goal-list">
         {goalMetrics.map((metric) => {
           const goal = goals.find((item) => item.metric === metric)
           const { label, unit } = metricInfo[metric]
+          const current = goal?.current ?? (metric === 'completed_books' ? undefined : actuals[metric])
           return (
             <li key={metric}>
-              <h4 id={`goal-${metric}`}>{label} 목표</h4>
+              <h4 id={`goal-${metric}`}>{label}</h4>
+              {(!goal || goal.target === 0) && current !== undefined && (
+                <p className="goal-value"><strong>{current}</strong><span>{unit}</span></p>
+              )}
               {!goal ? (
                 <p className="result-note">목표를 설정해보세요</p>
               ) : goal.target === 0 ? (
@@ -190,13 +195,21 @@ export default function ReadingGoals({ year, month, goals, refresh, onBusyChange
                 <>
                   <p className="goal-value">
                     <strong>{goal.current} / {goal.target}{unit}</strong>
+                    <span className="goal-percent">{Math.round(goal.current / goal.target * 100)}%</span>
                     {goal.current >= goal.target && <span className="goal-done">목표 달성</span>}
                   </p>
                   {/* 막대는 100%에서 멈추고, 실제 수치는 위 문구로 보여 준다. */}
-                  <progress max={goal.target} value={Math.min(goal.current, goal.target)} aria-labelledby={`goal-${metric}`} />
+                  <progress
+                    max={goal.target} value={Math.min(goal.current, goal.target)} aria-labelledby={`goal-${metric}`}
+                    aria-valuetext={`${goal.current} / ${goal.target}${unit}, ${Math.round(goal.current / goal.target * 100)}%`}
+                  />
                   <p className="result-note">{sourceLabels[goal.source]}</p>
                 </>
               )}
+              {metric === 'reading_days' && (
+                <p className="result-note">{current === 0 ? '이 기간에는 체크한 날이 없습니다.' : '같은 날 여러 권을 읽어도 하루로 셉니다.'}</p>
+              )}
+              {metric === 'reading_minutes' && <p className="result-note">저장한 타이머 기록을 시작한 날짜 기준으로 합산합니다.</p>}
             </li>
           )
         })}

@@ -1,5 +1,22 @@
 # BookStory 프론트엔드 작업 계획
 
+## 노트 사진 첨부와 진도 자동 체크 재조회 (2026-11-11, FE 구현·로컬 검증 완료)
+
+- PR #38 CI 보완: notes → errors → auth 의존성으로 notes 단위 테스트가 실제 Supabase 클라이언트를 초기화하던 문제를 재현했다. 테스트에 기존 방식의 Supabase 모킹을 추가하고 URL·키 환경변수를 비운 전체 단위 663개·lint·diff 검사를 통과했다. 테스트 격리만 변경해 제품 빌드·브라우저 검사는 재실행하지 않았다.
+
+- BE 최종 회신 보완: 삭제 422 안내를 `validation_error` 코드로 한정하고 업로드 429는 `Retry-After` 대기 시간을 안내한다. 헤더 누락·잘못된 값은 일반 재시도 안내이며 선택 파일·본문을 보존한다. 관련 회귀 3개를 변경 전 실패로 확인하고 수정 후 관련 테스트 46개 통과, 최종 전체 단위 663개·Playwright 29개 통과. 실제 BE 업로드·운영 배포는 별도 확인이 필요하다.
+
+- 리뷰 보완: 인증 단계 실패와 확정된 저장소 503은 결과 불명·재조회 잠금에서 제외하고, 성공 응답 해석 실패는 공용 판별에서 구분한다. 사진 업로드는 5분 제한, 삭제 전용 안내·422 재조회, 동기 중복 요청 차단, 새 URL의 이전 오류 표시 분리, 동시 만료 목록 재조회 병합·공통화, 불필요한 반환값·입력 이벤트 중복 정리를 반영했다. 진도는 현재 쪽 저장 성공·결과 불명 때만 오늘 기록을 재조회한다. 회귀 재현 후 전체 단위 660개·lint·타입 검사/빌드 통과. 최종 전체 단위 663개·Playwright 29개 재검증 통과.
+
+- 브랜치 `feat/reading-note-photos`, develop `40c5dd1`(PR #37 병합)에서 분기. 기존 `.claude/`는 보존한다. 사용자 확정 BE 7차 계약은 docs/backend-api.md에 반영했다.
+- [x] 사진만으로 노트 생성, 카메라·앨범 선택과 미리보기, 기존 노트 사진 추가·교체·삭제, 사진만 있는 노트의 사진 삭제 제한, 책별 목록·월별 타임라인 사진 표시.
+- [x] multipart 인증·JSON 기존 동작·204 유지. 필수 has_photo/photo_url 검증, 파일 10MiB·알려진 형식 사전 검사, 한국어 오류와 선택 파일 보존. URL은 표시용으로만 사용하며 발급 실패·만료는 재조회로 복구한다.
+- [x] 불명확한 생성 결과(성공 응답 해석 실패 포함)는 파일·본문·UUID를 고정해 사용자가 같은 요청으로 재확인한다. 사진 변경 결과 재조회 실패 시 변경을 잠그고 재확인하며 늦은 응답·계정 전환을 차단한다. URL 갱신은 100개 초과로 펼친 노트도 유지한다.
+- [x] 진도 저장 후 상세·오늘 기록을 함께 조회해 BE의 오늘 자동 체크를 표시한다. 별도 체크 호출 없음. 노트 저장은 독서 체크를 만들지 않는다.
+- [x] 독립 리뷰의 응답 해석 실패 시 ID 유실·사진 URL 갱신 시 목록 잘림·영어 오류 노출 지적 수정 및 재검토. 전체 단위 테스트 651개·lint·타입 검사/빌드·diff 검사 통과.
+- [x] 모의 API 기반 전체 Playwright 29개 통과. 사진 생성 응답 유실 후 같은 UUID 재확인·만료 URL 갱신·교체 실패 시 기존 사진 보존·사진 삭제·노트 타임라인과 진도 저장 후 오늘 체크 표시를 검증했다. 390/768/1440px 사진 화면과 가로 넘침을 확인했다.
+- [ ] BE 7차 운영 배포·필수 사진 필드·계정 후기 설정 계약 반영 확인 및 실제 인증 API 업로드/재시도/쪽수 자동 체크 확인. 현재는 모의 API 검증이며 운영 데이터 쓰기는 하지 않는다. FE main 반영·운영 배포는 BE 반영 후 별도 요청으로 진행한다.
+
 ## 목표와 진행 기준
 
 React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를 기존 FastAPI에 연결한다. 2026-10-28 MVP 기능(인증·서재·검색·등록·상세·오늘 체크·월별 기록)을 main에 반영하고 Vercel에 수동 배포했다. 완료된 단위별 기록은 git 이력(`e3999b0` 이전 plan.md)에서 확인한다.
@@ -8,6 +25,18 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 
 - 작업 분담: BE에서 쉽게 되는 일은 BE에서 하고 FE는 꼭 필요한 것만 구현한다. BE 몫은 아래 백엔드 전달 사항에 기록하고 FE에서 대체 구현하지 않는다(2026-10-28 사용자 지시).
 - 제외: 피드·팔로우·추천·공개 서재·회독·날짜별 진도 이력과 쪽수 통계·독서 알림 외 푸시·복잡한 통계·서재 꾸미기·홈 화면 추가 외 PWA 기능·오프라인. 사용자 승인한 책별 공개 후기와 21시 독서 알림(2026-11-03 BE와 확정)은 아래 범위로 구현한다. BE 배치를 FE에 옮기지 않는다.
+
+## 상세·통계 사용성 및 계정 후기 공개 (2026-11-10)
+
+- 리뷰 후속 수정(사용자 승인): 오늘 카드 표시 조건은 유지하되 상태와 무관하게 기존 오늘 체크를 취소할 별도 동작 제공. 책장 담기/빼기 모드를 구분하고 대상 변경 시 선택 보존, 빈 검색 페이지는 다음 결과 안내, 계정 설정 해시 링크의 스크롤·초점 이동을 보완한다. 기간 입력 전용 FE API·헬퍼·prop·미사용 CSS를 제거하고 진도 표시는 서버 값을 따른다. 후속 전체 단위·lint·타입 검사/빌드·diff 검사 통과. 브라우저 27개 통과 후 30초 전체 시간 한도를 넘긴 계정 공개 통합 시나리오만 60초로 조정해 재실행·통과했다. 사용자 추가 지시로 커밋·push까지 진행하며 PR은 검토 후 별도로 생성한다.
+
+- 사용자 합의 범위: 책장 소속 기본 체크, ISBN 숨김 안내 삭제, 기간 실적·목표·달성률 통합과 서재 현황 접기, 상세 재배치·접기, 상태 라디오 점 표시, 후기 명칭·계정 전체 공개, 제공 쪽수 기본 읽기 전용·직접 수정, 읽는 중에만 오늘의 독서, 과거 읽은 날의 달력 입력만 유지.
+- `feat/reading-experience-polish`는 최신 develop `6997525`에서 분기했다. 기존 `.claude/` 미추적 파일은 보존한다. 기존 컴포넌트·API·기본 details를 재사용하고 의존성은 추가하지 않는다.
+- BE 회신 수용: `GET/PUT /me/review-settings`, 초기 false·기존 책별 값 미이관, 전체 과거/신규 후기·별점 공개, 별점만 있어도 공개·집계, 공개 토글은 작성/수정 시각 유지. 개인 상세 `is_review_public`은 실제 공개 여부이며 요청 필드는 더 이상 보내지 않는다. 공개 목록 memo는 nullable, 내용과 별점 모두 없는 항목은 제외한다. DB 열/요청 필드 제거는 BE의 후속 2단계 배포다.
+- [x] 서재·검색, 통계, 진도·과거 달력, 상세·계정 공개를 분담해 구현하고 변경 전 실패하는 회귀 검사를 확인했다. 이미 담긴 책은 실제 소속으로 체크하되 신규 담기/기존 명시적 빼기와 구분하며 100권 초과 소속 조회도 검사한다.
+- [x] 전체 단위 616개(`--maxWorkers=2`), Playwright 28개(`--workers=2`), lint·타입 검사/빌드·diff 검사 통과. 월간/연간 목표 통합·접기, 계정 공개 토글·후기 수정·별점만 공개·전체 비공개, 과거 달력 응답 유실, 책장 100권 초과 소속 확인을 모의 API로 검증했다. StrictMode 이전 조회가 저장된 공개 설정을 덮는 경우도 실패 재현 후 요청 버전 검사로 차단했다. 390/768/1440px 화면·가로 넘침과 현재 상태 선택 점을 확인했고 독립 재검토에서 중요 지적이 없었다.
+- 로컬 검사 환경 메모: lint와 Playwright 시작을 동시에 실행한 1회는 test-results 삭제 시점과 겹쳐 lint 파일 탐색이 실패했고 단독 재실행은 통과했다. Windows 샌드박스에서 테스트 28개 통과 뒤 서버 종료가 지연돼 해당 테스트의 Vite PID·명령을 확인해 종료하자 테스트 프로세스가 0으로 끝났다. 추가 상태 선택 브라우저 검사는 권한 제한 밖에서 정상 종료했다. 제품 코드·CI 설정은 변경하지 않았다.
+- 운영 OpenAPI 읽기 확인(2026-11-10): `/me/review-settings` 없음, 공개 후기 memo는 아직 string이다. 사용자도 BE 구현·배포 중이라고 회신했다. 새 계약의 실제 BE 연동은 미검증이며 FE main·운영 배포는 BE 반영 완료 후 별도 요청으로 진행한다. develop PR은 FE 구현·로컬 검증 범위로 인계하고 CI·병합은 사용자가 담당한다.
 
 ## 메뉴·검색 화면 정리와 목표 일괄 저장 (2026-11-09, FE 구현·로컬 검증 완료, BE 운영 반영 대기)
 
@@ -218,6 +247,9 @@ React·Vercel·비용 최소화·모바일 중심의 개인 독서 기록 MVP를
 | 2026-11-03 12:39 KST | main `9cd08f2` ([PR #11](https://github.com/BookStory-zip/BookStory_FE/pull/11), [main CI 41573468541](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41573468541) 통과) | https://bookstory-fe.vercel.app · `dpl_3Xw8UvZ5ZQYpugFNWsPoNrBYat4c` · [배포 URL](https://bookstory-q5dwiygq5-honey-0a33.vercel.app) · Actions 자동 배포·사후 검증 통과 | 변경 없음(배포 검증 스크립트·문서만 변경) |
 | 2026-11-03 18:03 KST | main `d066516` ([PR #15](https://github.com/BookStory-zip/BookStory_FE/pull/15), [main CI 41607470999](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41607470999) check·e2e·Deploy production 통과) | https://bookstory-fe.vercel.app · `dpl_6oATSREex2nVonaR8AMrMaSSSNUX` · [배포 URL](https://bookstory-qer4vejzu-honey-0a33.vercel.app) · Actions 자동 배포·사후 검증 통과 | 기준 main `e48ee827`(PR #23). BE 전체 운영 반영 완료·FE 병합 가능은 사용자 전달. 운영 새 API 계약·공개 알림 키 200·CORS는 FE 직접 확인, Render SHA·DB는 직접 조회하지 않음 |
 | 2026-11-04 22:43 KST | main `97a039c` ([PR #21](https://github.com/BookStory-zip/BookStory_FE/pull/21), develop `65d0547`, [main CI 41840243951](https://github.com/BookStory-zip/BookStory_FE/actions/runs/41840243951) check·e2e·Deploy production 통과). A 타이머 #17·B 목표 #18·C 노트 #19·D 검색·책장 #20 | https://bookstory-fe.vercel.app · `dpl_2pMRegVLJS7Mfu8yWwPvQ9ZBZgSM` · [배포 URL](https://bookstory-48gwc4a2h-honey-0a33.vercel.app) · Actions 자동 배포·사후 검증 통과 | A·B는 3차 main `d4a93be`, C·D는 4차 main `4c69319`(PR #30, migration `292a366b983b`·`3cb2823f8db5`) 운영 반영·스키마 일치는 BE 회신. 운영 OpenAPI의 노트·책장·목표·타이머 경로, `q`·`field`·`shelf_id`, 상세 필수 `shelves`, `/ready`는 FE 직접 확인. Render SHA·DB는 직접 조회하지 않음 |
+| 2026-11-09 17:34 KST | main `45b8f31` ([PR #36](https://github.com/BookStory-zip/BookStory_FE/pull/36), develop `578faf7`, [main CI 42586484810](https://github.com/BookStory-zip/BookStory_FE/actions/runs/42586484810) check·e2e·Deploy production 통과). 목표 일괄 저장·검색 정리·Safari 메뉴 #34, 쪽수·읽기 진도 #35 | https://bookstory-fe.vercel.app · `dpl_2JVKXUV8ceEMARiiHW7vLsKsRohC` · [배포 URL](https://bookstory-6bcsfw59t-honey-0a33.vercel.app) · Actions 자동 배포·사후 검증 통과 | BE 6차 main `8dda50e`(목표 일괄 저장·쪽수/진도, 기존 책 23권 중 20권 쪽수 채움)는 BE 안내. 운영 OpenAPI의 `/me/goals/batch`·`…/progress`·필수 진도 필드와 BE main `app/reading_progress.py` 규칙은 FE 직접 확인. Render SHA·DB는 직접 조회하지 않음 |
+
+2026-11-09 17:40 KST 읽기 전용 사후 확인(에이전트): 운영 `deployment.json` 커밋 `45b8f31` 일치, SPA 7개 경로 200, 운영 origin의 `PUT /me/goals/batch`·`PATCH …/progress` 사전 요청 200·허용 origin 일치, 로컬 develop `578faf7` 빌드의 JS 12개가 운영 자산과 바이트 일치(진도 카드·목표 팝업·검색 정렬 문구 포함, e2e·검증 설정 미포함). 미확인: 운영 계정의 목표·진도 저장, 실제 iPhone Safari의 관리·이동 메뉴.
 
 2026-11-04 22:45 KST 읽기 전용 사후 확인(에이전트): 운영 커밋 표식 `97a039c` 일치, SPA 7개 경로·보안 헤더, BE ready·PATCH CORS(워크플로와 직접 재실행 모두 통과). 운영 origin의 새 API 사전 요청 5종(책장 생성·책 넣기, 목표 삭제, 노트 수정, 타이머 저장) 200, 미인증 `/shelves` 401에 CORS 헤더, 운영 번들에 책장 관리·독서 노트·독서 목표 포함·검증 설정(`127.0.0.1`·검증 Supabase) 미포함, 비로그인 로그인 화면 390·1440px 가로 넘침·JS 오류 없음. 미확인: 운영 계정의 책 상세(`shelves` 검사 통과)·서재 필터·책장 관리·기록 노트 탭·통계 목표 화면(사용자 확인 대기), 실제 기기(iPhone·Android·Safari), 운영 데이터 쓰기.
 
