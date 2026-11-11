@@ -819,6 +819,7 @@ test('진도 422는 다시 불러와도 서버 값이 같아 입력을 보존하
   expect(await screen.findByText(/쪽수 범위를 확인해주세요/)).toBeTruthy()
   await waitFor(() => expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2))
   expect((within(progressCard()).getByLabelText('현재 쪽') as HTMLInputElement).value).toBe('200')
+  expect(mocks.getReadingLogs).toHaveBeenCalledTimes(1)
 
   mocks.getLibraryBook.mockResolvedValueOnce(detail({ ...reading, status: 'completed', current_page: 300, progress_percent: 100 }))
   fireEvent.click(within(progressCard()).getByRole('button', { name: '진도 저장' }))

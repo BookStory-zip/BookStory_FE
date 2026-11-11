@@ -16,6 +16,9 @@ export class ApiError extends Error {
   }
 }
 
+// 서버가 성공했지만 응답을 해석할 수 없어 쓰기 결과를 확인할 수 없다.
+export class ApiResponseError extends Error {}
+
 // FastAPI detail은 문자열 또는 검증 오류 배열이다.
 function readDetail(body: unknown): string | undefined {
   if (typeof body !== 'object' || body === null || !('detail' in body)) {
@@ -37,6 +40,7 @@ function readDetail(body: unknown): string | undefined {
 }
 
 export const REQUEST_TIMEOUT_MS = 60_000
+export const PHOTO_UPLOAD_TIMEOUT_MS = 300_000
 
 type RequestOptions = { method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown }
 
@@ -69,7 +73,7 @@ export async function apiRequestWithStatus(
   // Render 기동 지연을 기다리되, 응답이 끝나지 않는 요청이 화면을 영원히 잠그지 않게 한다.
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(multipart ? PHOTO_UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS),
     ...(options.method && { method: options.method }),
     ...(options.body !== undefined && { body: multipart ? options.body as FormData : JSON.stringify(options.body) }),
   })
@@ -87,7 +91,11 @@ export async function apiRequestWithStatus(
   }
 
   if (response.status === 204) return { status: 204, data: null }
-  return { status: response.status, data: await response.json() }
+  try {
+    return { status: response.status, data: await response.json() }
+  } catch {
+    throw new ApiResponseError('서버 응답을 확인하지 못했습니다.')
+  }
 }
 
 export async function getMe(
@@ -826,7 +834,7 @@ function isReadingNoteEntry(value: unknown): value is ReadingNoteEntry {
 }
 
 function readNote(data: unknown, userBookId?: string): ReadingNote {
-  if (!isReadingNote(data) || (userBookId !== undefined && data.user_book_id !== userBookId)) throw new Error(NOTE_INVALID)
+  if (!isReadingNote(data) || (userBookId !== undefined && data.user_book_id !== userBookId)) throw new ApiResponseError(NOTE_INVALID)
   return data
 }
 
@@ -849,7 +857,7 @@ export async function updateNotePhoto(accessToken: string, noteId: string, photo
   const body = new FormData()
   body.append('photo', photo)
   const note = readNote(await apiRequest(`/notes/${encodeURIComponent(noteId)}/photo`, accessToken, { method: 'PUT', body }))
-  if (note.id !== noteId) throw new Error(NOTE_INVALID)
+  if (note.id !== noteId) throw new ApiResponseError(NOTE_INVALID)
   return note
 }
 

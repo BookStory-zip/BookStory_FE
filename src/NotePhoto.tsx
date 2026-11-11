@@ -8,7 +8,7 @@ export default function NotePhoto(props: Props) {
 }
 
 function Photo({ note, onRefresh, blocked = false }: Props) {
-  const [failed, setFailed] = useState(false)
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const mounted = useRef(false)
@@ -43,16 +43,16 @@ function Photo({ note, onRefresh, blocked = false }: Props) {
       {note.photo_url && (
         <img key={`${note.photo_url}-${attempt}`} className="note-photo-image" src={note.photo_url}
           alt="독서 노트 첨부 사진" loading="lazy" referrerPolicy="no-referrer"
-          onLoad={() => { setFailed(false); automaticAttempted.current = false }}
+          onLoad={() => { setFailedUrl(null); automaticAttempted.current = false }}
           onError={() => {
-            setFailed(true)
+            setFailedUrl(note.photo_url)
             if (!automaticAttempted.current && !blocked && onRefresh) {
               automaticAttempted.current = true
               void refresh()
             }
           }} />
       )}
-      {(!note.photo_url || failed) && (
+      {(!note.photo_url || failedUrl === note.photo_url) && (
         <div className="note-photo-error" role="status">
           <p>사진을 불러오지 못했어요</p>
           {onRefresh && <button type="button" className="secondary" disabled={blocked || pending}

@@ -11,6 +11,14 @@ const note = (patch: Partial<ReadingNote> = {}): ReadingNote => ({
 })
 afterEach(cleanup)
 
+test('새 URL을 불러오는 동안 이전 주소의 오류 상자를 숨긴다', async () => {
+  const refresh = vi.fn().mockResolvedValue(undefined)
+  const { rerender } = render(<NotePhoto note={note()} onRefresh={refresh} />)
+  await act(async () => fireEvent.error(screen.getByRole('img')))
+  rerender(<NotePhoto note={note({ photo_url: 'https://private.example/new' })} onRefresh={refresh} />)
+  expect(screen.queryByText('사진을 불러오지 못했어요')).toBeNull()
+})
+
 test('photo-only notes with unavailable URLs show retry, and notes without photos show nothing', () => {
   const { rerender, container } = render(<NotePhoto note={note({ photo_url: null })} onRefresh={vi.fn()} />)
   expect(screen.getByText('사진을 불러오지 못했어요')).toBeTruthy()

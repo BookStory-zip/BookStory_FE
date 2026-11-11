@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SubmitEvent } from 'react'
+import type { ChangeEvent, SubmitEvent } from 'react'
 import { ApiError, createReadingNote, createReadingPhotoNote, deleteReadingNote, deleteNotePhoto, getReadingNotes, updateNotePhoto, updateReadingNote } from './lib/api'
 import type { NoteInput, ReadingNote } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { spokenDate } from './lib/dates'
 import { commonErrorMessage, isUnclearWrite } from './lib/errors'
-import { charCount, noteForm, noteInput, notePatch, notePhotoError, validateNotePhoto, QUOTE_LIMIT, THOUGHT_LIMIT } from './lib/notes'
+import { charCount, noteForm, noteInput, notePatch, notePhotoError, validateNotePhoto, refreshNotePhotos, NOTE_REFRESH_PAGE_SIZE, QUOTE_LIMIT, THOUGHT_LIMIT } from './lib/notes'
 import type { NoteForm } from './lib/notes'
 import ConfirmDialog from './ConfirmDialog'
 import DatePicker from './DatePicker'
@@ -19,7 +19,6 @@ type Editor = { note: ReadingNote | null; form: NoteForm; initial: NoteForm }
 const PAGE_SIZE = 20
 // 저장 후에는 이미 불러온 범위를 한 번에 다시 받는다(API 최대 100개).
 const RELOAD_MAX = 100
-const isUnclearPhotoWrite = (error: unknown) => !(error instanceof ApiError) || error.status >= 500
 
 // 책 상세와 기록 타임라인이 같은 모양으로 노트 내용을 보여 준다.
 export function NoteText({ note, onRefresh, blocked = false }: { note: ReadingNote; onRefresh?: () => Promise<void>; blocked?: boolean }) {
@@ -50,6 +49,7 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
   const active = useRef(true)
   const busy = useRef(false)
   const version = useRef(0)
+  const photoRefresh = useRef<Promise<void> | null>(null)
 
   useEffect(() => {
     active.current = true
@@ -63,7 +63,7 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
   const load = useCallback((offset: number, limit = PAGE_SIZE) => {
     const current = ++version.current
     return withAccessToken((token) => getReadingNotes(token, userBookId, limit, offset)).then((page) => {
-      if (!active.current || version.current !== current) return false
+      if (!active.current || version.current !== current) return
       setList((previous) => ({
         items: offset === 0 ? page : [...new Map([...(previous?.items ?? []), ...page].map((item) => [item.id, item])).values()],
         offset: offset + page.length, more: page.length === limit,
@@ -73,7 +73,6 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
         setReconciling(false)
         onBusyChange(false)
       }
-      return true
     }, (loadError: unknown) => {
       // 실패해도 이미 불러온 목록과 다음 위치를 지우지 않는다.
       if (version.current === current) setListError(commonErrorMessage(loadError, '노트를 불러오지 못했습니다'))
@@ -94,21 +93,18 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
 
   // shortcut: 100개를 넘게 불러온 뒤 저장하면 앞 100개만 다시 받는다. 노트가 많아지면 범위별 재조회로 바꾼다.
   const reloadLoaded = () => reload(0, Math.min(RELOAD_MAX, Math.max(PAGE_SIZE, list?.offset ?? 0)))
-  async function refreshPhoto(id: string) {
+  function refreshPhotos(): Promise<void> {
+    if (photoRefresh.current) return photoRefresh.current
     const current = version.current
-    let replacement: ReadingNote | undefined
-    for (let offset = 0; ; offset += RELOAD_MAX) {
-      const page = await withAccessToken((token) => getReadingNotes(token, userBookId, RELOAD_MAX, offset))
-      if (!active.current || version.current !== current) return
-      replacement = page.find((item) => item.id === id)
-      if (replacement || page.length < RELOAD_MAX) break
-    }
-    setList((previous) => {
-      if (!active.current || version.current !== current || !previous) return previous
-      return replacement
-        ? { ...previous, items: previous.items.map((item) => item.id === id ? replacement : item) }
-        : { ...previous, items: previous.items.filter((item) => item.id !== id), offset: Math.max(0, previous.offset - 1) }
-    })
+    const isCurrent = () => active.current && version.current === current
+    const request = refreshNotePhotos(list?.items ?? [], (offset) =>
+      withAccessToken((token) => getReadingNotes(token, userBookId, NOTE_REFRESH_PAGE_SIZE, offset)), isCurrent)
+      .then((items) => {
+        if (!items || !isCurrent()) return
+        setList((previous) => !previous || !isCurrent() ? previous : { ...previous, items, offset: Math.max(0, previous.offset - (previous.items.length - items.length)) })
+      }).finally(() => { photoRefresh.current = null })
+    photoRefresh.current = request
+    return request
   }
   const locked = saving || blocked || reconciling || pending !== null
   const formLocked = saving || pending !== null || reconciling
@@ -124,14 +120,16 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
 
-  async function write(request: (token: string) => Promise<unknown>, done: string, failed: (error: unknown) => string, photoWrite = false) {
+  async function write(request: (token: string) => Promise<unknown>, done: string, failed: (error: unknown, attempted: boolean) => string, photoWrite = false) {
+    if (busy.current || blocked || reconciliation.current) return
     busy.current = true
     setSaving(true)
     onBusyChange(true)
     setError('')
     setMessage('')
+    let attempted = false
     try {
-      await withAccessToken(request)
+      await withAccessToken((token) => { attempted = true; return request(token) })
       if (!active.current) return
       setEditor(null)
       setPhoto(null)
@@ -143,12 +141,12 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
       await reloadLoaded()
     } catch (writeError) {
       if (!active.current) return
-      setError(failed(writeError))
+      setError(failed(writeError, attempted))
       const notFound = writeError instanceof ApiError && writeError.status === 404
       // 수정하던 노트가 사라졌으면 입력을 새 노트로 저장할 수 있게 한다.
       if (notFound && !photoWrite) setEditor((previous) => previous?.note ? { ...previous, note: null } : previous)
       // 결과가 불명확하거나 대상이 없으면 다시 보내지 않고 서버 목록만 확인한다.
-      if ((photoWrite ? isUnclearPhotoWrite(writeError) : isUnclearWrite(writeError)) || notFound) {
+      if ((attempted && isUnclearWrite(writeError)) || notFound || (photoWrite && writeError instanceof ApiError && writeError.status === 422)) {
         if (photoWrite) { reconciliation.current = true; setReconciling(true) }
         await reloadLoaded()
       }
@@ -194,10 +192,11 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
   }
 
   async function savePhoto(submission: { input: NoteInput; photo: File; id: string }) {
+    if (busy.current || blocked || reconciliation.current) return
     setPending(submission)
-    await write((token) => createReadingPhotoNote(token, userBookId, submission.input, submission.photo, submission.id), '노트를 저장했습니다.', (saveError) => {
-      if (!isUnclearPhotoWrite(saveError)) setPending(null)
-      return isUnclearPhotoWrite(saveError)
+    await write((token) => createReadingPhotoNote(token, userBookId, submission.input, submission.photo, submission.id), '노트를 저장했습니다.', (saveError, attempted) => {
+      if (!attempted || !isUnclearWrite(saveError)) setPending(null)
+      return attempted && isUnclearWrite(saveError)
         ? '저장 결과를 확인하지 못했습니다. 같은 내용으로 다시 확인해주세요. 확인 전에는 입력을 바꿀 수 없어요.'
         : notePhotoError(saveError)
     }, true)
@@ -223,9 +222,10 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
   function photoInputs(target?: ReadingNote) {
     const disabled = target ? locked || editor !== null : formLocked || blocked
     const label = target ? `${spokenDate(target.note_date)} ${target.has_photo ? '사진 바꾸기' : '사진 추가'}` : '사진 선택'
+    const onChange = (event: ChangeEvent<HTMLInputElement>) => { choosePhoto(event.target.files?.[0], target); event.target.value = '' }
     return <div className="note-photo-actions">
-      <label>{label}<input type="file" accept="image/*" disabled={disabled} onChange={(event) => { choosePhoto(event.target.files?.[0], target); event.target.value = '' }} /></label>
-      <label>{target ? `${spokenDate(target.note_date)} 사진 촬영` : '사진 촬영'}<input type="file" accept="image/*" capture="environment" disabled={disabled} onChange={(event) => { choosePhoto(event.target.files?.[0], target); event.target.value = '' }} /></label>
+      <label>{label}<input type="file" accept="image/*" disabled={disabled} onChange={onChange} /></label>
+      <label>{target ? `${spokenDate(target.note_date)} 사진 촬영` : '사진 촬영'}<input type="file" accept="image/*" capture="environment" disabled={disabled} onChange={onChange} /></label>
     </div>
   }
 
@@ -302,10 +302,10 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
             onClick={() => setRemove(item)}>삭제</button>
         </span>
       </div>
-      <NoteText note={item} onRefresh={() => refreshPhoto(item.id)} blocked={locked} />
+      <NoteText note={item} onRefresh={refreshPhotos} blocked={locked} />
       {photoInputs(item)}
       {item.has_photo && (item.quote || item.thought
-        ? <button type="button" disabled={locked || editor !== null} onClick={() => void write((token) => deleteNotePhoto(token, item.id), '사진을 삭제했습니다.', notePhotoError, true)}>사진 삭제</button>
+        ? <button type="button" disabled={locked || editor !== null} onClick={() => void write((token) => deleteNotePhoto(token, item.id), '사진을 삭제했습니다.', (failure) => notePhotoError(failure, '삭제'), true)}>사진 삭제</button>
         : <p className="result-note">사진만 있는 노트는 사진을 따로 지울 수 없어요. 노트 삭제를 이용해주세요.</p>)}
     </li>)}</ul>}
     {listError && <div role="alert"><p>{listError}</p>

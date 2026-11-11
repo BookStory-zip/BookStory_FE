@@ -1,5 +1,5 @@
 import { isAuthError, isAuthRetryableFetchError } from '@supabase/supabase-js'
-import { ApiError } from './api'
+import { ApiError, ApiResponseError } from './api'
 import { SessionMissingError } from './auth'
 
 export const isTimeout = (error: unknown) =>
@@ -18,8 +18,10 @@ export const isAuthFailure = (error: unknown) =>
 // 서버에 반영됐는지 알 수 없는 쓰기 실패. 다시 보내지 않고 서버 상태를 확인한다.
 export const isUnclearWrite = (error: unknown) =>
   error instanceof TypeError ||
+  error instanceof ApiResponseError ||
+  error instanceof SyntaxError ||
   isTimeout(error) ||
-  (error instanceof ApiError && (error.status === 502 || error.status === 504))
+  (error instanceof ApiError && [500, 502, 504].includes(error.status))
 
 export const RELOGIN_MESSAGE = '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'
 

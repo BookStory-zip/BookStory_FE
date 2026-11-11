@@ -78,3 +78,16 @@ test('photo errors explain rejection and uncertain outcomes', () => {
   expect(notePhotoError(new ApiError(503, '', 'photo_storage_unavailable'))).toMatch(/잠시/)
   expect(notePhotoError(new TypeError('Failed to fetch'))).toMatch(/확인/)
 })
+
+test('사진 삭제 안내는 HTTP 상태와 validation_error 코드로 판단한다', () => {
+  expect(notePhotoError(new ApiError(422, 'quote or thought is required', 'validation_error'), '삭제')).toContain('노트 자체를 삭제')
+  expect(notePhotoError(new ApiError(422, 'quote or thought is required', 'other_error'), '삭제')).not.toContain('노트 자체를 삭제')
+  expect(notePhotoError(new ApiError(422, 'quote or thought is required'), '삭제')).not.toContain('노트 자체를 삭제')
+})
+
+test('사진 업로드 429는 Retry-After 초를 안내하고 없으면 일반 재시도를 안내한다', () => {
+  expect(notePhotoError(new ApiError(429, '', 'rate_limited', 12.3))).toContain('13초 후')
+  for (const retryAfter of [undefined, 0, -1, NaN, Infinity]) {
+    expect(notePhotoError(new ApiError(429, '', 'rate_limited', retryAfter))).toContain('잠시 후')
+  }
+})

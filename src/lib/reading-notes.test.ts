@@ -18,6 +18,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
 })
+
+test('사진 multipart 업로드에는 일반 JSON보다 긴 제한 시간을 사용한다', async () => {
+  const timeout = vi.spyOn(AbortSignal, 'timeout')
+  fetchMock.mockResolvedValue(Response.json({ ...note, has_photo: true }))
+  await updateNotePhoto('t', note.id, new File(['x'], 'x.jpg', { type: 'image/jpeg' }))
+  expect(timeout).toHaveBeenLastCalledWith(300_000)
+  timeout.mockRestore()
+})
 const sent = () => {
   const [url, init] = fetchMock.mock.calls[0]
   return { url, method: init.method, body: init.body === undefined ? undefined : JSON.parse(init.body) }

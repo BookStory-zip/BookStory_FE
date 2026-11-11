@@ -348,7 +348,9 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       'progress',
       (token) => updateReadingProgress(token, book.id, patch),
       '진도를 저장했습니다.',
-      { refresh: async () => { await Promise.all([reload(), loadTodayLog(todayRef.current)]) } },
+      { refresh: async (result) => {
+        await Promise.all([reload(), (result === 'ok' || result === 'unclear') && 'current_page' in patch ? loadTodayLog(todayRef.current) : Promise.resolve()])
+      } },
     )
   }
 
