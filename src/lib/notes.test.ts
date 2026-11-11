@@ -1,6 +1,8 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { NOTE_PHOTO_MAX_BYTES, validateNotePhoto, notePhotoError, charCount, noteInput, notePatch } from './notes'
 import { ApiError, type ReadingNote } from './api'
+
+vi.mock('./supabase', () => ({ supabase: { auth: {} } }))
 
 const today = '2026-11-04'
 const form = (patch: Partial<{ date: string; quote: string; thought: string; page: string }> = {}) =>
