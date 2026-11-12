@@ -10,6 +10,7 @@ import type { NoteForm } from './lib/notes'
 import ConfirmDialog from './ConfirmDialog'
 import DatePicker from './DatePicker'
 import NotePhoto from './NotePhoto'
+import NotePhotoEditor from './NotePhotoEditor'
 
 // blocked: 책 상세의 다른 저장·타이머 저장·재확인 중에는 노트를 쓰지 않는다.
 type Props = { userBookId: string; today: string; blocked: boolean; onBusyChange: (busy: boolean) => void }
@@ -40,6 +41,7 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [photo, setPhoto] = useState<File | null>(null)
+  const [editingPhoto, setEditingPhoto] = useState<{ file: File; target?: ReadingNote } | null>(null)
   const [failedPhoto, setFailedPhoto] = useState<{ noteId: string; file: File } | null>(null)
   const [preview, setPreview] = useState('')
   const [pending, setPending] = useState<{ input: NoteInput; photo: File; id: string } | null>(null)
@@ -106,10 +108,15 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
     photoRefresh.current = request
     return request
   }
-  const locked = saving || blocked || reconciling || pending !== null
+  const locked = saving || blocked || reconciling || pending !== null || editingPhoto !== null
   const formLocked = saving || pending !== null || reconciling
 
-  const dirty = photo !== null || failedPhoto !== null || pending !== null || (editor !== null && JSON.stringify(editor.form) !== JSON.stringify(editor.initial))
+  const dirty = photo !== null || editingPhoto !== null || failedPhoto !== null || pending !== null || (editor !== null && JSON.stringify(editor.form) !== JSON.stringify(editor.initial))
+  useEffect(() => {
+    if (!editingPhoto) return
+    onBusyChange(true)
+    return () => { if (!busy.current && !reconciliation.current) onBusyChange(false) }
+  }, [editingPhoto, onBusyChange])
   useEffect(() => {
     if (preview) return () => URL.revokeObjectURL(preview)
   }, [preview])
@@ -203,10 +210,18 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
   }
 
   function choosePhoto(file: File | undefined, target?: ReadingNote) {
-    if (!file || busy.current || blocked || reconciling || pending) return
+    if (!file || busy.current || blocked || reconciling || pending || editingPhoto) return
     const invalid = validateNotePhoto(file)
     if (invalid) { setError(invalid); return }
     setError('')
+    setEditingPhoto({ file, target })
+  }
+
+  function applyPhoto(file: File, target?: ReadingNote) {
+    if (busy.current || blocked || reconciling || pending) return
+    const invalid = validateNotePhoto(file)
+    if (invalid) { setError(invalid); return }
+    setEditingPhoto(null)
     if (target) {
       setFailedPhoto(null)
       void write((token) => updateNotePhoto(token, target.id, file), '사진을 저장했습니다.', (uploadError) => {
@@ -225,7 +240,6 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
     const onChange = (event: ChangeEvent<HTMLInputElement>) => { choosePhoto(event.target.files?.[0], target); event.target.value = '' }
     return <div className="note-photo-actions">
       <label>{label}<input type="file" accept="image/*" disabled={disabled} onChange={onChange} /></label>
-      <label>{target ? `${spokenDate(target.note_date)} 사진 촬영` : '사진 촬영'}<input type="file" accept="image/*" capture="environment" disabled={disabled} onChange={onChange} /></label>
     </div>
   }
 
@@ -285,7 +299,7 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
     {failedPhoto && <div><p>선택한 사진: {failedPhoto.file.name}</p>
       {list?.items.some((item) => item.id === failedPhoto.noteId) && <button type="button" disabled={locked || editor !== null} onClick={() => {
         const target = list.items.find((item) => item.id === failedPhoto.noteId)
-        if (target) choosePhoto(failedPhoto.file, target)
+        if (target) applyPhoto(failedPhoto.file, target)
       }}>선택한 사진 다시 저장</button>}
       <button type="button" disabled={saving || reconciling} onClick={() => setFailedPhoto(null)}>선택한 사진 버리기</button>
     </div>}
@@ -311,6 +325,7 @@ export default function ReadingNotes({ userBookId, today, blocked, onBusyChange 
     {listError && <div role="alert"><p>{listError}</p>
       <button type="button" className="secondary compact" disabled={loading} onClick={() => void (reconciling ? reloadLoaded() : reload(list?.offset ?? 0))}>노트 다시 불러오기</button></div>}
     {list?.more && !listError && <button type="button" className="secondary" disabled={loading || saving} onClick={() => void reload(list.offset)}>{loading ? '불러오는 중…' : '노트 더 보기'}</button>}
+    {editingPhoto && <NotePhotoEditor file={editingPhoto.file} onCancel={() => setEditingPhoto(null)} onConfirm={(file) => applyPhoto(file, editingPhoto.target)} />}
     <ConfirmDialog open={remove !== null} title="노트를 삭제할까요?" message="이 노트만 삭제하며 되돌릴 수 없습니다. 독서 체크와 공개 후기는 그대로 남습니다." confirmLabel="노트 삭제" danger onConfirm={confirmRemove} onCancel={() => setRemove(null)} />
   </section>
 }
