@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useLocation, useParams } from 'react-router'
 import { addLibraryBook, ApiError, getLibraryBookByIsbn, statusLabels } from './lib/api'
 import type { LibraryBookDetail } from './lib/api'
 import { withAccessToken } from './lib/auth'
@@ -7,15 +7,17 @@ import { getCatalogBook, getPublicReviews } from './lib/catalog'
 import type { CatalogBook, PublicReview } from './lib/catalog'
 import { ADD_RATE_LIMITED, commonErrorMessage, isUnclearWrite } from './lib/errors'
 import { formatKstDate } from './lib/record'
+import { discoverySource } from './lib/discovery'
 
 const PAGE_SIZE = 20
 
 export default function BookCatalogPage() {
   const { isbn13 = '' } = useParams()
-  return <BookCatalog key={isbn13} isbn13={isbn13} />
+  const { state } = useLocation()
+  return <BookCatalog key={isbn13} isbn13={isbn13} fallbackUrl={discoverySource(state, isbn13)} />
 }
 
-function BookCatalog({ isbn13 }: { isbn13: string }) {
+function BookCatalog({ isbn13, fallbackUrl }: { isbn13: string; fallbackUrl: string | null }) {
   const [book, setBook] = useState<CatalogBook | null>(null)
   const [bookError, setBookError] = useState('')
   // undefined는 확인 중, null은 서버가 404로 확인한 미등록 상태다.
@@ -123,7 +125,9 @@ function BookCatalog({ isbn13 }: { isbn13: string }) {
           </>}
         </div>
       </div>
-      {bookError ? <p role="alert">{bookError}</p> : !book && <p role="status">책 정보를 불러오는 중…</p>}
+      {bookError ? <div role="alert"><p>{bookError}</p>
+        {fallbackUrl && <a href={fallbackUrl} target="_blank" rel="noreferrer">YES24에서 보기 ↗</a>}
+      </div> : !book && <p role="status">책 정보를 불러오는 중…</p>}
       <p role="status" className="detail-notice">{notice}</p>
 
       <section className="detail-card" aria-labelledby="catalog-intro">

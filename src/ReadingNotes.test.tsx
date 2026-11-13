@@ -8,6 +8,17 @@ import { SessionMissingError } from './lib/auth'
 
 const mocks = vi.hoisted(() => ({ getReadingNotes: vi.fn(), createReadingNote: vi.fn(), updateReadingNote: vi.fn(), deleteReadingNote: vi.fn(), createReadingPhotoNote: vi.fn(), updateNotePhoto: vi.fn(), deleteNotePhoto: vi.fn() }))
 const authState = vi.hoisted(() => ({ failure: null as unknown }))
+const photoEditorState = vi.hoisted(() => ({ automatic: true }))
+vi.mock('./NotePhotoEditor', async () => {
+  const { useEffect } = await import('react')
+  return { default: function Editor({ file, onConfirm, onCancel }: { file: File; onConfirm: (file: File) => void; onCancel: () => void }) {
+    useEffect(() => { if (photoEditorState.automatic) onConfirm(file) }, [file, onConfirm])
+    return photoEditorState.automatic ? null : <div role="dialog" aria-label="사진 편집">
+      <button onClick={() => onConfirm(new File(['edited'], 'edited.jpg', { type: 'image/jpeg' }))}>이 사진 사용</button>
+      <button onClick={onCancel}>편집 취소</button>
+    </div>
+  } }
+})
 vi.mock('./lib/api', async (importOriginal) => ({ ...await importOriginal<typeof import('./lib/api')>(), ...mocks }))
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
 vi.mock('./lib/auth', async (importOriginal) => ({
@@ -25,10 +36,48 @@ const renderNotes = (blocked = false) => render(<ReadingNotes userBookId="ub-1" 
 beforeEach(() => {
   vi.resetAllMocks()
   authState.failure = null
+  photoEditorState.automatic = true
   URL.createObjectURL = vi.fn(() => 'blob:preview')
   URL.revokeObjectURL = vi.fn()
 })
 afterEach(cleanup)
+
+test('새 노트 사진은 편집 확정 결과만 선택하고 편집 취소 시 글과 이전 선택을 보존한다', async () => {
+  photoEditorState.automatic = false
+  mocks.getReadingNotes.mockResolvedValue([])
+  mocks.createReadingPhotoNote.mockResolvedValue(note('edited', { has_photo: true }))
+  renderNotes()
+  await screen.findByText('아직 남긴 노트가 없습니다.')
+  fireEvent.click(screen.getByRole('button', { name: '노트 쓰기' }))
+  fireEvent.change(screen.getByLabelText('생각'), { target: { value: '유지할 생각' } })
+  fireEvent.change(screen.getByLabelText('사진 선택'), { target: { files: [new File(['x'], 'source.jpg', { type: 'image/jpeg' })] } })
+  expect(screen.getByRole('dialog', { name: '사진 편집' })).toBeTruthy()
+  expect(mocks.createReadingPhotoNote).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '이 사진 사용' }))
+  fireEvent.change(screen.getByLabelText('사진 선택'), { target: { files: [new File(['y'], 'other.jpg', { type: 'image/jpeg' })] } })
+  fireEvent.click(screen.getByRole('button', { name: '편집 취소' }))
+  expect(screen.getByLabelText('생각')).toHaveProperty('value', '유지할 생각')
+  fireEvent.click(screen.getByRole('button', { name: '노트 저장' }))
+  await screen.findByText('노트를 저장했습니다.')
+  expect(mocks.createReadingPhotoNote.mock.calls[0][3].name).toBe('edited.jpg')
+})
+
+test('기존 사진 교체는 편집 취소 시 요청하지 않고 확정 후에만 업로드한다', async () => {
+  photoEditorState.automatic = false
+  mocks.getReadingNotes.mockResolvedValue([note('n1', { has_photo: true, photo_url: 'https://example.com/old.jpg' })])
+  mocks.updateNotePhoto.mockResolvedValue(note('n1', { has_photo: true }))
+  renderNotes()
+  const input = await screen.findByLabelText('2026년 11월 1일 사진 바꾸기')
+  const file = new File(['x'], 'source.jpg', { type: 'image/jpeg' })
+  fireEvent.change(input, { target: { files: [file] } })
+  expect(mocks.updateNotePhoto).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '편집 취소' }))
+  expect(screen.getByAltText('독서 노트 첨부 사진')).toHaveProperty('src', 'https://example.com/old.jpg')
+  fireEvent.change(input, { target: { files: [file] } })
+  fireEvent.click(screen.getByRole('button', { name: '이 사진 사용' }))
+  await waitFor(() => expect(mocks.updateNotePhoto).toHaveBeenCalledTimes(1))
+  expect(mocks.updateNotePhoto.mock.calls[0][2].name).toBe('edited.jpg')
+})
 
 test('사진 생성 429는 대기 시간을 알리고 입력·파일을 보존해 수동 재시도한다', async () => {
   mocks.getReadingNotes.mockResolvedValue([])

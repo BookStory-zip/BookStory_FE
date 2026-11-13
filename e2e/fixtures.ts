@@ -56,6 +56,7 @@ export async function mockBackend(page: Page, handle: Handler) {
     if (url.pathname === '/me/reminder-settings' && request.method() === 'GET') return json(route, { enabled: false })
     // 따로 다루지 않는 테스트에서는 완독 기록이 없는 것으로 본다.
     if (url.pathname === '/reading-completions') return json(route, [])
+    if (url.pathname === '/discovery/popular') return json(route, { source: 'yes24', collected_at: null, basis_date: null, monthly_basis: null, items: [] })
     if (url.pathname.endsWith('/reading-sessions')) return json(route, [])
     if (url.pathname.endsWith('/notes') && request.method() === 'GET') return json(route, [])
     if (url.pathname === '/shelves' && request.method() === 'GET') return json(route, [])
