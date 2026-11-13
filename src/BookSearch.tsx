@@ -5,6 +5,7 @@ import { addLibraryBook, ApiError, SEARCH_LAST_PAGE, searchBooks, statusLabels }
 import type { SearchBook, SearchOptions, SearchSort, SearchTarget } from './lib/api'
 import { withAccessToken } from './lib/auth'
 import { ADD_RATE_LIMITED, codeMessage, commonErrorMessage, isAuthFailure, isTimeout, RELOGIN_MESSAGE } from './lib/errors'
+import PopularBooks from './PopularBooks'
 
 // ISBN13이 없는 책은 담을 수 없어 결과에서 뺀다.
 type AddableBook = SearchBook & { isbn13: string }
@@ -57,6 +58,7 @@ function saveErrorMessage(error: unknown) {
 
 export default function BookSearch() {
   const [results, setResults] = useState<AddableBook[] | null>(null)
+  const [hasSearched, setHasSearched] = useState(false)
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saves, setSaves] = useState<Record<string, SaveState>>({})
@@ -104,6 +106,7 @@ export default function BookSearch() {
     }
 
     if (coolingDown) return
+    setHasSearched(true)
     lastQuery.current = query.trim()
     // 새 검색을 보내면 이전 검색·더 보기의 늦은 응답은 버린다.
     const version = ++searchVersion.current
@@ -207,6 +210,7 @@ export default function BookSearch() {
           {searching ? '찾는 중…' : '검색'}
         </button>
       </form>
+      {!hasSearched && <PopularBooks />}
       {results !== null && paging && <div className="search-summary">
         <p className="result-note" aria-live="polite">
           ‘{paging.query}’ · {paging.options.target ? targetLabels[paging.options.target] : '전체'}

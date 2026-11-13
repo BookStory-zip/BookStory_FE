@@ -7,6 +7,17 @@ BE가 FE용으로 정리한 계약은 BE 저장소 `docs/frontend-api.md`에 있
 - 운영 API: https://bookstory-api-w31a.onrender.com · [Swagger](https://bookstory-api-w31a.onrender.com/docs)
 - 기준: BE 5차 main `e4aec03`(2026-11-05 사용자 전달: 서재 정렬·도서 검색 기준/정렬·계정 알림·과거 읽은 날 운영 반영), FE main `97a039c`(PR #21, 2026-11-04 자동 운영 배포). BE 5차 verify·운영 OpenAPI·로그인 점검 통과는 BE 회신이며, FE가 운영 인증 API나 Render 배포 SHA·DB를 직접 확인한 것은 아닙니다. 실제 FE 확인 범위는 plan.md에 기록합니다.
 
+## 인기 도서 (2026-11-13 최종 계약, BE 운영 배포 대기)
+
+- `GET /discovery/popular?limit=10`은 인증 없이 호출하며 limit 기본 10, 범위 1~30이다. FE는 10·30만 요청한다. 잘못된 limit은 422 `validation_error`, IP 제한은 429 `rate_limited`·`Retry-After`(CORS 노출)다. 응답 Cache-Control은 public, max-age=600이다.
+- 응답은 `{source:"yes24", collected_at, basis_date, monthly_basis, items}`다. collected_at은 시간대 포함 ISO 마지막 성공 수집 시각, basis_date는 일간 YYYY-MM-DD, monthly_basis는 월간 YYYY-MM이다. 최초 수집 전은 세 날짜가 null, items=[]이며 200이다. 수집 실패는 기존 전체 목록·날짜를 유지한다. 매일 06:00 KST 수집한다.
+- 항목: rank(제외 후 1부터 연속), daily_rank/monthly_rank(원본 순위, 정수 또는 null), isbn13(13자리), title, author(YES24 원문 문자열 또는 null), publisher/thumbnail_url(nullable, 이미지 HTTPS), source_url(YES24 HTTPS 상품 주소)이다. authors/source_rank/rank_change는 사용하지 않는다.
+- BE가 월간 6·일간 4 비율로 종합하고 동점은 일간 순위를 우선한다. 월간 기준은 매월 1~6일 지난달, 이후 진행 중인 이번 달이다. FE는 재계산하지 않고 rank 순서를 표시한다. BE가 분야·성인·시험 대비 제목·중복 ISBN·ISBN/상품 링크/앱 상세 조회 불가 상품을 제외하므로 30권 미만도 정상이다.
+- FE는 검색 전 10권 가로 목록, 전체 보기는 30권 응답으로 전체 교체한다(수집본 혼합 금지). 접기는 로컬에서 10권만 표시한다. 목록 출처는 “YES24 일간·월간 베스트셀러 종합”과 각각의 기준일/월이며 모든 항목에 YES24 링크를 제공한다. 첫 빈 목록과 마지막 성공 수집 후 72시간 초과는 숨긴다.
+- 인기 도서 429는 해당 섹션 재시도만 대기하고 일반 검색과 분리한다. 자동 재전송하지 않으며 기존 목록은 유지한다. 실제 검색을 실행하면 같은 화면에서는 인기 도서를 다시 띄우지 않는다.
+- 앱 상세는 `/catalog/{isbn13}`로 이동한다. 404(Book not found)·502·504는 code 없이 올 수 있으며 오류·재시도·YES24 대체 링크를 제공하고 자동 외부 이동은 하지 않는다. 출처 링크는 이동한 ISBN과 일치하는 YES24 HTTPS 주소만 허용한다.
+- 현재 사용자 전달 계약·모의 API 검증 범위다. 운영 경로·실제 응답은 BE 운영 배포 완료 안내 후 확인하고 FE 운영 배포한다.
+
 ## 인증
 
 Supabase SDK로 로그인·세션 복원 → `session.access_token`으로 `GET /me` 성공 → 개인 화면을 엽니다.
