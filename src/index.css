@@ -1171,6 +1171,20 @@ button.link-button:hover:not(:disabled) {
 .photo-ink-color[aria-pressed="true"] { border-color: var(--color-accent); }
 .photo-editor-brush label { display: grid; gap: var(--space-1); flex: 1 1 10rem; }
 
+.popular-books { margin-block: var(--space-6); min-width: 0; }
+.popular-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.popular-heading h2 { margin: 0; font-size: 1.25rem; }
+.popular-heading button { width: auto; flex-shrink: 0; }
+.popular-source { margin: var(--space-2) 0 0; font-size: .875rem; color: var(--color-muted); }
+.popular-list { display: grid; grid-auto-flow: column; grid-auto-columns: 8.5rem; gap: var(--space-4); overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding: var(--space-3) 0 var(--space-4); margin: 0; list-style: none; }
+.popular-list.is-expanded { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); }
+.popular-list li { min-width: 0; scroll-snap-align: start; }
+.popular-rank { display: block; font-size: 1.5rem; font-family: var(--font-display); color: var(--color-muted); margin-bottom: var(--space-1); }
+.popular-cover { display: flex; align-items: center; justify-content: center; width: 100%; height: 11.5rem; object-fit: contain; margin-bottom: var(--space-2); }
+.popular-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; line-height: 1.45; }
+.popular-author { color: var(--color-muted); font-size: .8125rem; margin: var(--space-1) 0; overflow-wrap: anywhere; }
+.popular-source-link { display: inline-block; font-size: .8125rem; margin-top: var(--space-1); }
+
 .note-list {
   display: grid;
   gap: var(--space-4);

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
 import type { SearchBook } from './lib/api'
 import BookSearch from './BookSearch'
+vi.mock('./PopularBooks', () => ({ default: () => <p>인기 도서 영역</p> }))
 
 const mocks = vi.hoisted(() => ({
   searchBooks: vi.fn(),
@@ -26,6 +27,15 @@ vi.mock('./lib/auth', async (importOriginal) => ({
 function book(title: string, isbn13: string | null): SearchBook {
   return { title, authors: ['저자'], publisher: '출판사', thumbnail: null, isbn13 }
 }
+
+test('검색 전 인기 도서를 보여 주고 검색 결과가 나오면 숨긴다', async () => {
+  mocks.searchBooks.mockResolvedValue({ books: [book('검색한 책', '9788936433598')], isEnd: true })
+  expect(screen.getByText('인기 도서 영역')).toBeTruthy()
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '책' } })
+  fireEvent.click(screen.getByRole('button', { name: '검색' }))
+  await screen.findByText('검색한 책')
+  expect(screen.queryByText('인기 도서 영역')).toBeNull()
+})
 
 function search(query: string) {
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: query } })
@@ -308,4 +318,12 @@ test('서버 오류 code가 있는 422는 code별 안내를 보여 준다', asyn
   search('책')
 
   expect((await screen.findByRole('alert')).textContent).toContain('검색어를 입력해주세요.')
+})
+
+test('검색 429의 차단이 풀려도 인기 도서를 다시 조회하지 않는다', async () => {
+  mocks.searchBooks.mockRejectedValueOnce(new ApiError(429, '', 'rate_limited', 1))
+  search('책')
+  await screen.findByRole('alert')
+  await waitFor(() => expect(screen.getByRole('button', { name: '검색' })).toHaveProperty('disabled', false), { timeout: 2000 })
+  expect(screen.queryByText('인기 도서 영역')).toBeNull()
 })

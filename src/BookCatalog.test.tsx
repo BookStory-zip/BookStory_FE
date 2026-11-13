@@ -22,12 +22,21 @@ beforeEach(() => {
   mocks.getLibraryBookByIsbn.mockResolvedValue(null)
 })
 afterEach(cleanup)
-function open() {
-  render(<MemoryRouter initialEntries={[`/catalog/${isbn}`]}><Routes>
+function open(state?: unknown) {
+  render(<MemoryRouter initialEntries={[{ pathname: `/catalog/${isbn}`, state }]}><Routes>
     <Route path="/catalog/:isbn13" element={<BookCatalog />} />
     <Route path="/books/:userBookId" element={<p>내 기록 편집</p>} />
   </Routes></MemoryRouter>)
 }
+
+test.each([404, 502, 504])('인기 도서 상세 %s 실패는 자동 이동 없이 YES24 링크·재시도를 제공한다', async (status) => {
+  mocks.getCatalogBook.mockRejectedValue(new ApiError(status, 'Book not found'))
+  open({ discoverySource: { isbn13: isbn, source_url: 'https://www.yes24.com/product/goods/123' } })
+  await screen.findByRole('alert')
+  expect(screen.getByRole('link', { name: 'YES24에서 보기 ↗' }).getAttribute('href')).toBe('https://www.yes24.com/product/goods/123')
+  expect(screen.getByRole('button', { name: '다시 불러오기' })).toBeTruthy()
+  expect(mocks.getCatalogBook).toHaveBeenCalledTimes(1)
+})
 
 test('빈 후기와 별점 미평가를 구분하고, 내 기록이 없을 때만 담기를 제공한다', async () => {
   open()
