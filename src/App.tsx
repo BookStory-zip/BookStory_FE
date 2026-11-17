@@ -1,13 +1,14 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { isAuthError } from '@supabase/supabase-js'
-import { Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router'
+import { Link, Navigate, NavLink, Route, Routes } from 'react-router'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
 import { commonErrorMessage, isAuthFailure } from './lib/errors'
 import { releaseReminder, syncReminder } from './lib/push'
 import { clearTimer } from './lib/timer'
 import CabinIcon from './CabinIcon'
 import Library from './Library'
+import FloatingTimer from './FloatingTimer'
 
 // 첫 화면(로그인·서재)에 필요 없는 화면은 들어갈 때 받아 모바일 첫 로딩을 줄인다.
 const BookDetail = lazy(() => import('./BookDetail'))
@@ -16,7 +17,6 @@ const BookCatalog = lazy(() => import('./BookCatalog'))
 const PasswordReset = lazy(() => import('./PasswordReset'))
 const ReadingRecords = lazy(() => import('./ReadingRecords'))
 const AccountSettings = lazy(() => import('./AccountSettings'))
-const TimerPage = lazy(() => import('./TimerPage'))
 
 function PageLoading() {
   return (
@@ -44,7 +44,6 @@ function App() {
 }
 
 function AuthScreen() {
-  const { pathname } = useLocation()
   const [message, setMessage] = useState('로그인 상태를 확인하고 있습니다.')
   const [isCheckingSession, setIsCheckingSession] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -267,7 +266,7 @@ function AuthScreen() {
 
   if (userId !== null) {
     return (
-      <main className={`app${pathname === '/' ? ' app-library' : ' app-workspace'}`}>
+      <main className="app">
         <a href="#content" className="skip-link">본문으로 바로가기</a>
         <header className="app-header">
           <Link to="/" className="wordmark" translate="no">
@@ -277,7 +276,6 @@ function AuthScreen() {
           <nav className="app-nav" aria-label="주요 메뉴">
             <NavLink to="/" end>서재</NavLink>
             <NavLink to="/search">책 찾기</NavLink>
-            <NavLink to="/timer">타이머</NavLink>
             <NavLink to="/records">기록</NavLink>
             <NavLink to="/settings">계정</NavLink>
           </nav>
@@ -300,7 +298,7 @@ function AuthScreen() {
               <Route path="catalog/:isbn13" element={<BookCatalog />} />
               <Route path="books/:userBookId" element={<BookDetail userId={userId} />} />
               <Route path="records" element={<ReadingRecords />} />
-              <Route path="timer" element={<TimerPage userId={userId} />} />
+              <Route path="timer" element={<p className="result-note">타이머는 오른쪽 아래 버튼으로 사용할 수 있어요.</p>} />
               <Route path="settings" element={<AccountSettings onDeleted={() => {
                 clearTimer(userId)
                 return handleLogout('탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.')
@@ -309,6 +307,7 @@ function AuthScreen() {
             </Routes>
           </Suspense>
         </div>
+        <FloatingTimer key={userId} userId={userId} />
       </main>
     )
   }

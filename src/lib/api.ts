@@ -726,13 +726,15 @@ export async function deleteMe(accessToken: string): Promise<void> {
 
 export type ReadingSessionInput = { client_session_id: string; started_at: string; duration_seconds: number }
 export type ReadingSession = ReadingSessionInput & { id: string; user_book_id: string; read_date: string; created_at: string }
+export type ReadingSessionEntry = ReadingSession & { title: string; authors: string[]; thumbnail_url: string | null }
 
-function isReadingSession(value: unknown, userBookId: string): value is ReadingSession {
+function isReadingSession(value: unknown, userBookId?: string): value is ReadingSession {
   if (typeof value !== 'object' || value === null) return false
   const item = value as Record<string, unknown>
   if (typeof item.started_at !== 'string' || !Number.isFinite(Date.parse(item.started_at))) return false
   const date = kstDateOf(item.started_at)
-  return typeof item.id === 'string' && item.user_book_id === userBookId &&
+  return typeof item.id === 'string' && typeof item.user_book_id === 'string' &&
+    (userBookId === undefined || item.user_book_id === userBookId) &&
     typeof item.client_session_id === 'string' && typeof item.created_at === 'string' &&
     Number.isFinite(Date.parse(item.created_at)) && item.read_date === date &&
     typeof item.duration_seconds === 'number' && Number.isInteger(item.duration_seconds) &&
@@ -757,6 +759,26 @@ export async function getReadingSessions(accessToken: string, userBookId: string
 
 export async function deleteReadingSession(accessToken: string, sessionId: string): Promise<void> {
   await apiRequest(`/reading-sessions/${encodeURIComponent(sessionId)}`, accessToken, { method: 'DELETE' })
+}
+
+export async function getPeriodReadingSessions(
+  accessToken: string, year: number, month: number | undefined, limit: number, offset: number,
+): Promise<ReadingSessionEntry[]> {
+  const query = new URLSearchParams({ year: String(year) })
+  if (month !== undefined) query.set('month', String(month))
+  query.set('limit', String(limit))
+  query.set('offset', String(offset))
+  const data = await apiRequest(`/reading-sessions?${query}`, accessToken)
+  if (!Array.isArray(data) || !data.every((item): item is ReadingSessionEntry => {
+    if (!isReadingSession(item)) return false
+    const entry = item as ReadingSession & Record<string, unknown>
+    const [entryYear, entryMonth] = entry.read_date.split('-').map(Number)
+    return entryYear === year && (month === undefined || entryMonth === month) &&
+      typeof entry.title === 'string' && Array.isArray(entry.authors) &&
+      entry.authors.every((author) => typeof author === 'string') &&
+      (entry.thumbnail_url === null || typeof entry.thumbnail_url === 'string')
+  })) throw new Error('시간 기록 응답 형식이 올바르지 않습니다.')
+  return data
 }
 
 // 서브 책장. 전체 서재 위의 필터이며 한 책이 여러 책장에 속할 수 있다. 사용자당 최대 30개.

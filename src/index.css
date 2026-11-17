@@ -307,10 +307,11 @@ main.app {
   max-width: 72rem;
   margin: 0 auto;
   padding: var(--space-4) var(--space-4) var(--space-12);
+  padding-inline: max(var(--space-4), env(safe-area-inset-left)) max(var(--space-4), env(safe-area-inset-right));
 }
 
-#root:has(.app-workspace)::before { display: none; }
-#root:has(.app-workspace)::after { background: var(--color-paper); }
+#root:has(main.app):not(:has(.library))::before { display: none; }
+#root:has(main.app):not(:has(.library))::after { background: var(--color-paper); }
 
 @media (max-width: 47.99rem) {
   html:has(main.app) { scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
@@ -320,7 +321,7 @@ main.app {
     z-index: 10;
     inset: auto 0 0;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 0;
     width: 100%;
     margin: 0;
@@ -339,6 +340,22 @@ main.app {
   gap: var(--space-4);
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--color-rule);
+}
+
+.floating-timer { position: fixed; z-index: 15; right: 0; bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
+.floating-timer-trigger { position: relative; display: grid; place-items: center; width: calc(44px + env(safe-area-inset-right)); min-height: 48px; padding: var(--space-2) calc(var(--space-2) + env(safe-area-inset-right)) var(--space-2) var(--space-2); border-radius: 12px 0 0 12px; }
+.timer-active-dot { position: absolute; top: 7px; left: 7px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.floating-timer-panel { position: absolute; right: 0; bottom: calc(100% + var(--space-3)); width: min(25rem, calc(100vw - 2rem)); max-height: min(42rem, calc(100dvh - 12rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))); overflow: auto; overscroll-behavior: contain; padding: var(--space-4); border: 1px solid var(--color-rule-strong); border-radius: var(--radius); background: var(--color-paper-2); box-shadow: 0 8px 24px #0005; }
+.floating-timer-panel { right: max(var(--space-3), env(safe-area-inset-right)); opacity: 0; visibility: hidden; transform: translateX(calc(100% + var(--space-4))); transition: transform 180ms ease-out, opacity 180ms ease-out, visibility 0s 180ms; }
+.floating-timer-panel.is-open { opacity: 1; visibility: visible; transform: translateX(0); transition-delay: 0s; }
+@media (prefers-reduced-motion: reduce) { .floating-timer-panel { transition: none; } }
+.floating-timer-close { display: block; margin-left: auto; }
+.floating-timer-panel .timer-page h2 { margin: 0 0 var(--space-4); }
+.floating-timer-panel .reading-timer { padding-inline: 0; border: 0; }
+.app:has(.order-target) .floating-timer,
+body:has(.photo-editor-dialog[open], .note-photo-viewer[open]) .floating-timer { visibility: hidden; }
+@media (max-width: 47.99rem) {
+  .floating-timer { bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
 }
 
 .wordmark {
@@ -444,7 +461,7 @@ main.app {
 
 .library-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
 .library-management { position: relative; margin-left: auto; }
-.library-management summary { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-2) var(--space-4); border: 1px solid var(--color-rule-strong); border-radius: var(--radius); cursor: pointer; list-style: none; }
+.library-management summary { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-2) var(--space-4); border: 1px solid var(--color-rule-strong); border-radius: var(--radius); font-weight: 600; cursor: pointer; list-style: none; }
 .library-management summary::-webkit-details-marker { display: none; }
 .library-management summary::after { content: '⌄'; }
 .library-management summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
@@ -1164,7 +1181,8 @@ button.link-button:hover:not(:disabled) {
 
 .note-photo-viewer { width: 100%; max-width: 100%; height: 100dvh; max-height: 100dvh; margin: 0; padding: calc(var(--space-4) + env(safe-area-inset-top)) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom)); overflow: auto; border: 0; color: var(--color-ink); background: var(--color-paper); }
 .note-photo-viewer::backdrop { background: var(--color-dialog-backdrop); }
-.note-photo-viewer > button { position: sticky; top: 0; left: 0; display: block; margin-left: auto; }
+.note-photo-viewer, .photo-editor-dialog { padding-inline: max(var(--space-4), env(safe-area-inset-left)) max(var(--space-4), env(safe-area-inset-right)); }
+.note-photo-viewer > button { position: sticky; top: env(safe-area-inset-top); left: 0; display: block; margin-left: auto; }
 .note-photo-viewer img { display: block; width: auto; max-width: none; height: auto; margin: var(--space-4) auto; }
 
 .photo-editor-dialog {
@@ -1195,7 +1213,7 @@ button.link-button:hover:not(:disabled) {
 }
 
 .photo-editor-dialog h2 { font-size: 1.25rem; margin: 0 0 var(--space-2); }
-.photo-editor-dialog .confirm-actions { position: sticky; bottom: 0; background: var(--color-paper-2); padding-top: var(--space-3); }
+.photo-editor-dialog .confirm-actions { position: sticky; bottom: 0; background: var(--color-paper-2); padding: var(--space-3) 0 env(safe-area-inset-bottom); }
 .photo-editor-stage { position: relative; overflow: hidden; margin: var(--space-3) auto; touch-action: none; user-select: none; background: #fff; }
 .photo-editor-stage canvas { display: block; width: 100%; height: 100%; }
 .photo-editor-stage .photo-editor-ink { position: absolute; inset: 0; }
@@ -1293,12 +1311,17 @@ button.link-button:hover:not(:disabled) {
 }
 
 .timer-history li {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   padding-block: var(--space-2);
 }
+
+.session-book { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.session-book > div { min-width: 0; overflow-wrap: anywhere; }
+.session-book img { width: 2.25rem; height: 3.375rem; object-fit: cover; border-radius: 2px; }
 
 .timer-history li span {
   display: flex;

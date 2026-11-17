@@ -82,7 +82,10 @@ export default function ReadingRecords() {
   useEffect(() => {
     if (view !== 'calendar') return
     load(month)
+    const refreshSessions = () => { void load(month) }
+    window.addEventListener('reading-sessions-changed', refreshSessions)
     return () => {
+      window.removeEventListener('reading-sessions-changed', refreshSessions)
       // 화면을 떠나거나 달이 바뀌면 이전 요청의 늦은 응답을 버린다.
       version.current += 1
     }

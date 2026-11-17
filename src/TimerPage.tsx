@@ -6,7 +6,6 @@ import { withAccessToken } from './lib/auth'
 import { commonErrorMessage } from './lib/errors'
 import { readTimer, subscribeTimer } from './lib/timer'
 import ReadingTimer from './ReadingTimer'
-import ReadingSessionHistory from './ReadingSessionHistory'
 
 type SelectedBook = Pick<LibraryBookItem, 'id' | 'title' | 'status'>
 
@@ -25,7 +24,7 @@ async function restoreBook(token: string, draftId: string | null, requestedId: s
   }
 }
 
-export default function TimerPage({ userId }: { userId: string }) {
+export default function TimerPage({ userId, embedded = false }: { userId: string; embedded?: boolean }) {
   const [params] = useSearchParams()
   const requestedBookId = params.get('book')
   const [books, setBooks] = useState<LibraryBookItem[]>([])
@@ -37,16 +36,6 @@ export default function TimerPage({ userId }: { userId: string }) {
   const active = useRef(true)
   const version = useRef(0)
   const selectedId = useRef<string | null>(null)
-  const [historyOpen, setHistoryOpen] = useState(false)
-  const [historyBooks, setHistoryBooks] = useState<LibraryBookItem[] | null>(null)
-  const [historyBookId, setHistoryBookId] = useState('')
-  const [historyLoading, setHistoryLoading] = useState(false)
-  const [historyError, setHistoryError] = useState('')
-  const [historyBusy, setHistoryBusy] = useState(false)
-  const [historyRevisions, setHistoryRevisions] = useState<Record<string, number>>({})
-  const historyVersion = useRef(0)
-  const historyBook = historyBooks?.find((item) => item.id === historyBookId)
-
   const load = useCallback(async () => {
     const run = ++version.current
     try {
@@ -83,7 +72,6 @@ export default function TimerPage({ userId }: { userId: string }) {
 
   async function refreshSelected(): Promise<ReadingStatus | null> {
     if (!selected) return null
-    setHistoryRevisions((current) => ({ ...current, [selected.id]: (current[selected.id] ?? 0) + 1 }))
     const run = version.current
     try {
       const fresh = await withAccessToken((token) => getLibraryBook(token, selected.id))
@@ -101,25 +89,8 @@ export default function TimerPage({ userId }: { userId: string }) {
     }
   }
 
-  async function loadHistoryBooks() {
-    const run = ++historyVersion.current
-    setHistoryLoading(true)
-    setHistoryError('')
-    try {
-      const list = await withAccessToken((token) => getAllLibraryBooks(token, {}))
-      if (!active.current || run !== historyVersion.current) return
-      setHistoryBooks(list)
-      setHistoryBookId((current) => list.some((item) => item.id === current) ? current
-        : list.some((item) => item.id === selectedId.current) ? selectedId.current! : '')
-    } catch (failure) {
-      if (active.current && run === historyVersion.current) setHistoryError(commonErrorMessage(failure, '기록용 책 목록을 불러오지 못했습니다'))
-    } finally {
-      if (active.current && run === historyVersion.current) setHistoryLoading(false)
-    }
-  }
-
   return <section className="timer-page" aria-labelledby="timer-page-title">
-    <h1 id="timer-page-title">타이머</h1>
+    {embedded ? <h2 id="timer-page-title">타이머</h2> : <h1 id="timer-page-title">타이머</h1>}
     {loading && <p className="result-note">책 목록을 불러오는 중…</p>}
     {error && <div role="alert"><p>{error}</p><button type="button" className="secondary" disabled={busy || loading} onClick={() => { setLoading(true); setError(''); void load() }}>책 목록 다시 확인</button></div>}
     {!loading && !error && books.length === 0 && !selected && <p className="result-note">
@@ -127,7 +98,7 @@ export default function TimerPage({ userId }: { userId: string }) {
     </p>}
     {!loading && !error && (books.length > 0 || selected) && <div className="timer-book-picker">
       <label htmlFor="timer-book">어떤 책을 읽으시나요?</label>
-      <select id="timer-book" value={selected?.id ?? ''} disabled={busy || historyBusy || !!draftBookId}
+      <select id="timer-book" value={selected?.id ?? ''} disabled={busy || !!draftBookId}
         onChange={(event) => {
           const book = books.find((item) => item.id === event.target.value) ?? null
           selectedId.current = book?.id ?? null
@@ -140,28 +111,6 @@ export default function TimerPage({ userId }: { userId: string }) {
       {draftBookId && <p className="result-note">측정할 책은 현재 측정을 저장하거나 버린 뒤 바꿀 수 있어요.</p>}
     </div>}
     {!loading && selected && <ReadingTimer key={selected.id} userId={userId} userBookId={selected.id} status={selected.status}
-      blocked={!!error || historyBusy} onBusyChange={setBusy} onSaved={refreshSelected} />}
-    <button type="button" className="link-button timer-history-toggle" aria-expanded={historyOpen} aria-controls="timer-history-panel" disabled={historyBusy}
-      onClick={() => {
-        if (historyBusy) return
-        setHistoryOpen(!historyOpen)
-        if (!historyOpen && !historyLoading) void loadHistoryBooks()
-      }}>{historyOpen ? '시간 기록 접기' : '시간 기록 보기'}</button>
-    {historyOpen && <section id="timer-history-panel" className="timer-history-panel" aria-labelledby="timer-history-title">
-      <h2 id="timer-history-title">독서 시간 기록</h2>
-      {historyLoading && <p className="result-note">기록용 책 목록을 불러오는 중…</p>}
-      {historyError && <div role="alert"><p>{historyError}</p><button type="button" className="secondary compact" disabled={historyLoading}
-        onClick={() => void loadHistoryBooks()}>기록용 책 목록 다시 확인</button></div>}
-      {!historyLoading && !historyError && historyBooks?.length === 0 && <p className="result-note">서재에 등록된 책이 없습니다.</p>}
-      {!historyLoading && !historyError && !!historyBooks?.length && <div className="timer-book-picker">
-        <label htmlFor="timer-history-book">시간 기록을 확인할 책</label>
-        <select id="timer-history-book" value={historyBookId} disabled={historyBusy} onChange={(event) => setHistoryBookId(event.target.value)}>
-          <option value="">책을 선택해주세요</option>
-          {historyBooks.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-        </select>
-      </div>}
-      {!historyLoading && !historyError && historyBook && <ReadingSessionHistory key={`${historyBook.id}:${historyRevisions[historyBook.id] ?? 0}`}
-        userBookId={historyBook.id} blocked={busy} onBusyChange={setHistoryBusy} />}
-    </section>}
+      blocked={!!error} onBusyChange={setBusy} onSaved={refreshSelected} />}
   </section>
 }

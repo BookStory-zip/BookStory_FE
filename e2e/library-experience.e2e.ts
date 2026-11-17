@@ -15,7 +15,8 @@ test('좁은 모바일 서재에서도 상태와 진도를 한 줄로 모두 표
   await signInWithMockSession(page)
   await page.goto('/')
   await expect(page.locator('.book-status')).toHaveCount(3)
-  await expect(page.getByRole('progressbar')).toHaveCount(3)
+  await expect(page.getByRole('progressbar')).toHaveCount(0)
+  await expect(page.locator('.book-progress')).toHaveCount(3)
   for (const width of [320, 390, 430]) {
     await page.setViewportSize({ width, height: 844 })
     const nav = page.getByRole('navigation', { name: '주요 메뉴' })
@@ -37,7 +38,7 @@ test('좁은 모바일 서재에서도 상태와 진도를 한 줄로 모두 표
     if (width === 390) await page.screenshot({ path: testInfo.outputPath('mobile-library-polish.png') })
   }
   await page.getByRole('link', { name: '계정', exact: true }).click()
-  await expect(page.locator('main')).toHaveClass(/app-workspace/)
+  await expect(page.locator('.library')).toHaveCount(0)
 })
 
 test('대상 책장의 100권 뒤 멤버도 체크하며 새로 선택한 책만 담는다', async ({ page }) => {

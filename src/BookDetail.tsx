@@ -170,7 +170,9 @@ function BookDetail({ userBookId }: { userBookId: string }) {
   useEffect(() => {
     todayRef.current = today
     void loadTodayLog(today)
-    return () => { todayLogVersion.current += 1 }
+    const refreshCheck = () => { void loadTodayLog(today) }
+    window.addEventListener('reading-sessions-changed', refreshCheck)
+    return () => { todayLogVersion.current += 1; window.removeEventListener('reading-sessions-changed', refreshCheck) }
     // 한국 날짜가 바뀌면 다시 확인한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [today])
