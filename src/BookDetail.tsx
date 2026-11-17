@@ -481,7 +481,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       </div>}
 
       <details className="detail-section" open={book.status !== 'reading'}>
-      <summary>독서 상태</summary>
+      <summary>독서 상태<small className="section-preview">현재 상태: {statusLabels[book.status]}</small></summary>
       <form className="detail-card" onSubmit={handleStatus} aria-labelledby="status-title">
         <h2 id="status-title">독서 상태</h2>
         <fieldset className="status-options" disabled={busy}>
@@ -550,7 +550,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       </details>
 
       <details className="detail-section" open={book.status !== 'reading'}>
-      <summary>읽기 진도</summary>
+      <summary>읽기 진도<small className="section-preview">현재 진도: {book.progress_percent !== null ? `${book.progress_percent}%` : '미등록'}</small></summary>
       {/* 서버 진도 값이 바뀌면 새로 만들어 입력을 맞추고, 실패한 저장·상태만 바뀐 경우의 입력은 그대로 둔다. */}
       <ReadingProgress
         key={`${book.page_count}:${book.total_pages}:${book.current_page}`}
@@ -576,7 +576,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
       </details>
 
       <details className="detail-section" open={book.status !== 'reading'}>
-      <summary>나의 기록</summary>
+      <summary>나의 기록<small className="section-preview">{book.rating !== null ? `별점 ${book.rating}점` : '별점 없음'} · {book.memo?.trim() ? '후기 있음' : '후기 없음'}</small></summary>
       <form className="detail-card" onSubmit={handleRecord} aria-labelledby="record-title">
         <h2 id="record-title">나의 기록</h2>
 

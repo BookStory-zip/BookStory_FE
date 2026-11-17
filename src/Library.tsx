@@ -671,6 +671,9 @@ export default function Library() {
                 {/* 완독은 상태만 보여 주고(쪽수를 알면 100%, 모르면 null), 전체 쪽수를 모르면 진도를 숨긴다. */}
                 {book.progress_percent !== null && book.status !== 'completed' && ` · ${book.progress_percent}%`}
               </p>
+              {book.status === 'reading' && book.progress_percent !== null && (
+                <progress className="book-progress" max={100} value={book.progress_percent} aria-label={`${book.title} 읽기 진도`} />
+              )}
               </Link>
               {editing && (
                 <div className="book-order" role="group" aria-label={`${book.title} 순서`}>

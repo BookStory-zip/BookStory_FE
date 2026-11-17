@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { isAuthError } from '@supabase/supabase-js'
-import { Link, Navigate, NavLink, Route, Routes } from 'react-router'
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router'
 import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
 import { commonErrorMessage, isAuthFailure } from './lib/errors'
 import { releaseReminder, syncReminder } from './lib/push'
@@ -44,6 +44,7 @@ function App() {
 }
 
 function AuthScreen() {
+  const { pathname } = useLocation()
   const [message, setMessage] = useState('로그인 상태를 확인하고 있습니다.')
   const [isCheckingSession, setIsCheckingSession] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -266,7 +267,7 @@ function AuthScreen() {
 
   if (userId !== null) {
     return (
-      <main className="app">
+      <main className={`app${pathname === '/' ? ' app-library' : ' app-workspace'}`}>
         <a href="#content" className="skip-link">본문으로 바로가기</a>
         <header className="app-header">
           <Link to="/" className="wordmark" translate="no">
