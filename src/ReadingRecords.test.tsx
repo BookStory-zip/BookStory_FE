@@ -331,6 +331,20 @@ async function openStatistics() {
   await screen.findByRole('heading', { name: '독서 실적과 목표' })
 }
 
+test('타이머 저장 뒤 통계를 갱신하고 조회 실패 시 기존 합계와 재시도를 유지한다', async () => {
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([]))
+  await openStatistics()
+  expect(goalItem('독서 시간').textContent).toContain('42분')
+  mocks.getReadingStatistics.mockRejectedValueOnce(new TypeError('network'))
+  await act(async () => window.dispatchEvent(new Event('reading-sessions-changed')))
+  await screen.findByText('변경 후 최신 통계를 불러오지 못했어요.')
+  expect(goalItem('독서 시간').textContent).toContain('42분')
+  mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([], { reading_minutes: 43 }))
+  fireEvent.click(screen.getByRole('button', { name: '통계 다시 확인' }))
+  await waitFor(() => expect(goalItem('독서 시간').textContent).toContain('43분'))
+  expect(screen.queryByText('변경 후 최신 통계를 불러오지 못했어요.')).toBeNull()
+})
+
 test('기간 기록과 목표를 한곳에서 보여 주고 서재 현황은 접어 둔다', async () => {
   mocks.getReadingStatistics.mockResolvedValueOnce(withGoals([
     { metric: 'reading_days', target: 12, current: 15, source: 'inherited' },

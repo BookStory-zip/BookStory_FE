@@ -1,6 +1,46 @@
 import { expect, test } from '@playwright/test'
 import { cover, json, libraryAction, libraryControl, mockBackend, signInWithMockSession, noProgress } from './fixtures'
 
+test('좁은 모바일 서재에서도 상태와 진도를 한 줄로 모두 표시한다', async ({ page }, testInfo) => {
+  const books = [16, 100, 0].map((percent, i) => ({
+    id: `badge-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598', title: `진도 책 ${i}`,
+    authors: ['독서가'], thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-05T00:00:00Z',
+    ...noProgress, total_pages: 100, current_page: percent, progress_percent: percent,
+  }))
+  await mockBackend(page, async (route, url) => {
+    if (url.pathname !== '/library/books') return false
+    await json(route, books)
+    return true
+  })
+  await signInWithMockSession(page)
+  await page.goto('/')
+  await expect(page.locator('.book-status')).toHaveCount(3)
+  await expect(page.getByRole('progressbar')).toHaveCount(0)
+  await expect(page.locator('.book-progress')).toHaveCount(3)
+  for (const width of [320, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 })
+    const nav = page.getByRole('navigation', { name: '주요 메뉴' })
+    await expect(nav).toBeVisible()
+    const navBox = await nav.boundingBox()
+    expect(navBox!.y + navBox!.height).toBe(844)
+    await expect(nav.getByRole('link', { name: '서재', exact: true })).toHaveAttribute('aria-current', 'page')
+    for (const badge of await page.locator('.book-status').all()) {
+      const layout = await badge.evaluate((element) => {
+        const range = document.createRange()
+        range.selectNodeContents(element)
+        const lines = [...range.getClientRects()]
+        const card = element.closest('.book')!.getBoundingClientRect()
+        const rect = element.getBoundingClientRect()
+        return { lines: new Set(lines.map((line) => line.top)).size, fits: rect.left >= card.left && rect.right <= card.right }
+      })
+      expect(layout).toEqual({ lines: 1, fits: true })
+    }
+    if (width === 390) await page.screenshot({ path: testInfo.outputPath('mobile-library-polish.png') })
+  }
+  await page.getByRole('link', { name: '계정', exact: true }).click()
+  await expect(page.locator('.library')).toHaveCount(0)
+})
+
 test('대상 책장의 100권 뒤 멤버도 체크하며 새로 선택한 책만 담는다', async ({ page }) => {
   const books = Array.from({ length: 103 }, (_, i) => ({ id: `member-${i}`, book_id: `catalog-${i}`, isbn13: '9788936433598',
     title: `멤버 책 ${i}`, authors: [], thumbnail_url: cover('#48594b'), status: 'reading', created_at: '2026-11-05T00:00:00Z', ...noProgress }))

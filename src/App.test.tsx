@@ -34,9 +34,10 @@ test('계정이 바뀌면 이전 계정의 진행 측정을 정리한다', async
   expect(readTimer('user-a')).toBeNull()
 })
 
-test('상단 로고로 서재에 이동하고 독립 타이머 메뉴를 제공한다', async () => {
+test('상단 로고로 서재에 이동하고 타이머는 메뉴 대신 공통 버튼으로 제공한다', async () => {
   await open()
-  expect(screen.getByRole('link', { name: '타이머' }).getAttribute('href')).toBe('/timer')
+  expect(screen.queryByRole('link', { name: '타이머' })).toBeNull()
+  expect(screen.getByRole('button', { name: /타이머 열기/ })).toBeTruthy()
   fireEvent.click(screen.getByRole('link', { name: 'BookStory' }))
   await screen.findByText('테스트 서재')
 })

@@ -7,6 +7,7 @@ import { monthOf, spokenMonth } from './lib/dates'
 import { commonErrorMessage } from './lib/errors'
 import CabinIcon from './CabinIcon'
 import ReadingGoals from './ReadingGoals'
+import ReadingSessionHistory from './ReadingSessionHistory'
 
 type Props = {
   month: string
@@ -26,6 +27,10 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
     key: string; data: StatisticsData | null; error: string | null
   } | null>(null)
   const version = useRef(0)
+  const [sessionRefreshFailed, setSessionRefreshFailed] = useState(false)
+  const [historyPeriod, setHistoryPeriod] = useState<string | null>(null)
+  const [historyBusy, setHistoryBusy] = useState(false)
+  const operations = useRef({ goals: false, history: false })
 
   const load = useCallback(() => {
     const current = ++version.current
@@ -58,11 +63,26 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
     return () => { version.current += 1 }
   }, [load])
 
+  useEffect(() => {
+    let active = true
+    const update = () => { void refresh().then((ok) => { if (active) setSessionRefreshFailed(!ok) }) }
+    window.addEventListener('reading-sessions-changed', update)
+    return () => { active = false; window.removeEventListener('reading-sessions-changed', update) }
+  }, [refresh])
+
   const [goalBusy, setGoalBusy] = useState(false)
   const changeGoalBusy = useCallback((busy: boolean) => {
+    operations.current.goals = busy
     setGoalBusy(busy)
-    onBusyChange(busy)
+    onBusyChange(busy || operations.current.history)
   }, [onBusyChange])
+
+  const changeHistoryBusy = useCallback((busy: boolean) => {
+    operations.current.history = busy
+    setHistoryBusy(busy)
+    onBusyChange(busy || operations.current.goals)
+  }, [onBusyChange])
+  const locked = goalBusy || historyBusy
 
   const current = result?.key === key ? result : null
   const data = current?.data
@@ -71,20 +91,21 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
 
   return (
     <div className="reading-statistics">
+      {sessionRefreshFailed && <div role="status"><p>변경 후 최신 통계를 불러오지 못했어요.</p><button type="button" className="link-button" onClick={() => window.dispatchEvent(new Event('reading-sessions-changed'))}>통계 다시 확인</button></div>}
       <div className="records-switch statistics-period" role="group" aria-label="통계 기간">
-        <button type="button" disabled={goalBusy} aria-pressed={mode === 'month'} onClick={() => onModeChange('month')}>월간</button>
-        <button type="button" disabled={goalBusy} aria-pressed={mode === 'year'} onClick={() => onModeChange('year')}>연간</button>
+        <button type="button" disabled={locked} aria-pressed={mode === 'month'} onClick={() => onModeChange('month')}>월간</button>
+        <button type="button" disabled={locked} aria-pressed={mode === 'year'} onClick={() => onModeChange('year')}>연간</button>
       </div>
       <div className="records-month">
         <button
           type="button" className="calendar-nav" aria-label={mode === 'month' ? '이전 달' : '이전 해'}
-          disabled={goalBusy || (mode === 'month' ? month <= '0001-01' : year <= 1)}
+          disabled={locked || (mode === 'month' ? month <= '0001-01' : year <= 1)}
           onClick={() => onMove(mode === 'month' ? -1 : -12)}
         >‹</button>
         <h2 aria-live="polite">{mode === 'month' ? spokenMonth(month) : `${year}년`} 독서 기록</h2>
         <button
           type="button" className="calendar-nav" aria-label={mode === 'month' ? '다음 달' : '다음 해'}
-          disabled={goalBusy || atLatest} onClick={() => onMove(mode === 'month' ? 1 : 12)}
+          disabled={locked || atLatest} onClick={() => onMove(mode === 'month' ? 1 : 12)}
         >›</button>
       </div>
 
@@ -104,7 +125,13 @@ export default function ReadingStatistics({ month, today, mode, onModeChange, on
             key={key} year={year} month={selectedMonth ?? null} goals={data.period.goals}
             actuals={{ reading_days: data.period.reading_days, reading_minutes: data.period.reading_minutes }}
             refresh={refresh} onBusyChange={changeGoalBusy}
+            blocked={historyBusy}
           />
+          <button type="button" className="link-button timer-history-toggle" aria-expanded={historyPeriod === key} aria-controls="statistics-time-history" disabled={locked}
+            onClick={() => setHistoryPeriod(historyPeriod === key ? null : key)}>{historyPeriod === key ? '독서 시간 상세 접기' : '독서 시간 상세 보기'}</button>
+          {historyPeriod === key && <section id="statistics-time-history" className="timer-history-panel" aria-label="기간별 독서 시간 기록">
+            <ReadingSessionHistory key={key} year={year} month={selectedMonth} blocked={goalBusy} onBusyChange={changeHistoryBusy} onChanged={refresh} />
+          </section>}
           <details className="statistics-library">
             <summary>서재 현황</summary>
             <p className="result-note">선택한 기간과 관계없는 현재 현황입니다.</p>

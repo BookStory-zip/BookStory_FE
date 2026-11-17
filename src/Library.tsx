@@ -28,8 +28,13 @@ function makeFilter({ q, field, status, shelf_id, sort }: LibraryFilter): Librar
 type Fallback = { filter: LibraryFilter; message: string; kind: 'search' | 'shelf' | 'sort' }
 
 // 손가락·마우스 아래의 책 순번. 서재 밖이면 null.
+function shelfViewportBottom() {
+  const nav = document.querySelector<HTMLElement>('.app-nav')
+  return nav && getComputedStyle(nav).position === 'fixed' ? nav.getBoundingClientRect().top : window.innerHeight
+}
+
 function bookIndexAt(shelf: HTMLElement | null, x: number, y: number) {
-  const target = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-book-index]')
+  const target = document.elementFromPoint(x, Math.min(y, shelfViewportBottom() - 1))?.closest<HTMLElement>('[data-book-index]')
   return target && shelf?.contains(target) ? Number(target.dataset.bookIndex) : null
 }
 
@@ -377,7 +382,7 @@ export default function Library() {
     let frame = requestAnimationFrame(function step() {
       const current = dragRef.current
       if (!current) return
-      const dy = current.y < SCROLL_EDGE ? -SCROLL_STEP : current.y > window.innerHeight - SCROLL_EDGE ? SCROLL_STEP : 0
+      const dy = current.y < SCROLL_EDGE ? -SCROLL_STEP : current.y > shelfViewportBottom() - SCROLL_EDGE ? SCROLL_STEP : 0
       if (dy) {
         window.scrollBy(0, dy)
         current.to = bookIndexAt(shelf.current, current.x, current.y) ?? current.from
@@ -671,6 +676,9 @@ export default function Library() {
                 {/* 완독은 상태만 보여 주고(쪽수를 알면 100%, 모르면 null), 전체 쪽수를 모르면 진도를 숨긴다. */}
                 {book.progress_percent !== null && book.status !== 'completed' && ` · ${book.progress_percent}%`}
               </p>
+              {book.status === 'reading' && book.progress_percent !== null && (
+                <progress className="book-progress" max={100} value={book.progress_percent} aria-hidden="true" />
+              )}
               </Link>
               {editing && (
                 <div className="book-order" role="group" aria-label={`${book.title} 순서`}>

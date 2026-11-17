@@ -129,6 +129,7 @@ export default function ReadingTimer({ userId, userBookId, status, blocked, onSa
       await withAccessToken(token => saveReadingSession(token, userBookId, body))
       saved = true
       if (!active.current) return
+      window.dispatchEvent(new Event('reading-sessions-changed'))
       const unchanged = readTimer(userId)?.clientSessionId === finished.clientSessionId
       const cleared = unchanged && persist(null)
       const freshStatus = await onSaved().catch(() => null)
