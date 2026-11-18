@@ -21,6 +21,7 @@ test('편집 도구로 자르기·회전·펜·형광펜을 적용한 JPEG만 �
     return false
   })
   await page.goto('/books/edit-book')
+  await page.setViewportSize({ width: 390, height: 844 })
   await page.locator('summary').filter({ hasText: /^나의 독서 노트$/ }).click()
   await page.getByRole('button', { name: '노트 쓰기' }).click()
   const base64 = await page.evaluate(() => {
@@ -73,6 +74,10 @@ test('편집 도구로 자르기·회전·펜·형광펜을 적용한 JPEG만 �
   await editor.getByRole('button', { name: '90도 회전' }).click()
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 })
+    if (width === 390) {
+      const rect = await editor.boundingBox()
+      expect(rect).toMatchObject({ x: 0, y: 0, width: 390, height: 900 })
+    }
     await expect(editor.getByRole('button', { name: '이 사진 사용' })).toBeInViewport()
     expect(await editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`editor-${width}.png`) })
@@ -161,6 +166,14 @@ test('사진 노트 응답 유실 재확인·URL 갱신·교체 실패 보존·�
   const image = page.getByAltText('독서 노트 첨부 사진')
   await expect(image).toHaveAttribute('src', 'https://photos.e2e.test/fresh')
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
+  await page.getByRole('button', { name: /사진 확대$/ }).click()
+  const viewer = page.getByRole('dialog', { name: '독서 노트 사진 확대' })
+  await expect(viewer).toBeVisible()
+  await expect(viewer.getByRole('button', { name: '사진 닫기' })).toBeFocused()
+  await expect(viewer.getByRole('img')).toHaveAttribute('src', 'https://photos.e2e.test/fresh')
+  await page.keyboard.press('Escape')
+  await expect(viewer).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /사진 확대$/ })).toBeFocused()
   await expect(page.getByRole('button', { name: '사진 삭제', exact: true })).toHaveCount(0)
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 })

@@ -162,9 +162,11 @@ BE PR #25의 `docs/frontend-api.md`·구현과 사용자 회신을 대조했습�
 | --- | --- |
 | `POST /library/books/{user_book_id}/reading-sessions` | `{client_session_id: UUID, started_at: 시간대 포함 ISO, duration_seconds: 정수 60~3600}`. 신규 201, 같은 책·시각·시간의 같은 ID 재전송 200 |
 | `GET /library/books/{user_book_id}/reading-sessions?limit=20&offset=0` | 배열, 시작 시각 DESC·id DESC. limit 1~100 |
+| `GET /reading-sessions?year=2026&month=11&limit=20&offset=0` | 인증 필수. 모든 책의 기간별 세션 배열에 `title: string`, `authors: string[]`, `thumbnail_url: string \| null` 추가. year 필수 1~9999, month 선택 1~12(생략 시 연간), limit 1~100(기본 20), offset 0 이상 |
 | `DELETE /reading-sessions/{session_id}` | 204, 독서 체크는 남김 |
 
 - 세션 응답은 `{id, user_book_id, client_session_id, started_at, duration_seconds, read_date, created_at}`. 시작 시각의 KST 날짜를 사용하며 자정을 넘겨도 나누지 않습니다.
+- 기간별 목록은 2026-11-17 BE 확정·운영 반영 계약입니다. 시작 시각의 KST 날짜(`read_date`)로 기간을 필터링한 뒤 `started_at` DESC·`id` DESC로 페이지를 나눕니다. 상태와 관계없이 본인 세션만 반환하며, 마지막 페이지는 limit 미만, 기록이 없으면 `[]`입니다. 범위·형식 오류는 422 `validation_error`, 미인증은 401입니다. 삭제 후 목록과 통계를 다시 조회하고 총 시간은 `period.reading_minutes`를 사용합니다.
 - 세션과 해당 날짜 독서 체크는 같은 트랜잭션입니다. 읽는 중·최근 7일·독서 시작일 이후 규칙을 통과해야 저장하며, 이미 체크돼 있으면 유지합니다. 서재 삭제·탈퇴는 연결된 세션도 삭제합니다.
 - 동일 ID·동일 내용의 재전송은 책 상태가 바뀐 뒤에도 200입니다. 내용이나 책이 다르면 409 `session_conflict`. 다른 세션과 `[started_at, started_at + duration_seconds)`가 겹치면 다른 책도 409 `session_overlap`이며 세션·체크 모두 저장하지 않습니다. 끝 시각에 바로 이어지는 구간은 허용하고, 정확한 재전송은 겹침 검사를 하지 않습니다.
 - 시작·끝 시각이 서버 현재 시각보다 5분을 넘게 앞서면 각각 422 `future_date`·`invalid_duration`. 그 밖에 422 `date_too_old`·`validation_error`, 409 `reading_check_not_allowed`·`date_order`, 미인증 401·없는/타인 항목 404입니다.

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { ReadingNote } from './lib/api'
 import NotePhoto from './NotePhoto'
@@ -10,6 +10,62 @@ const note = (patch: Partial<ReadingNote> = {}): ReadingNote => ({
   created_at: '', updated_at: '', ...patch,
 })
 afterEach(cleanup)
+
+test('failed expanded image preserves its trigger and restores focus on native close', () => {
+  const view = render(<NotePhoto note={note()} />)
+  const trigger = screen.getByRole('button', { name: '2026년 11월 1일 사진 확대' })
+  fireEvent.click(trigger)
+  const viewer = screen.getByRole('dialog')
+  fireEvent.error(within(viewer).getByRole('img'))
+  expect(screen.getByRole('button', { name: '2026년 11월 1일 사진 확대' })).toBe(trigger)
+  expect(within(viewer).queryByRole('button', { name: '사진 다시 불러오기' })).toBeNull()
+  view.rerender(<NotePhoto note={note({ photo_url: null })} />)
+  fireEvent(viewer, new Event('close', { bubbles: true }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(trigger)
+  fireEvent.click(trigger)
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  fireEvent(screen.getByRole('dialog'), new Event('cancel', { bubbles: true }))
+  expect(document.activeElement).toBe(trigger)
+})
+
+test('expanded refresh shows pending state and prevents duplicate requests', async () => {
+  let finish!: () => void
+  const refresh = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+  render(<NotePhoto note={note()} onRefresh={refresh} />)
+  fireEvent.click(screen.getByRole('button', { name: '2026년 11월 1일 사진 확대' }))
+  const viewer = screen.getByRole('dialog')
+  fireEvent.error(within(viewer).getByRole('img'))
+  const retry = within(viewer).getByRole('button', { name: '사진 불러오는 중…' }) as HTMLButtonElement
+  expect(retry.disabled).toBe(true)
+  fireEvent.click(retry)
+  expect(refresh).toHaveBeenCalledTimes(1)
+  await act(async () => finish())
+  expect(within(viewer).getByRole('button', { name: '사진 다시 불러오기' })).toBeTruthy()
+})
+
+test('확대 보기는 사진을 바꾸지 않고 닫기와 Esc로 종료한다', () => {
+  render(<NotePhoto note={note()} />)
+  fireEvent.click(screen.getByRole('button', { name: '2026년 11월 1일 사진 확대' }))
+  const viewer = screen.getByRole('dialog', { name: '독서 노트 사진 확대' })
+  expect(viewer.querySelector('img')?.getAttribute('src')).toBe(note().photo_url)
+  fireEvent.click(screen.getByRole('button', { name: '사진 닫기' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '2026년 11월 1일 사진 확대' }))
+  fireEvent(screen.getByRole('dialog'), new Event('cancel', { bubbles: true }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+test('확대 화면에서 주소가 만료되면 재조회하고 새 주소로 사진을 표시한다', async () => {
+  const refresh = vi.fn().mockResolvedValue(undefined)
+  const view = render(<NotePhoto note={note()} onRefresh={refresh} />)
+  fireEvent.click(screen.getByRole('button', { name: '2026년 11월 1일 사진 확대' }))
+  await act(async () => fireEvent.error(within(screen.getByRole('dialog')).getByRole('img')))
+  expect(refresh).toHaveBeenCalledTimes(1)
+  view.rerender(<NotePhoto note={note({ photo_url: 'https://private.example/new' })} onRefresh={refresh} />)
+  expect(within(screen.getByRole('dialog')).getByRole('img').getAttribute('src')).toBe('https://private.example/new')
+  expect(within(screen.getByRole('dialog')).queryByText('사진을 불러오지 못했어요')).toBeNull()
+})
 
 test('새 URL을 불러오는 동안 이전 주소의 오류 상자를 숨긴다', async () => {
   const refresh = vi.fn().mockResolvedValue(undefined)
@@ -35,7 +91,7 @@ test('automatically refreshes once, keeps failure after caught parent failure, p
   await act(async () => fireEvent.error(screen.getByRole('img')))
   expect(refresh).toHaveBeenCalledTimes(1)
   expect(screen.getByText('사진을 불러오지 못했어요')).toBeTruthy()
-  await act(async () => fireEvent.click(screen.getByRole('button')))
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: '사진 다시 불러오기' })))
   expect(refresh).toHaveBeenCalledTimes(2)
 })
 
@@ -57,10 +113,10 @@ test('blocks requests, prevents duplicate in-flight retries, and safely finishes
   const refresh = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
   const { rerender, unmount } = render(<NotePhoto note={note()} onRefresh={refresh} blocked />)
   fireEvent.error(screen.getByRole('img'))
-  fireEvent.click(screen.getByRole('button'))
+  fireEvent.click(screen.getByRole('button', { name: '사진 다시 불러오기' }))
   expect(refresh).not.toHaveBeenCalled()
   rerender(<NotePhoto note={note()} onRefresh={refresh} />)
-  fireEvent.click(screen.getByRole('button'))
+  fireEvent.click(screen.getByRole('button', { name: '사진 다시 불러오기' }))
   fireEvent.error(screen.getByRole('img'))
   expect(refresh).toHaveBeenCalledTimes(1)
   unmount()

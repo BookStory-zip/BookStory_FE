@@ -38,6 +38,41 @@ test('시간 기록 삭제는 세션 id를 쓰고 204 본문을 읽지 않는다
   expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/reading-sessions/session%2F1', expect.objectContaining({ method: 'DELETE' }))
 })
 
+const entry = { ...session, title: '책', authors: ['저자'], thumbnail_url: null }
+
+test.each([11, undefined])('기간별 시간 기록은 월 %s와 페이지를 보내고 책 정보를 유지한다', async (month) => {
+  const fetchMock = mockFetch(Response.json([entry]))
+  await expect(api.getPeriodReadingSessions('token', 2026, month, 20, 40)).resolves.toEqual([entry])
+  expect(fetchMock).toHaveBeenCalledWith(`https://api.example.test/reading-sessions?year=2026${month === undefined ? '' : '&month=11'}&limit=20&offset=40`, expect.objectContaining({ headers: { Authorization: 'Bearer token' } }))
+})
+
+test('연간 시간 기록은 다른 달과 KST 자정 경계의 세션도 포함한다', async () => {
+  const boundary = { ...entry, started_at: '2026-11-30T15:00:00Z', read_date: '2026-12-01', thumbnail_url: 'https://example.test/cover.jpg' }
+  mockFetch(Response.json([entry, boundary]))
+  await expect(api.getPeriodReadingSessions('token', 2026, undefined, 20, 0)).resolves.toEqual([entry, boundary])
+})
+
+test.each([
+  { title: null }, { authors: null }, { authors: [1] }, { thumbnail_url: 1 },
+  { thumbnail_url: undefined }, { user_book_id: null }, { duration_seconds: 0 },
+  { started_at: 'invalid' }, { created_at: null }, { read_date: '2026-11-03' },
+  { started_at: '2026-11-30T15:00:00Z', read_date: '2026-12-01' },
+  { started_at: '2025-11-04T11:00:00Z', read_date: '2025-11-04' },
+])('기간별 목록의 잘못된 책·세션·기간 응답을 거부한다: %j', async (changed) => {
+  mockFetch(Response.json([{ ...entry, ...changed }]))
+  await expect(api.getPeriodReadingSessions('token', 2026, 11, 20, 0)).rejects.toThrow('시간 기록 응답')
+})
+
+test.each([null, {}, [null]])('기간별 목록의 잘못된 본문을 거부한다: %j', async (body) => {
+  mockFetch(Response.json(body))
+  await expect(api.getPeriodReadingSessions('token', 2026, undefined, 20, 0)).rejects.toThrow('시간 기록 응답')
+})
+
+test('기간별 시간 기록이 없으면 빈 배열을 반환한다', async () => {
+  mockFetch(Response.json([]))
+  await expect(api.getPeriodReadingSessions('token', 2026, 11, 20, 0)).resolves.toEqual([])
+})
+
 test.each([undefined, -1, 1.5])('통계의 독서 시간 %j는 잘못된 응답으로 거부한다', async (minutes) => {
   mockFetch(Response.json({ library: { total_books: 0, completed_books: 0, status_counts: { want_to_read: 0, reading: 0, completed: 0, paused: 0, abandoned: 0 } }, period: { year: 2026, month: 11, start_date: '2026-11-01', end_date: '2026-11-30', reading_days: 0, reading_minutes: minutes } }))
   await expect(api.getReadingStatistics('token', 2026, 11)).rejects.toThrow('통계 응답')

@@ -26,6 +26,7 @@ type Props = {
   // 기간 통계를 다시 조회한다. 실패해도 기존 통계는 그대로 두고 false를 돌려준다.
   refresh: () => Promise<boolean>
   onBusyChange: (busy: boolean) => void
+  blocked?: boolean
 }
 
 type Inputs = Record<GoalMetric, string>
@@ -40,7 +41,7 @@ function initialInputs(goals: GoalProgress[]): Inputs {
   return inputs
 }
 
-export default function ReadingGoals({ year, month, goals, actuals, refresh, onBusyChange }: Props) {
+export default function ReadingGoals({ year, month, goals, actuals, refresh, onBusyChange, blocked = false }: Props) {
   const [open, setOpen] = useState(false)
   const [inputs, setInputs] = useState<Inputs>(() => initialInputs(goals))
   const [errors, setErrors] = useState<Partial<Record<GoalMetric, string>>>({})
@@ -163,7 +164,7 @@ export default function ReadingGoals({ year, month, goals, actuals, refresh, onB
       <div className="goal-head">
         <h3 id="statistics-goals-title">독서 실적과 목표</h3>
         <button
-          ref={trigger} type="button" className="secondary compact" disabled={busy}
+          ref={trigger} type="button" className="secondary compact" disabled={busy || blocked}
           aria-label={`${period} 독서 목표 ${goals.length ? '수정' : '설정'}`}
           onClick={() => {
             setInputs(initialInputs(goals))
