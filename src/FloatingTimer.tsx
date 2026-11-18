@@ -58,7 +58,7 @@ export default function FloatingTimer({ userId }: { userId: string }) {
     </button>
     {visited && <div id="floating-timer-panel" role="dialog" aria-label="독서 타이머 조작" className={`floating-timer-panel${open ? ' is-open' : ''}`} aria-hidden={!open} inert={!open}
       onKeyDown={(event) => { if (event.key === 'Escape' && !document.querySelector('dialog[open]')) { event.stopPropagation(); close() } }}>
-      <button ref={closeButton} type="button" className="link-button floating-timer-close" onClick={close}>타이머 접기</button>
+      <button ref={closeButton} type="button" className="link-button floating-timer-close" aria-label="타이머 접기" onClick={close}>접기</button>
       <Suspense fallback={<p role="status">타이머를 여는 중…</p>}><TimerPage userId={userId} embedded={!legacyPath} /></Suspense>
     </div>}
   </aside>
