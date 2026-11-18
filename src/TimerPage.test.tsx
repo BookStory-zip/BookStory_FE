@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
 import type { LibraryBookItem } from './lib/api'
-import { readTimer, startTimer, writeTimer } from './lib/timer'
+import { clearTimer, readTimer, startTimer, writeTimer } from './lib/timer'
 import TimerPage from './TimerPage'
 
 const mocks = vi.hoisted(() => ({ getAllLibraryBooks: vi.fn(), getLibraryBook: vi.fn(), getReadingSessions: vi.fn(), saveReadingSession: vi.fn() }))
@@ -30,16 +30,54 @@ test('읽는 중인 책을 100권 이후까지 조회하고 선택한 서재 id�
   show()
   const select = await screen.findByLabelText('어떤 책을 읽으시나요?')
   expect(mocks.getAllLibraryBooks.mock.calls).toEqual([['token', { status: 'reading' }]])
-  expect(screen.queryByRole('button', { name: '타이머 시작' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '시작' })).toBeNull()
   fireEvent.change(select, { target: { value: '100' } })
-  fireEvent.click(screen.getByRole('button', { name: '타이머 시작' }))
+  fireEvent.click(screen.getByRole('button', { name: '선택 완료' }))
+  fireEvent.click(screen.getByRole('button', { name: '시작' }))
   expect(readTimer('user-a')?.userBookId).toBe('100')
-  expect(select).toHaveProperty('disabled', true)
+  expect(screen.queryByLabelText('어떤 책을 읽으시나요?')).toBeNull()
   expect(mocks.getReadingSessions).not.toHaveBeenCalled()
   expect(screen.queryByRole('button', { name: '시간 기록 보기' })).toBeNull()
   expect(screen.queryByLabelText('시간 기록을 확인할 책')).toBeNull()
   expect(document.querySelector('.timer-history-toggle')).toBeNull()
   expect(document.querySelector('#timer-history-panel')).toBeNull()
+})
+
+test('책 선택 뒤에는 제목·시간·조작만 남기고 측정 전 제목에서 책 선택으로 돌아간다', async () => {
+  mocks.getAllLibraryBooks.mockResolvedValue([book('one'), book('two')])
+  show()
+  const select = await screen.findByLabelText('어떤 책을 읽으시나요?')
+  select.focus()
+  fireEvent.change(select, { target: { value: 'one' } })
+  expect(document.activeElement).toBe(select)
+  fireEvent.change(select, { target: { value: 'two' } })
+  expect(select).toHaveProperty('value', 'two')
+  fireEvent.change(select, { target: { value: 'one' } })
+  fireEvent.click(screen.getByRole('button', { name: '선택 완료' }))
+  expect(screen.queryByLabelText('어떤 책을 읽으시나요?')).toBeNull()
+  expect(screen.getByRole('heading', { name: '책 one', level: 1 })).toBeTruthy()
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: '시작' }))
+  expect(screen.getByRole('button', { name: '시작' }).textContent).toBe('시작')
+  expect(screen.queryByText('타이머 사용법')).toBeNull()
+  expect(screen.queryByRole('progressbar')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '책 one, 읽을 책 변경' }))
+  expect(document.activeElement).toBe(screen.getByLabelText('어떤 책을 읽으시나요?'))
+})
+
+test('주소로 선택한 책을 해제하면 재조회해도 주소의 책을 복원하지 않는다', async () => {
+  mocks.getAllLibraryBooks.mockResolvedValue([book('a'), book('b')])
+  mocks.getLibraryBook.mockResolvedValue(book('a'))
+  render(<MemoryRouter initialEntries={['/timer?book=a']}><TimerPage userId="user-a" /></MemoryRouter>)
+  fireEvent.click(await screen.findByRole('button', { name: '책 a, 읽을 책 변경' }))
+  mocks.getAllLibraryBooks.mockRejectedValueOnce(new TypeError('network'))
+  act(() => writeTimer(startTimer('user-a', 'b', Date.now(), crypto.randomUUID())))
+  await screen.findByRole('alert')
+  act(() => clearTimer('user-a'))
+  mocks.getLibraryBook.mockClear()
+  fireEvent.click(screen.getByRole('button', { name: '책 목록 다시 확인' }))
+  await screen.findByLabelText('어떤 책을 읽으시나요?')
+  expect(mocks.getLibraryBook).not.toHaveBeenCalled()
+  expect(screen.queryByRole('timer')).toBeNull()
 })
 
 test('저장하는 동안 책 선택을 잠그고 완료하면 기록 조회 없이 다시 측정한다', async () => {
@@ -49,13 +87,13 @@ test('저장하는 동안 책 선택을 잠그고 완료하면 기록 조회 없
   mocks.saveReadingSession.mockReturnValue(new Promise<void>((resolve) => { finishSave = resolve }))
   writeTimer(startTimer('user-a', 'a', Date.now() - 90_000, crypto.randomUUID()))
   show()
-  fireEvent.click(await screen.findByRole('button', { name: '종료·저장' }))
+  fireEvent.click(await screen.findByRole('button', { name: '완료' }))
   await waitFor(() => expect(mocks.saveReadingSession).toHaveBeenCalledTimes(1))
-  expect(screen.getByLabelText('어떤 책을 읽으시나요?')).toHaveProperty('disabled', true)
+  expect(screen.queryByLabelText('어떤 책을 읽으시나요?')).toBeNull()
   await act(async () => finishSave())
-  await waitFor(() => expect(screen.getByLabelText('어떤 책을 읽으시나요?')).toHaveProperty('disabled', false))
+  await waitFor(() => expect(screen.getByRole('button', { name: '책 a, 읽을 책 변경' })).toHaveProperty('disabled', false))
   expect(readTimer('user-a')).toBeNull()
-  expect(screen.getByRole('button', { name: '타이머 시작' })).toHaveProperty('disabled', false)
+  expect(screen.getByRole('button', { name: '시작' })).toHaveProperty('disabled', false)
   expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2)
   expect(mocks.getReadingSessions).not.toHaveBeenCalled()
 })
@@ -70,7 +108,7 @@ test.each(['completed', 'deleted'])('이전에 측정한 책이 %s이어도 측�
   expect(readTimer('user-a')?.userBookId).toBe('old')
   fireEvent.click(screen.getByRole('button', { name: '측정 버리기' }))
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '측정 버리기' }))
-  await waitFor(() => expect(screen.getByLabelText('어떤 책을 읽으시나요?')).toHaveProperty('disabled', false))
+  await waitFor(() => expect(screen.getByRole('button', { name: /읽을 책 변경/ })).toHaveProperty('disabled', false))
   expect(readTimer('user-a')).toBeNull()
 })
 
@@ -80,7 +118,7 @@ test('저장 중 측정한 책이 서재에서 지워져도 화면을 잠그지 
   mocks.getLibraryBook.mockResolvedValueOnce(book('old')).mockRejectedValue(new ApiError(404))
   mocks.saveReadingSession.mockRejectedValue(new ApiError(404))
   show()
-  fireEvent.click(await screen.findByRole('button', { name: '종료·저장' }))
+  fireEvent.click(await screen.findByRole('button', { name: '완료' }))
   await waitFor(() => expect(mocks.getLibraryBook).toHaveBeenCalledTimes(2))
   expect(screen.queryByRole('button', { name: '책 목록 다시 확인' })).toBeNull()
   fireEvent.click(await screen.findByRole('button', { name: '측정 버리기' }))
@@ -89,16 +127,20 @@ test('저장 중 측정한 책이 서재에서 지워져도 화면을 잠그지 
 })
 
 test('책 상태 재확인 실패 뒤 다시 확인해도 고른 책을 유지한다', async () => {
+  let finishReload!: (value: LibraryBookItem) => void
   mocks.getAllLibraryBooks.mockResolvedValue([book('a'), book('b')])
-  mocks.getLibraryBook.mockRejectedValueOnce(new TypeError('network')).mockResolvedValue(book('b'))
+  mocks.getLibraryBook.mockRejectedValueOnce(new TypeError('network')).mockReturnValueOnce(new Promise((resolve) => { finishReload = resolve }))
   mocks.saveReadingSession.mockResolvedValue({ id: 'saved' })
   show()
   fireEvent.change(await screen.findByLabelText('어떤 책을 읽으시나요?'), { target: { value: 'b' } })
+  fireEvent.click(screen.getByRole('button', { name: '선택 완료' }))
   writeTimer(startTimer('user-a', 'b', Date.now() - 90_000, crypto.randomUUID()))
   act(() => writeTimer(readTimer('user-a')!))
-  fireEvent.click(await screen.findByRole('button', { name: '종료·저장' }))
+  fireEvent.click(await screen.findByRole('button', { name: '완료' }))
   fireEvent.click(await screen.findByRole('button', { name: '책 목록 다시 확인' }))
-  await waitFor(() => expect(screen.getByLabelText('어떤 책을 읽으시나요?')).toHaveProperty('value', 'b'))
+  expect(screen.getByRole('button', { name: '책 b, 읽을 책 변경' })).toHaveProperty('disabled', true)
+  await act(async () => finishReload(book('b')))
+  await waitFor(() => expect(screen.getByRole('heading', { name: '책 b' })).toBeTruthy())
 })
 
 test.each([new ApiError(404), new ApiError(422), new ApiError(503)])('주소의 책 조회 실패 %s는 목록을 막지 않고 선택하지 않는다', async (failure) => {
@@ -126,7 +168,8 @@ test('다른 탭에서 시작한 측정을 복원해 저장·버리기가 막히
   show()
   await screen.findByLabelText('어떤 책을 읽으시나요?')
   act(() => writeTimer(startTimer('user-a', 'other', Date.now() - 90_000, crypto.randomUUID())))
-  await screen.findByRole('button', { name: '측정 버리기' })
+  fireEvent.click(await screen.findByRole('button', { name: '일시정지' }))
+  expect(screen.getByRole('button', { name: '측정 버리기' })).toBeTruthy()
   expect(screen.getByRole('timer').textContent).toBe('00:01:30')
 })
 

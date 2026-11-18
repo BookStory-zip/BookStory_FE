@@ -126,7 +126,7 @@ function BookCatalog({ isbn13, fallbackUrl }: { isbn13: string; fallbackUrl: str
         </div>
       </div>
       {bookError ? <div role="alert"><p>{bookError}</p>
-        {fallbackUrl && <a href={fallbackUrl} target="_blank" rel="noreferrer">YES24에서 보기 ↗</a>}
+        {fallbackUrl && <a href={fallbackUrl} target="_blank" rel="noreferrer">도서 정보 보기 ↗</a>}
       </div> : !book && <p role="status">책 정보를 불러오는 중…</p>}
       <p role="status" className="detail-notice">{notice}</p>
 

@@ -5,8 +5,9 @@ export type PopularBook = {
   isbn13: string; title: string; author: string | null; publisher: string | null
   thumbnail_url: string | null; source_url: string
 }
+export type PopularBooksSource = 'yes24' | 'data4library'
 export type PopularBooksSnapshot = {
-  source: 'yes24'; collected_at: string | null; basis_date: string | null; monthly_basis: string | null
+  sources: PopularBooksSource[]; collected_at: string | null; basis_date: string | null; monthly_basis: string | null
   items: PopularBook[]
 }
 export const POPULAR_MAX_AGE = 72 * 60 * 60 * 1000
@@ -27,31 +28,38 @@ function httpsUrl(value: unknown): value is string {
   catch { return false }
 }
 
-export function yes24Url(value: unknown): value is string {
+function yes24Url(value: unknown): value is string {
   return httpsUrl(value) && ['yes24.com', 'www.yes24.com', 'm.yes24.com'].includes(new URL(value).hostname) && !new URL(value).port
+}
+
+export function sourceUrl(value: unknown): value is string {
+  return yes24Url(value) || (httpsUrl(value) && new URL(value).hostname === 'search.daum.net' && new URL(value).pathname === '/search' && !new URL(value).port)
 }
 
 export function discoverySource(state: unknown, isbn13: string): string | null {
   if (!object(state) || !object(state.discoverySource)) return null
   const source = state.discoverySource
-  return source.isbn13 === isbn13 && yes24Url(source.source_url) ? source.source_url : null
+  return source.isbn13 === isbn13 && sourceUrl(source.source_url) ? source.source_url : null
 }
 
 function isBook(value: unknown, index: number): value is PopularBook {
   return object(value) && value.rank === index + 1 && nullableRank(value.daily_rank) && nullableRank(value.monthly_rank) &&
     typeof value.isbn13 === 'string' && /^\d{13}$/.test(value.isbn13) && typeof value.title === 'string' && !!value.title.trim() &&
-    nullableText(value.author) && nullableText(value.publisher) && (value.thumbnail_url === null || httpsUrl(value.thumbnail_url)) && yes24Url(value.source_url)
+    nullableText(value.author) && nullableText(value.publisher) && (value.thumbnail_url === null || httpsUrl(value.thumbnail_url)) && sourceUrl(value.source_url)
 }
 
 export async function getPopularBooks(limit: 10 | 30 = 10): Promise<PopularBooksSnapshot> {
   const data = await apiRequest(`/discovery/popular?limit=${limit}`, null)
-  if (!object(data) || data.source !== 'yes24' || !Array.isArray(data.items) || data.items.length > limit || !data.items.every(isBook) ||
+  if (!object(data)) throw new Error('인기 도서 응답 형식이 올바르지 않습니다.')
+  const sources = data.sources === undefined && data.source === 'yes24' ? ['yes24'] : data.sources
+  if (!Array.isArray(sources) || !sources.length || sources.some((source) => source !== 'yes24' && source !== 'data4library') ||
+    new Set(sources).size !== sources.length || !Array.isArray(data.items) || data.items.length > limit || !data.items.every(isBook) ||
     new Set(data.items.map((item: PopularBook) => item.isbn13)).size !== data.items.length) throw new Error('인기 도서 응답 형식이 올바르지 않습니다.')
   const empty = data.collected_at === null && data.basis_date === null && data.monthly_basis === null && data.items.length === 0
   if (!empty && !(typeof data.collected_at === 'string' && /(Z|[+-]\d{2}:\d{2})$/.test(data.collected_at) && Number.isFinite(Date.parse(data.collected_at)) &&
     calendarDate(data.basis_date) &&
     typeof data.monthly_basis === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(data.monthly_basis))) throw new Error('인기 도서 응답 형식이 올바르지 않습니다.')
-  return data as PopularBooksSnapshot
+  return { sources, collected_at: data.collected_at, basis_date: data.basis_date, monthly_basis: data.monthly_basis, items: data.items } as PopularBooksSnapshot
 }
 
 export function isPopularFresh(data: PopularBooksSnapshot, now = Date.now()): boolean {

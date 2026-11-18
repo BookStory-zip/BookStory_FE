@@ -29,13 +29,20 @@ function open(state?: unknown) {
   </Routes></MemoryRouter>)
 }
 
-test.each([404, 502, 504])('인기 도서 상세 %s 실패는 자동 이동 없이 YES24 링크·재시도를 제공한다', async (status) => {
+test.each([404, 502, 504])('인기 도서 상세 %s 실패는 도서 정보 링크·재시도를 제공한다', async (status) => {
   mocks.getCatalogBook.mockRejectedValue(new ApiError(status, 'Book not found'))
   open({ discoverySource: { isbn13: isbn, source_url: 'https://www.yes24.com/product/goods/123' } })
   await screen.findByRole('alert')
-  expect(screen.getByRole('link', { name: 'YES24에서 보기 ↗' }).getAttribute('href')).toBe('https://www.yes24.com/product/goods/123')
+  expect(screen.getByRole('link', { name: '도서 정보 보기 ↗' }).getAttribute('href')).toBe('https://www.yes24.com/product/goods/123')
   expect(screen.getByRole('button', { name: '다시 불러오기' })).toBeTruthy()
   expect(mocks.getCatalogBook).toHaveBeenCalledTimes(1)
+})
+
+test('조작된 상세 상태의 출처 링크를 표시하지 않는다', async () => {
+  mocks.getCatalogBook.mockRejectedValue(new ApiError(404))
+  open({ discoverySource: { isbn13: isbn, source_url: 'https://search.daum.net.evil.test/search' } })
+  await screen.findByRole('alert')
+  expect(screen.queryByRole('link', { name: '도서 정보 보기 ↗' })).toBeNull()
 })
 
 test('빈 후기와 별점 미평가를 구분하고, 내 기록이 없을 때만 담기를 제공한다', async () => {
@@ -137,4 +144,12 @@ test('공개 책 정보는 국립중앙도서관 쪽수가 있을 때만 쪽수�
   mocks.getCatalogBook.mockResolvedValue({ ...book, page_count: 247 })
   open()
   expect((await screen.findByText(/247쪽/)).textContent).toBe('2007-10-30 · 247쪽')
+})
+
+test('상세 실패에도 다음 책 페이지 링크를 유지한다', async () => {
+  const source_url = 'https://search.daum.net/search?q=9788936433598'
+  mocks.getCatalogBook.mockRejectedValue(new ApiError(404))
+  open({ discoverySource: { isbn13: isbn, source_url } })
+  await screen.findByRole('alert')
+  expect(screen.getByRole('link', { name: '도서 정보 보기 ↗' }).getAttribute('href')).toBe(source_url)
 })

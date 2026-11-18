@@ -29,20 +29,29 @@ export default function TimerPage({ userId, embedded = false }: { userId: string
   const requestedBookId = params.get('book')
   const [books, setBooks] = useState<LibraryBookItem[]>([])
   const [selected, setSelected] = useState<SelectedBook | null>(null)
+  const [choice, setChoice] = useState('')
   const [draftBookId, setDraftBookId] = useState(() => timerBookId(userId))
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const active = useRef(true)
   const version = useRef(0)
-  const selectedId = useRef<string | null>(null)
+  const selectedId = useRef<string | null | undefined>(undefined)
+  const page = useRef<HTMLElement>(null)
+  const focusAfterChoice = useRef(false)
+  const Heading = embedded ? 'h2' : 'h1'
+  useEffect(() => {
+    if (!focusAfterChoice.current) return
+    focusAfterChoice.current = false
+    page.current?.querySelector<HTMLElement>(selected ? '.timer-actions button' : '#timer-book')?.focus()
+  }, [selected])
   const load = useCallback(async () => {
     const run = ++version.current
     try {
       const [items, restored] = await withAccessToken((token) => Promise.all([
         getAllLibraryBooks(token, { status: 'reading' }),
         // 다시 확인할 때는 사용자가 고른 책을 주소의 책보다 먼저 유지한다.
-        restoreBook(token, timerBookId(userId), selectedId.current ?? requestedBookId),
+        restoreBook(token, timerBookId(userId), selectedId.current === undefined ? requestedBookId : selectedId.current),
       ]))
       if (!active.current || run !== version.current) return
       setBooks(items)
@@ -89,26 +98,30 @@ export default function TimerPage({ userId, embedded = false }: { userId: string
     }
   }
 
-  return <section className="timer-page" aria-labelledby="timer-page-title">
-    {embedded ? <h2 id="timer-page-title">타이머</h2> : <h1 id="timer-page-title">타이머</h1>}
+  return <section ref={page} className="timer-page" aria-labelledby="timer-page-title">
+    {selected ? <Heading id="timer-page-title" className="timer-book-title" aria-label={selected.title}>
+      {!draftBookId ? <button type="button" className="timer-change-book" aria-label={`${selected.title}, 읽을 책 변경`} disabled={busy || loading}
+        onClick={() => { if (busy || loading || timerBookId(userId)) return; selectedId.current = null; setChoice(selected.id); focusAfterChoice.current = true; setSelected(null) }}>{selected.title}</button> : selected.title}
+    </Heading> : <Heading id="timer-page-title">책 선택</Heading>}
     {loading && <p className="result-note">책 목록을 불러오는 중…</p>}
     {error && <div role="alert"><p>{error}</p><button type="button" className="secondary" disabled={busy || loading} onClick={() => { setLoading(true); setError(''); void load() }}>책 목록 다시 확인</button></div>}
     {!loading && !error && books.length === 0 && !selected && <p className="result-note">
       읽는 중인 책이 없습니다. <Link to="/">서재로 가기</Link>
     </p>}
-    {!loading && !error && (books.length > 0 || selected) && <div className="timer-book-picker">
+    {!loading && !error && !selected && books.length > 0 && <div className="timer-book-picker">
       <label htmlFor="timer-book">어떤 책을 읽으시나요?</label>
-      <select id="timer-book" value={selected?.id ?? ''} disabled={busy || !!draftBookId}
-        onChange={(event) => {
-          const book = books.find((item) => item.id === event.target.value) ?? null
-          selectedId.current = book?.id ?? null
-          setSelected(book)
-        }}>
+      <select id="timer-book" value={choice} disabled={busy || !!draftBookId}
+        onChange={(event) => setChoice(event.target.value)}>
         <option value="">책을 선택해주세요</option>
-        {selected && !books.some((book) => book.id === selected.id) && <option value={selected.id}>{selected.title}</option>}
         {books.map((book) => <option key={book.id} value={book.id}>{book.title}</option>)}
       </select>
-      {draftBookId && <p className="result-note">측정할 책은 현재 측정을 저장하거나 버린 뒤 바꿀 수 있어요.</p>}
+      <button type="button" disabled={!choice || busy || !!draftBookId} onClick={() => {
+        const book = books.find((item) => item.id === choice)
+        if (!book || busy || timerBookId(userId)) return
+        selectedId.current = book.id
+        focusAfterChoice.current = true
+        setSelected(book)
+      }}>선택 완료</button>
     </div>}
     {!loading && selected && <ReadingTimer key={selected.id} userId={userId} userBookId={selected.id} status={selected.status}
       blocked={!!error} onBusyChange={setBusy} onSaved={refreshSelected} />}
