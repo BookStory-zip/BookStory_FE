@@ -34,6 +34,15 @@ test('계정이 바뀌면 이전 계정의 진행 측정을 정리한다', async
   expect(readTimer('user-a')).toBeNull()
 })
 
+test.each(['account-change', 'logout'])('%s 시 이전 계정의 저장 지역도 지운다', async kind => {
+  await open()
+  localStorage.setItem('bookstory:last-library-district:user-a', '11190')
+  localStorage.setItem('bookstory:last-library-district', '11190')
+  act(() => notify(kind === 'logout' ? { authUserId: null, user: null, isChecking: false, error: null } : signedIn('user-b')))
+  expect(localStorage.getItem('bookstory:last-library-district:user-a')).toBeNull()
+  expect(localStorage.getItem('bookstory:last-library-district')).toBeNull()
+})
+
 test('상단 로고로 서재에 이동하고 타이머는 메뉴 대신 공통 버튼으로 제공한다', async () => {
   await open()
   expect(screen.queryByRole('link', { name: '타이머' })).toBeNull()

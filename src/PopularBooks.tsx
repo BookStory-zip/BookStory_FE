@@ -3,7 +3,6 @@ import { Link } from 'react-router'
 import { ApiError } from './lib/api'
 import { getPopularBooks, isPopularFresh, POPULAR_MAX_AGE } from './lib/discovery'
 import type { PopularBooksSnapshot } from './lib/discovery'
-import { spokenDate } from './lib/dates'
 import { commonErrorMessage } from './lib/errors'
 
 export default function PopularBooks() {
@@ -67,15 +66,13 @@ export default function PopularBooks() {
   if (data === null) return null
   return <section className="popular-books" aria-labelledby="popular-title">
     <div className="popular-heading">
-      <h2 id="popular-title">요즘 인기 있는 책</h2>
+      <h2 id="popular-title">인기 도서</h2>
       {data && (expanded || data.items.length >= 10) && <button type="button" className="link-button" disabled={loading || retryAt > 0}
         onClick={() => { if (expanded) setExpanded(false); else if (data.items.length > 10) setExpanded(true); else request(30) }}>
         {loading ? '불러오는 중…' : expanded ? '접기' : '전체 보기'}
       </button>}
     </div>
     {data && <>
-      <p className="popular-source">YES24 일간·월간 베스트셀러 종합</p>
-      <p className="result-note">{data.basis_date && `일간 ${spokenDate(data.basis_date)} 기준`} · {data.monthly_basis && `월간 ${data.monthly_basis.replace('-', '년 ')}월 기준`}</p>
       <ol className={`popular-list ${expanded ? 'is-expanded' : ''}`} aria-label="인기 도서 순위">
         {(expanded ? data.items : data.items.slice(0, 10)).map((book) => <li key={book.isbn13}>
           <span className="popular-rank" aria-label={`${book.rank}위`}>{book.rank}</span>
@@ -86,10 +83,10 @@ export default function PopularBooks() {
           </Link>
           <p className="popular-author">{book.author || '저자 정보 없음'}</p>
           {book.publisher && <p className="popular-author">{book.publisher}</p>}
-          <a className="popular-source-link" href={book.source_url} target="_blank" rel="noreferrer" aria-label={`${book.title} YES24에서 보기`}>YES24에서 보기 ↗</a>
+          <a className="popular-source-link" href={book.source_url} target="_blank" rel="noreferrer" aria-label={`${book.title} 도서 정보 보기`}>도서 정보 보기 ↗</a>
         </li>)}
       </ol>
-      <p className="result-note">일간·월간 순위를 종합하고 일부 분야를 제외한 목록입니다.</p>
+      <p className="result-note">자료: {data.sources.map((source) => source === 'yes24' ? 'YES24' : '도서관 정보나루').join(' · ')}</p>
     </>}
     {loading && !data && <p role="status" className="result-note">인기 도서를 불러오는 중…</p>}
     {error && <div className="library-note" role="alert"><p>{error.text}</p>

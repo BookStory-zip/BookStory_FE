@@ -4,6 +4,7 @@ import { Link, MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
 import BookCatalog from './BookCatalog'
+vi.mock('./BookAvailability', () => ({ default: () => <section aria-label="구매·대출"><input aria-label="도서관 검색 상태" defaultValue="" /></section> }))
 
 const mocks = vi.hoisted(() => ({ getCatalogBook: vi.fn(), getPublicReviews: vi.fn(), getLibraryBookByIsbn: vi.fn(), addLibraryBook: vi.fn() }))
 vi.mock('./lib/catalog', () => ({ getCatalogBook: mocks.getCatalogBook, getPublicReviews: mocks.getPublicReviews }))
@@ -24,18 +25,35 @@ beforeEach(() => {
 afterEach(cleanup)
 function open(state?: unknown) {
   render(<MemoryRouter initialEntries={[{ pathname: `/catalog/${isbn}`, state }]}><Routes>
-    <Route path="/catalog/:isbn13" element={<BookCatalog />} />
+    <Route path="/catalog/:isbn13" element={<BookCatalog userId="user-a" />} />
     <Route path="/books/:userBookId" element={<p>내 기록 편집</p>} />
   </Routes></MemoryRouter>)
 }
 
-test.each([404, 502, 504])('인기 도서 상세 %s 실패는 자동 이동 없이 YES24 링크·재시도를 제공한다', async (status) => {
+test.each(['다시 불러오기', '서재에 담기'])('%s 후 구매·대출 영역을 다시 마운트하지 않는다', async name => {
+  mocks.addLibraryBook.mockResolvedValue({ id: 'own', created: true })
+  open()
+  await screen.findByRole('button', { name: '서재에 담기' })
+  fireEvent.change(screen.getByLabelText('도서관 검색 상태'), { target: { value: '조회 결과 유지' } })
+  fireEvent.click(screen.getByRole('button', { name }))
+  await waitFor(() => expect(mocks.getCatalogBook).toHaveBeenCalledTimes(2))
+  expect(screen.getByLabelText('도서관 검색 상태')).toHaveProperty('value', '조회 결과 유지')
+})
+
+test.each([404, 502, 504])('인기 도서 상세 %s 실패는 도서 정보 링크·재시도를 제공한다', async (status) => {
   mocks.getCatalogBook.mockRejectedValue(new ApiError(status, 'Book not found'))
   open({ discoverySource: { isbn13: isbn, source_url: 'https://www.yes24.com/product/goods/123' } })
   await screen.findByRole('alert')
-  expect(screen.getByRole('link', { name: 'YES24에서 보기 ↗' }).getAttribute('href')).toBe('https://www.yes24.com/product/goods/123')
+  expect(screen.getByRole('link', { name: '도서 정보 보기 ↗' }).getAttribute('href')).toBe('https://www.yes24.com/product/goods/123')
   expect(screen.getByRole('button', { name: '다시 불러오기' })).toBeTruthy()
   expect(mocks.getCatalogBook).toHaveBeenCalledTimes(1)
+})
+
+test('조작된 상세 상태의 출처 링크를 표시하지 않는다', async () => {
+  mocks.getCatalogBook.mockRejectedValue(new ApiError(404))
+  open({ discoverySource: { isbn13: isbn, source_url: 'https://search.daum.net.evil.test/search' } })
+  await screen.findByRole('alert')
+  expect(screen.queryByRole('link', { name: '도서 정보 보기 ↗' })).toBeNull()
 })
 
 test('빈 후기와 별점 미평가를 구분하고, 내 기록이 없을 때만 담기를 제공한다', async () => {
@@ -109,7 +127,7 @@ test('책을 바꾼 뒤 도착한 이전 책의 개인 메모를 표시하지 �
   mocks.getCatalogBook.mockResolvedValueOnce(book).mockResolvedValueOnce({ ...book, title: '다음 책', isbn13: '9788936434120' })
   render(<MemoryRouter initialEntries={[`/catalog/${isbn}`]}>
     <Link to="/catalog/9788936434120">다른 책</Link>
-    <Routes><Route path="/catalog/:isbn13" element={<BookCatalog />} /></Routes>
+    <Routes><Route path="/catalog/:isbn13" element={<BookCatalog userId="user-a" />} /></Routes>
   </MemoryRouter>)
   await screen.findByRole('heading', { name: '채식주의자' })
   fireEvent.click(screen.getByRole('link', { name: '다른 책' }))
@@ -137,4 +155,12 @@ test('공개 책 정보는 국립중앙도서관 쪽수가 있을 때만 쪽수�
   mocks.getCatalogBook.mockResolvedValue({ ...book, page_count: 247 })
   open()
   expect((await screen.findByText(/247쪽/)).textContent).toBe('2007-10-30 · 247쪽')
+})
+
+test('상세 실패에도 다음 책 페이지 링크를 유지한다', async () => {
+  const source_url = 'https://search.daum.net/search?q=9788936433598'
+  mocks.getCatalogBook.mockRejectedValue(new ApiError(404))
+  open({ discoverySource: { isbn13: isbn, source_url } })
+  await screen.findByRole('alert')
+  expect(screen.getByRole('link', { name: '도서 정보 보기 ↗' }).getAttribute('href')).toBe(source_url)
 })

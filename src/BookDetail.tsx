@@ -420,7 +420,7 @@ function BookDetail({ userBookId }: { userBookId: string }) {
           )}
           <Link to={`/catalog/${book.isbn13}`} onClick={(event) => {
             if (recordDirty) { event.preventDefault(); setConfirming('catalog') }
-          }}>책 정보·공개 후기 보기</Link>
+          }}>책 소개·구매·대출·후기 보기</Link>
         </div>
       </div>
 

@@ -158,30 +158,27 @@ export default function ReadingTimer({ userId, userBookId, status, blocked, onSa
   }
 
   return <section className="detail-card reading-timer" aria-labelledby="timer-title">
-    <h2 id="timer-title">독서 타이머</h2>
+    <h2 id="timer-title" className="visually-hidden">독서 타이머</h2>
     {draft && !own ? <div>
       <p className="result-note">다른 책의 측정이 남아 있어요. <Link to={`/timer?book=${encodeURIComponent(draft.userBookId)}`}>진행 중인 타이머로 이동</Link></p>
       <button type="button" className="link-button" disabled={locked} onClick={() => setRemove(draft.clientSessionId)}>측정 버리기</button>
     </div> : <>
       <p className="timer-clock" role="timer" aria-label="측정 시간" aria-live="off">{clock(seconds)}</p>
-      <progress max={3600} value={seconds} aria-label="한 구간 최대 1시간" />
+      {!draft && <p className="result-note">한 번에 최대 1시간까지 측정합니다.</p>}
+      {draft?.phase === 'paused' && <p className="result-note">일시정지 중입니다.</p>}
       {draft?.phase === 'finished' && seconds === 3600 && <p>1시간을 읽었어요. 계속 읽고 계신가요? 확인 전까지 시간은 더해지지 않아요.</p>}
       {draft && seconds < TIMER_MIN_SECONDS && <p className="result-note">1분부터 저장할 수 있어요.</p>}
-      {draft?.phase === 'paused' && <p className="result-note">일시정지 중입니다.</p>}
       <div className="timer-actions">
-        {!draft && <button type="button" disabled={locked || status !== 'reading'} onClick={begin}>타이머 시작</button>}
-        {draft && draft.phase !== 'finished' && <button type="button" disabled={locked || (draft.phase === 'paused' && status !== 'reading')} onClick={togglePause}>{draft.phase === 'running' ? '일시정지' : '다시 읽기'}</button>}
+        {!draft && <button type="button" disabled={locked || status !== 'reading'} onClick={begin}>시작</button>}
+        {draft && draft.phase !== 'finished' && <button type="button" className="secondary" disabled={locked || (draft.phase === 'paused' && status !== 'reading')} onClick={togglePause}>{draft.phase === 'running' ? '일시정지' : '다시 시작'}</button>}
         {draft?.phase === 'finished' && seconds === 3600 && <button type="button" disabled={locked || status !== 'reading'} onClick={() => void save(true)}>계속 읽기</button>}
-        {draft && <button type="button" className="secondary" disabled={locked || seconds < TIMER_MIN_SECONDS} onClick={() => void save()}>{saving ? '저장하는 중…' : draft.phase === 'finished' && seconds < 3600 ? '다시 저장' : '종료·저장'}</button>}
-        {draft && <button type="button" className="link-button" disabled={locked} onClick={() => setRemove(draft.clientSessionId)}>측정 버리기</button>}
+        {draft && <button type="button" disabled={locked || seconds < TIMER_MIN_SECONDS} onClick={() => void save()}>{saving ? '저장 중…' : draft.phase === 'finished' && seconds < 3600 ? '다시 저장' : '완료'}</button>}
       </div>
+      {draft && <button type="button" className="link-button timer-discard" disabled={locked} onClick={() => setRemove(draft.clientSessionId)}>측정 버리기</button>}
       {status !== 'reading' && <p className="result-note">읽는 중인 책만 새 측정을 시작할 수 있어요.</p>}
     </>}
     {local.error && <p role="alert">{local.error}</p>}
     <p aria-live="polite">{note}</p>
-    <details className="inline-help"><summary>타이머 사용법</summary>
-      <p>1분부터 저장할 수 있습니다. 한 구간은 최대 1시간이며 계속 읽기를 확인해야 다음 구간이 시작됩니다. 일시정지한 시간은 제외하고 저장한 구간의 시작 날짜에 독서 체크를 반영합니다.</p>
-    </details>
     <ConfirmDialog open={remove !== null} title="측정을 버릴까요?" message="아직 저장하지 않은 측정은 복구할 수 없습니다."
       confirmLabel="측정 버리기" danger onConfirm={confirmRemove} onCancel={() => setRemove(null)} />
   </section>

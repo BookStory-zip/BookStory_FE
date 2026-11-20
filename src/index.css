@@ -310,9 +310,6 @@ main.app {
   padding-inline: max(var(--space-4), env(safe-area-inset-left)) max(var(--space-4), env(safe-area-inset-right));
 }
 
-#root:has(main.app):not(:has(.library))::before { display: none; }
-#root:has(main.app):not(:has(.library))::after { background: var(--color-paper); }
-
 @media (max-width: 47.99rem) {
   html:has(main.app) { scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
   main.app { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
@@ -345,13 +342,20 @@ main.app {
 .floating-timer { position: fixed; z-index: 15; right: 0; bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
 .floating-timer-trigger { position: relative; display: grid; place-items: center; width: calc(44px + env(safe-area-inset-right)); min-height: 48px; padding: var(--space-2) calc(var(--space-2) + env(safe-area-inset-right)) var(--space-2) var(--space-2); border-radius: 12px 0 0 12px; }
 .timer-active-dot { position: absolute; top: 7px; left: 7px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.floating-timer-panel { position: absolute; right: 0; bottom: calc(100% + var(--space-3)); width: min(25rem, calc(100vw - 2rem)); max-height: min(42rem, calc(100dvh - 12rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))); overflow: auto; overscroll-behavior: contain; padding: var(--space-4); border: 1px solid var(--color-rule-strong); border-radius: var(--radius); background: var(--color-paper-2); box-shadow: 0 8px 24px #0005; }
+.floating-timer-panel { position: absolute; right: 0; bottom: calc(100% + var(--space-3)); width: min(18rem, calc(100vw - 1.5rem)); max-height: min(42rem, calc(100dvh - 12rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))); overflow: auto; overscroll-behavior: contain; padding: var(--space-4); border: 1px solid var(--color-rule-strong); border-radius: var(--radius); background: var(--color-paper-2); box-shadow:0 8px 24px #0005; }
 .floating-timer-panel { right: max(var(--space-3), env(safe-area-inset-right)); opacity: 0; visibility: hidden; transform: translateX(calc(100% + var(--space-4))); transition: transform 180ms ease-out, opacity 180ms ease-out, visibility 0s 180ms; }
 .floating-timer-panel.is-open { opacity: 1; visibility: visible; transform: translateX(0); transition-delay: 0s; }
 @media (prefers-reduced-motion: reduce) { .floating-timer-panel { transition: none; } }
-.floating-timer-close { display: block; margin-left: auto; }
-.floating-timer-panel .timer-page h2 { margin: 0 0 var(--space-4); }
-.floating-timer-panel .reading-timer { padding-inline: 0; border: 0; }
+.floating-timer-panel .floating-timer-close { position: absolute; top: var(--space-4); right: var(--space-3); width: auto; min-width: 44px; min-height: 44px; font-size: 0.75rem; color: var(--color-muted); text-decoration: none; }
+.floating-timer-panel .timer-page > :is(h1, h2) { display: flex; align-items: center; min-height: 44px; padding-right: 44px; margin: 0; font-family: var(--font-body); font-size: 0.9375rem; line-height: 1.4; }
+.timer-change-book { width: auto; min-height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.timer-change-book:hover:not(:disabled) { background: transparent; text-decoration: underline; text-underline-offset: 0.2em; }
+.floating-timer-panel .reading-timer { padding: 0; margin: 0; border: 0; background: transparent; gap: var(--space-2); }
+.floating-timer-panel .timer-clock { margin: var(--space-2) 0 var(--space-4); text-align: center; font-size: 2.5rem; }
+.floating-timer-panel .timer-actions { flex-wrap: nowrap; }
+.floating-timer-panel .timer-actions button { flex: 1; width: auto; min-width: 0; min-height: 44px; padding: var(--space-2); font-size: 0.8125rem; white-space: normal; }
+.floating-timer-panel .timer-discard { width: auto; min-height: 44px; justify-self: center; font-size: 0.75rem; }
+.floating-timer-panel .result-note { font-size: 0.8125rem; }
 .app:has(.order-target) .floating-timer,
 body:has(.photo-editor-dialog[open], .note-photo-viewer[open]) .floating-timer { visibility: hidden; }
 @media (max-width: 47.99rem) {
@@ -824,6 +828,32 @@ body:has(.photo-editor-dialog[open], .note-photo-viewer[open]) .floating-timer {
 }
 
 .catalog .detail-head { margin-bottom: var(--space-6); }
+.availability-tabs { display: flex; gap: var(--space-6); border-bottom: 1px solid var(--color-rule); margin: var(--space-4) 0 var(--space-4); }
+.availability-tabs button { width: auto; min-height: 44px; padding: var(--space-2) var(--space-1) var(--space-3); border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--color-muted); font-size: .9375rem; }
+.availability-tabs button[aria-selected='true'] { color: var(--color-accent); border-bottom-color: var(--color-accent); }
+.availability-stores, .availability-libraries { list-style: none; padding: 0; margin: 0; }
+.availability-stores a { display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: var(--space-3) 0; border-bottom: 1px solid var(--color-rule); text-decoration: none; }
+.availability-stores li:last-child a { border-bottom: 0; }
+.availability-region { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: var(--space-2); align-items: end; padding: 0; border: 0; }
+.availability-region label { display: grid; gap: var(--space-2); margin: 0; font-size: .8125rem; color: var(--color-muted); }
+.availability-region select { min-width: 0; font-size: 1rem; }
+.availability-region button { width: auto; white-space: nowrap; font-size: .875rem; }
+.availability-basis { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2) var(--space-4); padding: var(--space-4) 0; font-size: .75rem; color: var(--color-muted); }
+.availability-libraries > li { padding: var(--space-4) 0; border-top: 1px solid var(--color-rule); overflow-wrap: anywhere; }
+.availability-libraries > li > a { display: inline-flex; align-items: center; min-height: 44px; font-size: .8125rem; }
+.availability-library-heading { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); }
+.availability-library-heading strong { min-width: 0; font-weight: 500; }
+.availability-library-heading span { flex-shrink: 0; font-size: .75rem; }
+.loan-available { color: var(--color-accent); }
+.availability-hours summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; color: var(--color-accent); font-size: .8125rem; }
+.availability-hours dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2) var(--space-4); font-size: .8125rem; }
+.availability-hours dt { color: var(--color-muted); }
+.availability-hours dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.availability-credit { margin-top: var(--space-4); font-size: .75rem; }
+@media (max-width: 40rem) {
+  .availability-region { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .availability-region button { grid-column: 1 / -1; width: 100%; }
+}
 .catalog-eyebrow, .review-visibility { color: var(--color-muted); font-size: .8125rem; }
 .catalog-eyebrow { margin: 0; }
 .review-summary { color: var(--color-accent); font-variant-numeric: tabular-nums; }
@@ -1117,12 +1147,6 @@ button.link-button:hover:not(:disabled) {
   line-height: 1.2;
 }
 
-.reading-timer progress {
-  width: 100%;
-  height: 0.4rem;
-  accent-color: var(--color-accent);
-}
-
 .timer-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1239,7 +1263,6 @@ button.link-button:hover:not(:disabled) {
 .popular-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .popular-heading h2 { margin: 0; font-size: 1.25rem; }
 .popular-heading button { width: auto; flex-shrink: 0; }
-.popular-source { margin: var(--space-2) 0 0; font-size: .875rem; color: var(--color-muted); }
 .popular-list { display: grid; grid-auto-flow: column; grid-auto-columns: 8.5rem; gap: var(--space-4); overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding: var(--space-3) 0 var(--space-4); margin: 0; list-style: none; }
 .popular-list.is-expanded { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); }
 .popular-list li { min-width: 0; scroll-snap-align: start; }

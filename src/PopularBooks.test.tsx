@@ -10,18 +10,19 @@ import { StrictMode } from 'react'
 const mocks = vi.hoisted(() => ({ getPopularBooks: vi.fn() }))
 vi.mock('./lib/discovery', async (original) => ({ ...await original<typeof import('./lib/discovery')>(), ...mocks }))
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
-const snapshot = (count = 10, title = '인기'): PopularBooksSnapshot => ({ source: 'yes24', collected_at: '2026-11-12T21:00:00Z', basis_date: '2026-11-12', monthly_basis: '2026-10', items: Array.from({ length: count }, (_, index) => ({ rank: index + 1, daily_rank: null, monthly_rank: index + 2, isbn13: `978893643${String(index).padStart(4, '0')}`, title: `${title} ${index + 1}`, author: '작가 저/번역가 역', publisher: null, thumbnail_url: null, source_url: `https://www.yes24.com/product/goods/${index + 1}` })) })
+const snapshot = (count = 10, title = '인기'): PopularBooksSnapshot => ({ sources: ['yes24', 'data4library'], collected_at: '2026-11-12T21:00:00Z', basis_date: '2026-11-12', monthly_basis: '2026-10', items: Array.from({ length: count }, (_, index) => ({ rank: index + 1, daily_rank: null, monthly_rank: index + 2, isbn13: `978893643${String(index).padStart(4, '0')}`, title: `${title} ${index + 1}`, author: '작가 저/번역가 역', publisher: null, thumbnail_url: null, source_url: `https://www.yes24.com/product/goods/${index + 1}` })) })
 const open = () => render(<MemoryRouter><PopularBooks /></MemoryRouter>)
 beforeEach(() => { vi.resetAllMocks(); vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-13T03:00:00Z')) })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
-test('10권과 출처·일간/월간 기준·항목별 YES24 링크를 보여준다', async () => {
+test('10권과 출처·항목별 도서 정보 링크만 보여준다', async () => {
   mocks.getPopularBooks.mockResolvedValue(snapshot())
   open()
   await screen.findByText('인기 10')
-  expect(screen.getByText(/YES24 일간·월간 베스트셀러 종합/)).toBeTruthy()
-  expect(screen.getByText(/2026년 10월/)).toBeTruthy()
-  expect(screen.getAllByRole('link', { name: /YES24에서 보기/ })).toHaveLength(10)
+  expect(screen.getByRole('heading', { name: '인기 도서' })).toBeTruthy()
+  expect(screen.getByText('자료: YES24 · 도서관 정보나루')).toBeTruthy()
+  expect(screen.queryByText(/일간|월간|종합|기준/)).toBeNull()
+  expect(screen.getAllByRole('link', { name: /도서 정보 보기/ })).toHaveLength(10)
   expect(screen.getByRole('link', { name: '인기 1' }).getAttribute('href')).toBe('/catalog/9788936430000')
   expect(mocks.getPopularBooks).toHaveBeenCalledWith(10)
 })
@@ -78,7 +79,7 @@ test('화면을 켜 둔 동안 72시간이 지나도 오래된 목록을 숨긴�
   await act(async () => {})
   expect(screen.getByText('인기 1')).toBeTruthy()
   await act(async () => { vi.advanceTimersByTime(1001) })
-  expect(screen.queryByRole('region', { name: '요즘 인기 있는 책' })).toBeNull()
+  expect(screen.queryByRole('region', { name: '인기 도서' })).toBeNull()
 })
 
 test('StrictMode에서 이전 조회가 나중에 끝나도 최신 수집본을 덮지 않는다', async () => {
@@ -89,4 +90,12 @@ test('StrictMode에서 이전 조회가 나중에 끝나도 최신 수집본을 
   await act(async () => finish(snapshot(2, '이전')))
   expect(screen.queryByText('이전 1')).toBeNull()
   expect(screen.getByText('최신 1')).toBeTruthy()
+})
+
+
+test('YES24 단독 출처만 표시한다', async () => {
+  mocks.getPopularBooks.mockResolvedValue({ ...snapshot(1), sources: ['yes24'] })
+  open()
+  expect(await screen.findByText('자료: YES24')).toBeTruthy()
+  expect(screen.queryByText(/도서관 정보나루/)).toBeNull()
 })

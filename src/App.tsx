@@ -6,6 +6,7 @@ import { signIn, signOut, signUp, subscribeAuthState } from './lib/auth'
 import { commonErrorMessage, isAuthFailure } from './lib/errors'
 import { releaseReminder, syncReminder } from './lib/push'
 import { clearTimer } from './lib/timer'
+import { rememberDistrict } from './lib/book-availability'
 import CabinIcon from './CabinIcon'
 import Library from './Library'
 import FloatingTimer from './FloatingTimer'
@@ -66,6 +67,7 @@ function AuthScreen() {
       if (identityChanged || state.isChecking || signedOut) {
         if (identityChanged && authUserId.current !== null) {
           clearTimer(authUserId.current)
+          rememberDistrict(authUserId.current, '')
           formRef.current?.reset()
         }
 
@@ -295,12 +297,13 @@ function AuthScreen() {
             <Routes key={userId}>
               <Route index element={<Library />} />
               <Route path="search" element={<BookSearch />} />
-              <Route path="catalog/:isbn13" element={<BookCatalog />} />
+              <Route path="catalog/:isbn13" element={<BookCatalog userId={userId} />} />
               <Route path="books/:userBookId" element={<BookDetail userId={userId} />} />
               <Route path="records" element={<ReadingRecords />} />
               <Route path="timer" element={<p className="result-note">타이머는 오른쪽 아래 버튼으로 사용할 수 있어요.</p>} />
               <Route path="settings" element={<AccountSettings onDeleted={() => {
                 clearTimer(userId)
+                rememberDistrict(userId, '')
                 return handleLogout('탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.')
               }} />} />
               <Route path="*" element={<Navigate to="/" replace />} />

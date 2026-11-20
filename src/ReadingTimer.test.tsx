@@ -29,7 +29,8 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 test('방치한 구간은 1시간에 멈추고 확인 후에만 저장·새 구간을 시작한다', async () => {
   show()
-  fireEvent.click(screen.getByRole('button', { name: '타이머 시작' }))
+  fireEvent.click(screen.getByRole('button', { name: '시작' }))
+  expect(screen.getByRole('button', { name: '측정 버리기' })).toBeTruthy()
   const original = readTimer('user-a')!
   later(5 * 3600_000)
   expect(screen.getByRole('timer').textContent).toBe('01:00:00')
@@ -46,9 +47,9 @@ test('방치한 구간은 1시간에 멈추고 확인 후에만 저장·새 구�
 test('저장 결과가 불명확하면 시간을 고정하고 같은 식별자·같은 내용으로만 직접 재시도한다', async () => {
   mocks.saveReadingSession.mockRejectedValueOnce(new TypeError('network')).mockResolvedValueOnce({ id: 'saved' })
   show()
-  fireEvent.click(screen.getByRole('button', { name: '타이머 시작' }))
+  fireEvent.click(screen.getByRole('button', { name: '시작' }))
   later(90_000)
-  fireEvent.click(screen.getByRole('button', { name: '종료·저장' }))
+  fireEvent.click(screen.getByRole('button', { name: '완료' }))
   await screen.findByText(/저장 결과를 확인하지 못했습니다/)
   const sent = mocks.saveReadingSession.mock.calls[0][2]
   later(5 * 3600_000)
@@ -64,10 +65,10 @@ test('다른 책의 측정을 덮어쓰지 않고 다른 계정에서는 보이�
   writeTimer(startTimer('user-a', 'other-book', now, crypto.randomUUID()))
   show()
   expect(screen.getByRole('link', { name: '진행 중인 타이머로 이동' }).getAttribute('href')).toBe('/timer?book=other-book')
-  expect(screen.queryByRole('button', { name: '타이머 시작' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '시작' })).toBeNull()
   cleanup()
   show({ userId: 'user-b' })
-  expect(screen.getByRole('button', { name: '타이머 시작' })).toHaveProperty('disabled', false)
+  expect(screen.getByRole('button', { name: '시작' })).toHaveProperty('disabled', false)
   expect(screen.queryByRole('link', { name: '진행 중인 타이머로 이동' })).toBeNull()
 })
 
@@ -76,7 +77,7 @@ test('다른 책이 삭제돼도 남은 측정을 버리고 새 타이머를 시
   show()
   fireEvent.click(screen.getByRole('button', { name: '측정 버리기' }))
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '측정 버리기' }))
-  fireEvent.click(await screen.findByRole('button', { name: '타이머 시작' }))
+  fireEvent.click(await screen.findByRole('button', { name: '시작' }))
   expect(readTimer('user-a')?.userBookId).toBe('book-a')
 })
 
@@ -84,7 +85,7 @@ test('저장 중 계정이 닫히면 늦은 성공으로 타이머를 되살리�
   let resolve!: (value: unknown) => void
   mocks.saveReadingSession.mockReturnValue(new Promise(r => { resolve = r }))
   show()
-  fireEvent.click(screen.getByRole('button', { name: '타이머 시작' }))
+  fireEvent.click(screen.getByRole('button', { name: '시작' }))
   later(3600_000)
   fireEvent.click(screen.getByRole('button', { name: '계속 읽기' }))
   clearTimer('user-a')
@@ -97,9 +98,9 @@ test('저장 중 계정이 닫히면 늦은 성공으로 타이머를 되살리�
 test('세션 저장 409는 측정 값을 보존하고 상태 재확인을 요청한다', async () => {
   mocks.saveReadingSession.mockRejectedValue(new ApiError(409, undefined, 'reading_check_not_allowed'))
   show()
-  fireEvent.click(screen.getByRole('button', { name: '타이머 시작' }))
+  fireEvent.click(screen.getByRole('button', { name: '시작' }))
   later(90_000)
-  fireEvent.click(screen.getByRole('button', { name: '종료·저장' }))
+  fireEvent.click(screen.getByRole('button', { name: '완료' }))
   await screen.findByText(/읽는 중인 책만 시간 기록을 저장/)
   expect(readTimer('user-a')?.elapsedMs).toBe(90_000)
   expect(onSaved).toHaveBeenCalledTimes(1)
@@ -108,9 +109,9 @@ test('세션 저장 409는 측정 값을 보존하고 상태 재확인을 요청
 test('겹치는 시간 409는 측정을 보존하고 재전송 없이 원인을 안내한다', async () => {
   mocks.saveReadingSession.mockRejectedValue(new ApiError(409, undefined, 'session_overlap'))
   show()
-  fireEvent.click(screen.getByRole('button', { name: '타이머 시작' }))
+  fireEvent.click(screen.getByRole('button', { name: '시작' }))
   later(90_000)
-  fireEvent.click(screen.getByRole('button', { name: '종료·저장' }))
+  fireEvent.click(screen.getByRole('button', { name: '완료' }))
   await screen.findByText(/이미 기록된 시간과 겹칩니다/)
   later(3600_000)
   expect(readTimer('user-a')?.elapsedMs).toBe(90_000)
@@ -119,15 +120,16 @@ test('겹치는 시간 409는 측정을 보존하고 재전송 없이 원인을 
 
 test('1분 전 저장은 막고 일시정지한 시간은 더하지 않는다', async () => {
   show()
-  fireEvent.click(screen.getByRole('button', { name: '타이머 시작' }))
+  fireEvent.click(screen.getByRole('button', { name: '시작' }))
   later(59_000)
-  expect(screen.getByRole('button', { name: '종료·저장' })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('button', { name: '완료' })).toHaveProperty('disabled', true)
   fireEvent.click(screen.getByRole('button', { name: '일시정지' }))
+  expect(screen.getByText('일시정지 중입니다.')).toBeTruthy()
   later(600_000)
   expect(screen.getByRole('timer').textContent).toBe('00:00:59')
-  fireEvent.click(screen.getByRole('button', { name: '다시 읽기' }))
+  fireEvent.click(screen.getByRole('button', { name: '다시 시작' }))
   later(601_000)
-  fireEvent.click(screen.getByRole('button', { name: '종료·저장' }))
+  fireEvent.click(screen.getByRole('button', { name: '완료' }))
   await waitFor(() => expect(onSaved).toHaveBeenCalled())
   expect(mocks.saveReadingSession.mock.calls[0][2].duration_seconds).toBe(60)
 })
@@ -135,7 +137,7 @@ test('1분 전 저장은 막고 일시정지한 시간은 더하지 않는다', 
 test('로컬 저장소를 쓸 수 없으면 저장되지 않는 타이머를 시작하지 않는다', async () => {
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
   show()
-  fireEvent.click(screen.getByRole('button', { name: '타이머 시작' }))
+  fireEvent.click(screen.getByRole('button', { name: '시작' }))
   expect(await screen.findByRole('alert')).toBeTruthy()
   expect(readTimer('user-a')).toBeNull()
   expect(mocks.saveReadingSession).not.toHaveBeenCalled()
@@ -144,9 +146,9 @@ test('로컬 저장소를 쓸 수 없으면 저장되지 않는 타이머를 시
 test('서버가 미래 측정을 거부하면 기기 시계를 안내하고 값을 보존한다', async () => {
   mocks.saveReadingSession.mockRejectedValue(new ApiError(422, undefined, 'future_date'))
   show()
-  fireEvent.click(screen.getByRole('button', { name: '타이머 시작' }))
+  fireEvent.click(screen.getByRole('button', { name: '시작' }))
   later(90_000)
-  fireEvent.click(screen.getByRole('button', { name: '종료·저장' }))
+  fireEvent.click(screen.getByRole('button', { name: '완료' }))
   await screen.findByText(/측정 시작 시각이 서버 시각보다 앞섭니다/)
   expect(readTimer('user-a')?.elapsedMs).toBe(90_000)
 })

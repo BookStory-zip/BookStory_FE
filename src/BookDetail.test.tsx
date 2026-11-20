@@ -194,7 +194,7 @@ test('후기 저장 실패 시 별점과 후기 입력을 보존한다', async (
   expect(screen.getByLabelText('후기')).toHaveProperty('value', '저장 전 후기')
 })
 
-test.each(['책 정보·공개 후기 보기', '계정의 후기·별점 공개 설정'])('후기 수정 후 %s 이동을 취소하면 입력을 유지한다', async (link) => {
+test.each(['책 소개·구매·대출·후기 보기', '계정의 후기·별점 공개 설정'])('후기 수정 후 %s 이동을 취소하면 입력을 유지한다', async (link) => {
   mocks.getLibraryBook.mockResolvedValue(detail())
   renderDetail()
   await openSection('나의 기록')
