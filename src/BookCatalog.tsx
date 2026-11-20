@@ -8,16 +8,17 @@ import type { CatalogBook, PublicReview } from './lib/catalog'
 import { ADD_RATE_LIMITED, commonErrorMessage, isUnclearWrite } from './lib/errors'
 import { formatKstDate } from './lib/record'
 import { discoverySource } from './lib/discovery'
+import BookAvailability from './BookAvailability'
 
 const PAGE_SIZE = 20
 
-export default function BookCatalogPage() {
+export default function BookCatalogPage({ userId }: { userId: string }) {
   const { isbn13 = '' } = useParams()
   const { state } = useLocation()
-  return <BookCatalog key={isbn13} isbn13={isbn13} fallbackUrl={discoverySource(state, isbn13)} />
+  return <BookCatalog key={`${userId}:${isbn13}`} isbn13={isbn13} userId={userId} fallbackUrl={discoverySource(state, isbn13)} />
 }
 
-function BookCatalog({ isbn13, fallbackUrl }: { isbn13: string; fallbackUrl: string | null }) {
+function BookCatalog({ isbn13, userId, fallbackUrl }: { isbn13: string; userId: string; fallbackUrl: string | null }) {
   const [book, setBook] = useState<CatalogBook | null>(null)
   const [bookError, setBookError] = useState('')
   // undefined는 확인 중, null은 서버가 404로 확인한 미등록 상태다.
@@ -37,7 +38,7 @@ function BookCatalog({ isbn13, fallbackUrl }: { isbn13: string; fallbackUrl: str
 
   function refresh() {
     generation.current++
-    setBook(null); setBookError(''); setOwn(undefined); setOwnError('')
+    setBookError(''); setOwn(undefined); setOwnError('')
     setReviews(null); setReviewError(''); setHasMore(false); setOffset(0)
     morePending.current = false; setMoreBusy(false)
     setReload((value) => value + 1)
@@ -137,6 +138,8 @@ function BookCatalog({ isbn13, fallbackUrl }: { isbn13: string; fallbackUrl: str
           {/^https?:\/\//i.test(book.source_url) && <a href={book.source_url} target="_blank" rel="noreferrer">제공처에서 더 보기 ↗</a>}
         </> : <p className="result-note">{bookError ? '책 정보를 다시 불러와주세요.' : '소개를 불러오는 중…'}</p>}
       </section>
+
+      {book && <BookAvailability isbn13={isbn13} userId={userId} />}
 
       <section className="detail-card" aria-labelledby="catalog-own">
         <h2 id="catalog-own">나의 기록</h2>

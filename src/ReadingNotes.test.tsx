@@ -364,7 +364,7 @@ test.each([new TypeError('Failed to fetch'), new SyntaxError('Invalid JSON'), ne
   await screen.findByText('노트를 저장했습니다.')
   expect(mocks.createReadingPhotoNote).toHaveBeenCalledTimes(2)
   expect(mocks.createReadingPhotoNote.mock.calls[1]).toEqual(first)
-  expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview')
+  await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview'))
 })
 
 test('100개 뒤 사진 주소를 갱신해도 이미 불러온 노트와 더 보기 위치를 유지한다', async () => {
