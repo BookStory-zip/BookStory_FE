@@ -7,16 +7,16 @@ BE가 FE용으로 정리한 계약은 BE 저장소 `docs/frontend-api.md`에 있
 - 운영 API: https://bookstory-api-w31a.onrender.com · [Swagger](https://bookstory-api-w31a.onrender.com/docs)
 - 기준: BE 5차 main `e4aec03`(2026-11-05 사용자 전달: 서재 정렬·도서 검색 기준/정렬·계정 알림·과거 읽은 날 운영 반영), FE main `97a039c`(PR #21, 2026-11-04 자동 운영 배포). BE 5차 verify·운영 OpenAPI·로그인 점검 통과는 BE 회신이며, FE가 운영 인증 API나 Render 배포 SHA·DB를 직접 확인한 것은 아닙니다. 실제 FE 확인 범위는 plan.md에 기록합니다.
 
-## 구매·대출 (2026-11-20 BE 회신 확정, 구현·운영 배포 대기)
+## 구매·대출 (2026-11-20 BE 계약·로컬 구현 대조, 운영 배포 확인 대기)
 
 - 공개 `GET /regions`는 `[{code, name, districts:[{code, name}]}]`를 반환한다. 코드는 문자열로 다루며 시·도 → 시·군·구 선택에 사용한다. 폐지된 코드는 목록에서 빠질 수 있다.
 - 공개 `GET /books/{isbn13}/where?district={code}`는 `{online:[{store,name,url}], district:{code,name}|null, libraries:[]|null}`을 반환한다. district 생략 시 온라인 링크만 조회하며 district=null, libraries=[]이다. 온라인 서점 목록·순서는 BE를 따르고 가격·재고는 표시하지 않는다.
-- libraries 항목은 `{lib_code,name,address,tel,homepage,operating_time,closed,loan_available}`이다. tel/homepage/operating_time/closed는 nullable이며 homepage는 HTTP·HTTPS 외부 링크를 허용하고 새 창·noreferrer로 연다. 해당 지역의 소장 도서관 전체를 반환하며 페이지네이션은 없다.
+- libraries 항목은 `{lib_code,name,address,tel,homepage,operating_time,closed,loan_available}`이다. address/tel/homepage/operating_time/closed는 nullable이며 주소가 없으면 주소 줄을 생략한다. 홈페이지가 잘못됐으면 링크만 생략하고 정상 도서관은 유지한다. 선택 필드의 누락·빈 값은 null, 잘못된 대출 상태는 미확인으로 처리하며 필수 식별자·이름 없는 행은 제외하고 중복 lib_code는 한 번만 표시한다. 원본이 비어 있지 않지만 정상 행이 하나도 없으면 조회 실패로 표시한다. homepage는 HTTP·HTTPS 외부 링크만 허용하고 새 창·noreferrer로 연다. 해당 지역의 소장 도서관 전체를 반환하며 페이지네이션은 없다.
 - 소장 도서관을 이름순으로 정렬한 앞의 3곳만 대출 여부를 확인한다. `loan_available`은 true=대출 가능, false=대출 불가(사유 구분 불가), null=확인하지 않았거나 개별 조회 실패다. 최종 응답 순서는 대출 가능 → 대출 불가 → 미확인, 그룹 내 이름순이며 FE가 다시 정렬하지 않는다. 안내는 "전일 집계 자료 · 실시간 정보 아님"이다.
-- 도서관 전체 조회 장애는 200, libraries=null이며 online과 선택한 district는 유지된다. libraries=[]는 소장 도서관 없음으로 구분한다.
+- 도서관 전체 조회 장애·서버 설정 누락·서비스 전체 또는 같은 접속 IP의 하루 조회 한도 초과는 200, libraries=null이며 online과 선택한 district는 유지된다. FE는 모두 불러오기 실패로 안내하고, libraries=[]는 소장 도서관 없음으로 구분한다.
 - 오류: 422 validation_error/region_not_found, IP당 분당 30회 초과는 429 rate_limited이며 Retry-After(초)·X-Request-ID가 CORS에 노출된다. 자동 재전송하지 않고 재시도 대기 시간을 안내한다. 저장한 옛 지역으로 region_not_found가 오면 저장 지역을 지우고 다시 선택하도록 안내하되 온라인 링크는 유지한다.
-- 응답 Cache-Control은 public, max-age=3600이다. 별도로 BE가 책+지역 결과를 하루 동안 서버에 저장해 사용자 간 재사용한다. FE는 성공한 지역을 기억해 미리 선택하되, "도서관 찾기" 버튼을 누를 때만 지역 조회를 요청한다. 개별 도서관 추가 조회 API는 1차 범위에서 제외한다.
-- 카탈로그 책 소개 아래의 "구매·대출" 섹션에 온라인/도서관 탭을 제공한다(섹션 접기 없음). 서재 상세에서는 카탈로그로 연결한다. FE 구현은 확정 계약의 모의 API로 검증하며, BE 운영 배포·실제 연동은 아직 확인하지 않았다. 429 대기는 책·계정 이동 후에도 유지하고, 늦게 도착한 이전 요청의 429도 반영한다.
+- 정상 응답 Cache-Control은 public, max-age=3600이다. libraries=null 또는 대출 확인이 하나라도 실패한 응답은 no-store이므로 재시도 시 새로 조회된다. 지역 목록은 public, max-age=86400이며 시·도 17개·시·군·구 250개를 API에서 받아 표시한다(부천시는 시 단위). 주소 특수문자와 빈 값·하이픈의 null 정리는 BE가 한다. 별도로 BE가 책+지역 결과를 그날(KST) 동안 서버에 저장해 사용자 간 재사용한다. FE는 성공한 지역을 계정별로 기억해 미리 선택하고 로그아웃·계정 전환·탈퇴 때 삭제한다. 이전 기기 공용 키는 이관하지 않고 삭제한다. "도서관 찾기" 버튼을 누를 때만 지역 조회를 요청하며 개별 도서관 추가 조회 API는 1차 범위에서 제외한다.
+- 카탈로그 책 소개 아래의 "구매·대출" 섹션에 온라인/도서관 탭을 제공한다(섹션 접기 없음). 서재 상세에서는 카탈로그로 연결한다. 새로고침·서재 담기 후에도 구매·대출의 마운트와 조회 결과를 유지한다. 온라인 자동 조회는 기존 계약대로 유지한다(온라인 조회도 같은 IP 한도 사용). 429 안내는 공통 상태 한 번만 표시하고 만료 시 요청별 제한 오류도 지우며 재시도는 자동으로 보내지 않는다. 대기는 책·계정 이동 후에도 유지하고 늦게 도착한 이전 요청의 429도 반영한다. BE 운영 배포·실제 연동은 아직 미확인이다. 사용자 확인에 따라 develop 대상 푸시·PR은 진행하며, main 배포 전에 BE 새 경로·실제 연동을 확인한다.
 
 ## 인기 도서 (2026-11-18 혼합 출처 계약, BE 변경 운영 배포 대기)
 

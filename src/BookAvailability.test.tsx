@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { useLayoutEffect } from 'react'
 import { ApiError } from './lib/api'
 import BookAvailability from './BookAvailability'
 
 const api = vi.hoisted(() => ({ getBookAvailability: vi.fn(), getRegions: vi.fn() }))
-vi.mock('./lib/book-availability', () => api)
+vi.mock('./lib/book-availability', async original => ({ ...await original<typeof import('./lib/book-availability')>(), ...api }))
 vi.mock('./lib/supabase', () => ({ supabase: { auth: {} } }))
 const isbn = '9788936434120'
 const regions = [{ code: '11', name: '서울특별시', districts: [{ code: '11190', name: '영등포구' }] }, { code: '41', name: '경기도', districts: [{ code: '41001', name: '수원시 장안구' }] }]
@@ -14,7 +15,7 @@ const library = { lib_code: '1', name: '가온도서관', address: '서울 영�
 const result = { online, district: { code: '11190', name: '서울특별시 영등포구' }, libraries: [library] }
 beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); api.getRegions.mockResolvedValue(regions); api.getBookAvailability.mockResolvedValue({ online, district: null, libraries: [] }) })
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
-const show = () => render(<BookAvailability isbn13={isbn} />)
+const show = () => render(<BookAvailability isbn13={isbn} userId="user-a" />)
 async function choose() {
   fireEvent.click(screen.getByRole('tab', { name: '도서관' }))
   await screen.findByRole('option', { name: '서울특별시' })
@@ -129,7 +130,7 @@ test('429 대기는 다른 책을 열어도 유지되며 만료 후 직접 재�
   await act(async () => fireEvent.click(screen.getByRole('button', { name: '도서관 찾기' })))
   first.unmount()
   api.getBookAvailability.mockClear().mockResolvedValue({ online, district: null, libraries: [] })
-  render(<BookAvailability isbn13="9788936433598" />)
+  render(<BookAvailability isbn13="9788936433598" userId="user-a" />)
   expect(api.getBookAvailability).not.toHaveBeenCalled()
   await act(async () => vi.advanceTimersByTime(3000))
   expect(api.getBookAvailability).not.toHaveBeenCalled()
@@ -167,4 +168,51 @@ test('지역 목록에서 사라진 저장 코드는 지우고 다시 고르도�
   await screen.findByText(/지역을 다시 선택/)
   expect(screen.getByLabelText('시·도')).toHaveProperty('value', '')
   expect(localStorage.length).toBe(0)
+})
+
+test('주소 없는 도서관은 이름과 대출 상태를 표시하고 빈 주소 줄은 만들지 않는다', async () => {
+  show(); await choose()
+  api.getBookAvailability.mockResolvedValue({ ...result, libraries: [{ ...library, address: null }] })
+  fireEvent.click(screen.getByRole('button', { name: '도서관 찾기' }))
+  await screen.findByText('가온도서관')
+  expect(screen.getByText('대출 불가')).toBeTruthy()
+  expect(document.querySelector('.availability-libraries li > p')).toBeNull()
+})
+
+test('429 안내는 한 번만 표시하고 대기 종료 뒤 지운다', async () => {
+  show(); await choose()
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  api.getBookAvailability.mockRejectedValue(new ApiError(429, '', 'rate_limited', 3))
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: '도서관 찾기' })))
+  const notices = screen.queryAllByText(/요청이.*(많|제한)/)
+  await act(async () => vi.advanceTimersByTime(3000))
+  expect(screen.queryByText(/3초 후/)).toBeNull()
+  expect(notices).toHaveLength(1)
+})
+
+test('다른 계정은 이전 계정의 지역을 미리 선택하지 않는다', async () => {
+  const first = show(); await choose(); api.getBookAvailability.mockResolvedValue(result)
+  fireEvent.click(screen.getByRole('button', { name: '도서관 찾기' })); await screen.findByText('가온도서관'); first.unmount()
+  render(<BookAvailability isbn13={isbn} userId="user-b" />)
+  fireEvent.click(screen.getByRole('tab', { name: '도서관' }))
+  await screen.findByRole('option', { name: '서울특별시' })
+  expect(screen.getByLabelText('시·군·구')).toHaveProperty('value', '')
+})
+
+test('첫 렌더와 요청 사이에 429 대기가 끝나면 성공한 링크에 오류를 남기지 않는다', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  api.getBookAvailability.mockRejectedValue(new ApiError(429, '', 'rate_limited', 3))
+  let first!: ReturnType<typeof render>
+  await act(async () => { first = show() })
+  const expiry = Date.now() + 3001
+  first.unmount()
+  api.getBookAvailability.mockResolvedValue({ online, district: null, libraries: [] })
+  function AtExpiry() {
+    useLayoutEffect(() => { vi.setSystemTime(expiry) }, [])
+    return <BookAvailability isbn13={isbn} userId="user-a" />
+  }
+  await act(async () => render(<AtExpiry />))
+  await act(async () => vi.advanceTimersByTime(0))
+  expect(screen.getByRole('link', { name: 'YES24에서 검색' })).toBeTruthy()
+  expect(screen.queryByRole('alert')).toBeNull()
 })

@@ -1,17 +1,32 @@
 import { apiRequest } from './api'
 
+const REGION_KEY = 'bookstory:last-library-district'
+export function savedDistrict(userId: string): string {
+  try {
+    localStorage.removeItem(REGION_KEY)
+    return localStorage.getItem(`${REGION_KEY}:${userId}`) ?? ''
+  } catch { return '' }
+}
+export function rememberDistrict(userId: string, code: string) {
+  const key = `${REGION_KEY}:${userId}`
+  try {
+    localStorage.removeItem(REGION_KEY)
+    if (code) localStorage.setItem(key, code); else localStorage.removeItem(key)
+  } catch { /* 지역 기억 실패가 조회를 막지 않는다. */ }
+}
+
 export type District = { code: string; name: string }
 export type Region = District & { districts: District[] }
 export type OnlineStore = { store: string; name: string; url: string }
 export type HoldingLibrary = {
-  lib_code: string; name: string; address: string
+  lib_code: string; name: string; address: string | null
   tel: string | null; homepage: string | null; operating_time: string | null; closed: string | null
   loan_available: boolean | null
 }
 export type BookAvailability = { online: OnlineStore[]; district: District | null; libraries: HoldingLibrary[] | null }
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 const text = (value: unknown): value is string => typeof value === 'string' && !!value.trim()
-const nullableText = (value: unknown) => value === null || typeof value === 'string'
+const optionalText = (value: unknown): string | null => text(value) ? value : null
 const district = (value: unknown): value is District => object(value) && text(value.code) && text(value.name)
 function link(value: unknown, httpsOnly = false): value is string {
   if (!text(value)) return false
@@ -20,12 +35,6 @@ function link(value: unknown, httpsOnly = false): value is string {
     return (url.protocol === 'https:' || (!httpsOnly && url.protocol === 'http:')) && !url.username && !url.password
   } catch { return false }
 }
-function library(value: unknown): value is HoldingLibrary {
-  return object(value) && text(value.lib_code) && text(value.name) && typeof value.address === 'string' &&
-    ['tel', 'operating_time', 'closed'].every(key => nullableText(value[key])) &&
-    (value.homepage === null || link(value.homepage)) && (value.loan_available === null || typeof value.loan_available === 'boolean')
-}
-
 export async function getRegions(): Promise<Region[]> {
   const data = await apiRequest('/regions', null)
   const codes = new Set<string>()
@@ -46,11 +55,33 @@ export async function getBookAvailability(isbn13: string, districtCode?: string)
   const query = districtCode ? `?${new URLSearchParams({ district: districtCode })}` : ''
   const data = await apiRequest(`/books/${encodeURIComponent(isbn13)}/where${query}`, null)
   if (!object(data) || !Array.isArray(data.online) ||
-    !data.online.every(item => object(item) && text(item.store) && text(item.name) && link(item.url, true)) ||
-    new Set(data.online.map(item => item.store)).size !== data.online.length ||
     (districtCode ? !district(data.district) || data.district.code !== districtCode : data.district !== null) ||
-    !(data.libraries === null || (Array.isArray(data.libraries) && data.libraries.every(library) &&
-      new Set(data.libraries.map(item => item.lib_code)).size === data.libraries.length)) ||
+    !(data.libraries === null || Array.isArray(data.libraries)) ||
     (!districtCode && (!Array.isArray(data.libraries) || data.libraries.length !== 0))) throw new Error('구매·대출 응답을 확인하지 못했습니다.')
-  return data as BookAvailability
+  const online: OnlineStore[] = []
+  const stores = new Set<string>()
+  for (const item of data.online) {
+    if (!object(item) || !text(item.store) || !text(item.name) || !link(item.url, true) || stores.has(item.store)) continue
+    stores.add(item.store)
+    online.push({ store: item.store, name: item.name, url: item.url })
+  }
+  let libraries: HoldingLibrary[] | null = null
+  if (Array.isArray(data.libraries)) {
+    const valid: HoldingLibrary[] = []
+    const codes = new Set<string>()
+    for (const item of data.libraries) {
+      if (!object(item) || !text(item.lib_code) || !text(item.name) || codes.has(item.lib_code)) continue
+      codes.add(item.lib_code)
+      valid.push({
+        lib_code: item.lib_code, name: item.name,
+        address: optionalText(item.address), tel: optionalText(item.tel),
+        operating_time: optionalText(item.operating_time), closed: optionalText(item.closed),
+        homepage: link(item.homepage) ? item.homepage : null,
+        loan_available: typeof item.loan_available === 'boolean' ? item.loan_available : null,
+      })
+    }
+    // 잘못된 행만 받은 경우 소장 도서관이 없다고 단정하지 않는다.
+    libraries = data.libraries.length > 0 && valid.length === 0 ? null : valid
+  }
+  return { online, district: data.district as District | null, libraries }
 }

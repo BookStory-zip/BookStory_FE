@@ -32,14 +32,33 @@ test.each([null, [], [library], [{ ...library, loan_available: true }], [{ ...li
 })
 
 test.each([
-  { online: [{ ...online[0], url: 'javascript:alert(1)' }], district, libraries: [] },
+  { online: null, district, libraries: [] },
   { online, district: { ...district, code: 'other' }, libraries: [] },
-  { online, district, libraries: [{ ...library, loan_available: 'false' }] },
-  { online, district, libraries: [{ ...library, homepage: 'javascript:alert(1)' }] },
-  { online, district, libraries: [library, library] },
+  { online, district, libraries: {} },
 ])('허용되지 않는 링크·잘못된 지역/도서관 응답은 표시하지 않는다: %j', async data => {
   fetchMock.mockResolvedValue(Response.json(data))
   await expect(getBookAvailability(isbn, district.code)).rejects.toThrow('응답')
+})
+
+test('잘못된 온라인 행과 중복은 제외하고 안전한 HTTPS 링크와 도서관은 유지한다', async () => {
+  fetchMock.mockResolvedValue(Response.json({ online: [null, { ...online[0], url: 'javascript:alert(1)' }, { ...online[0], url: 'http://example.test' }, online[0], online[0], { store: 'bad', url: 'https://example.test' }], district, libraries: [library] }))
+  await expect(getBookAvailability(isbn, district.code)).resolves.toEqual({ online, district, libraries: [library] })
+})
+
+test.each(['javascript:alert(1)', '', null, undefined])('잘못되거나 없는 홈페이지만 비우고 정상 도서관과 중복 없는 목록을 유지한다: %j', async homepage => {
+  fetchMock.mockResolvedValue(Response.json({ online, district, libraries: [{ ...library, homepage }, library, { ...library, lib_code: 'other' }, null, { name: '이름만' }, { lib_code: 'code' }] }))
+  await expect(getBookAvailability(isbn, district.code)).resolves.toEqual({ online, district, libraries: [{ ...library, homepage: null }, { ...library, lib_code: 'other' }] })
+})
+
+test.each([undefined, null, '', '  ', 123])('선택 정보의 누락과 비정상 값은 null로 처리한다: %j', async value => {
+  const row = { ...library, address: value, tel: value, operating_time: value, closed: value, homepage: value, loan_available: 'false' }
+  fetchMock.mockResolvedValue(Response.json({ online, district, libraries: [row] }))
+  await expect(getBookAvailability(isbn, district.code)).resolves.toEqual({ online, district, libraries: [{ ...library, address: null, tel: null, operating_time: null, closed: null, homepage: null, loan_available: null }] })
+})
+
+test('모든 도서관 행이 잘못되면 소장 없음 대신 미확인으로 반환한다', async () => {
+  fetchMock.mockResolvedValue(Response.json({ online, district, libraries: [null, {}, { ...library, name: '' }] }))
+  await expect(getBookAvailability(isbn, district.code)).resolves.toEqual({ online, district, libraries: null })
 })
 
 test('중복 지역 코드 응답은 거부한다', async () => {
@@ -49,6 +68,12 @@ test('중복 지역 코드 응답은 거부한다', async () => {
 
 test('온라인 목록이 비어도 정상 도서관 결과를 버리지 않는다', async () => {
   const data = { online: [], district, libraries: [library] }
+  fetchMock.mockResolvedValue(Response.json(data))
+  await expect(getBookAvailability(isbn, district.code)).resolves.toEqual(data)
+})
+
+test('BE가 주소를 제공하지 않은 도서관도 정상 결과로 받아들인다', async () => {
+  const data = { online, district, libraries: [{ ...library, address: null }] }
   fetchMock.mockResolvedValue(Response.json(data))
   await expect(getBookAvailability(isbn, district.code)).resolves.toEqual(data)
 })
