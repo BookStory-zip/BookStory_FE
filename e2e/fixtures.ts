@@ -57,6 +57,10 @@ export async function mockBackend(page: Page, handle: Handler) {
     // 따로 다루지 않는 테스트에서는 완독 기록이 없는 것으로 본다.
     if (url.pathname === '/reading-completions') return json(route, [])
     if (url.pathname === '/discovery/popular') return json(route, { source: 'yes24', collected_at: null, basis_date: null, monthly_basis: null, items: [] })
+    if (/^\/books\/\d{13}\/where$/.test(url.pathname)) return json(route, {
+      online: [{ store: 'yes24', name: 'YES24', url: `https://www.yes24.com/Product/Search?query=${url.pathname.split('/')[2]}` }],
+      district: null, libraries: [],
+    })
     if (url.pathname.endsWith('/reading-sessions')) return json(route, [])
     if (url.pathname.endsWith('/notes') && request.method() === 'GET') return json(route, [])
     if (url.pathname === '/shelves' && request.method() === 'GET') return json(route, [])

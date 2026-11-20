@@ -4,6 +4,7 @@ import { Link, MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ApiError } from './lib/api'
 import BookCatalog from './BookCatalog'
+vi.mock('./BookAvailability', () => ({ default: () => <section aria-label="구매·대출" /> }))
 
 const mocks = vi.hoisted(() => ({ getCatalogBook: vi.fn(), getPublicReviews: vi.fn(), getLibraryBookByIsbn: vi.fn(), addLibraryBook: vi.fn() }))
 vi.mock('./lib/catalog', () => ({ getCatalogBook: mocks.getCatalogBook, getPublicReviews: mocks.getPublicReviews }))

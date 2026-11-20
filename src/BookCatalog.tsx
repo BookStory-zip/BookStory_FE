@@ -8,6 +8,7 @@ import type { CatalogBook, PublicReview } from './lib/catalog'
 import { ADD_RATE_LIMITED, commonErrorMessage, isUnclearWrite } from './lib/errors'
 import { formatKstDate } from './lib/record'
 import { discoverySource } from './lib/discovery'
+import BookAvailability from './BookAvailability'
 
 const PAGE_SIZE = 20
 
@@ -137,6 +138,8 @@ function BookCatalog({ isbn13, fallbackUrl }: { isbn13: string; fallbackUrl: str
           {/^https?:\/\//i.test(book.source_url) && <a href={book.source_url} target="_blank" rel="noreferrer">제공처에서 더 보기 ↗</a>}
         </> : <p className="result-note">{bookError ? '책 정보를 다시 불러와주세요.' : '소개를 불러오는 중…'}</p>}
       </section>
+
+      {book && <BookAvailability key={isbn13} isbn13={isbn13} />}
 
       <section className="detail-card" aria-labelledby="catalog-own">
         <h2 id="catalog-own">나의 기록</h2>

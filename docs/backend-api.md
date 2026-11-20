@@ -7,6 +7,17 @@ BE가 FE용으로 정리한 계약은 BE 저장소 `docs/frontend-api.md`에 있
 - 운영 API: https://bookstory-api-w31a.onrender.com · [Swagger](https://bookstory-api-w31a.onrender.com/docs)
 - 기준: BE 5차 main `e4aec03`(2026-11-05 사용자 전달: 서재 정렬·도서 검색 기준/정렬·계정 알림·과거 읽은 날 운영 반영), FE main `97a039c`(PR #21, 2026-11-04 자동 운영 배포). BE 5차 verify·운영 OpenAPI·로그인 점검 통과는 BE 회신이며, FE가 운영 인증 API나 Render 배포 SHA·DB를 직접 확인한 것은 아닙니다. 실제 FE 확인 범위는 plan.md에 기록합니다.
 
+## 구매·대출 (2026-11-20 BE 회신 확정, 구현·운영 배포 대기)
+
+- 공개 `GET /regions`는 `[{code, name, districts:[{code, name}]}]`를 반환한다. 코드는 문자열로 다루며 시·도 → 시·군·구 선택에 사용한다. 폐지된 코드는 목록에서 빠질 수 있다.
+- 공개 `GET /books/{isbn13}/where?district={code}`는 `{online:[{store,name,url}], district:{code,name}|null, libraries:[]|null}`을 반환한다. district 생략 시 온라인 링크만 조회하며 district=null, libraries=[]이다. 온라인 서점 목록·순서는 BE를 따르고 가격·재고는 표시하지 않는다.
+- libraries 항목은 `{lib_code,name,address,tel,homepage,operating_time,closed,loan_available}`이다. tel/homepage/operating_time/closed는 nullable이며 homepage는 HTTP·HTTPS 외부 링크를 허용하고 새 창·noreferrer로 연다. 해당 지역의 소장 도서관 전체를 반환하며 페이지네이션은 없다.
+- 소장 도서관을 이름순으로 정렬한 앞의 3곳만 대출 여부를 확인한다. `loan_available`은 true=대출 가능, false=대출 불가(사유 구분 불가), null=확인하지 않았거나 개별 조회 실패다. 최종 응답 순서는 대출 가능 → 대출 불가 → 미확인, 그룹 내 이름순이며 FE가 다시 정렬하지 않는다. 안내는 "전일 집계 자료 · 실시간 정보 아님"이다.
+- 도서관 전체 조회 장애는 200, libraries=null이며 online과 선택한 district는 유지된다. libraries=[]는 소장 도서관 없음으로 구분한다.
+- 오류: 422 validation_error/region_not_found, IP당 분당 30회 초과는 429 rate_limited이며 Retry-After(초)·X-Request-ID가 CORS에 노출된다. 자동 재전송하지 않고 재시도 대기 시간을 안내한다. 저장한 옛 지역으로 region_not_found가 오면 저장 지역을 지우고 다시 선택하도록 안내하되 온라인 링크는 유지한다.
+- 응답 Cache-Control은 public, max-age=3600이다. 별도로 BE가 책+지역 결과를 하루 동안 서버에 저장해 사용자 간 재사용한다. FE는 성공한 지역을 기억해 미리 선택하되, "도서관 찾기" 버튼을 누를 때만 지역 조회를 요청한다. 개별 도서관 추가 조회 API는 1차 범위에서 제외한다.
+- 카탈로그 책 소개 아래의 "구매·대출" 섹션에 온라인/도서관 탭을 제공한다(섹션 접기 없음). 서재 상세에서는 카탈로그로 연결한다. FE 구현은 확정 계약의 모의 API로 검증하며, BE 운영 배포·실제 연동은 아직 확인하지 않았다. 429 대기는 책·계정 이동 후에도 유지하고, 늦게 도착한 이전 요청의 429도 반영한다.
+
 ## 인기 도서 (2026-11-18 혼합 출처 계약, BE 변경 운영 배포 대기)
 
 - `GET /discovery/popular?limit=10`은 인증 없이 호출하며 limit 기본 10, 범위 1~30이다. FE는 10·30만 요청한다. 잘못된 limit은 422 `validation_error`, IP 제한은 429 `rate_limited`·`Retry-After`(CORS 노출)다. 응답 Cache-Control은 public, max-age=600이다.
